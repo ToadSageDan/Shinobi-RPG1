@@ -25,10 +25,10 @@ AOE-lite is a lightweight, browser-based strategy sandbox inspired by Age of Emp
 
 ## Clan overview
 
-- **Peasant Commons**: fertile growth clan with heartland and river-plain affinity, stronger militia, and the **Village Muster** growth ability
-- **Ironroot Horde**: mountain raiders with ridge and quarry affinity, stronger riders, and the **War Drums** burst attack ability
-- **Sunveil Enclave**: forest mystics with woodland affinity, stronger gathering and archers, and the **Bloom of Ages** economy/wonder ability
-- **Tideborn League**: river traders with diplomacy and covert pressure, trade-ruin affinity, and the **Silver Accord** truce ability
+- **Heimin Clan**: fertile growth clan with heartland and river-plain affinity, stronger militia, and the **Village Muster** growth ability
+- **Ironroot Raiders**: mountain raiders with ridge and quarry affinity, stronger riders, and the **War Drums** burst attack ability
+- **Sunveil Order**: forest mystics with woodland affinity, stronger gathering and archers, and the **Bloom of Ages** economy/wonder ability
+- **Tideborn Harbor**: river traders with diplomacy and covert pressure, trade-ruin affinity, and the **Silver Accord** truce ability
 
 ## RPG baseline
 

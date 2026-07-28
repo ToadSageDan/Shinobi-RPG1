@@ -5,6 +5,7 @@ from shinobi_rpg.core import (
     Move,
     MoveCategory,
     PlayerProfile,
+    assign_affinity_from_choices,
     build_mvp_world,
     resolve_affinity_minigame,
 )
@@ -36,6 +37,22 @@ class CoreSystemTests(unittest.TestCase):
     def test_affinity_minigame_tie_breaker_prefers_fire_then_order(self):
         affinity = resolve_affinity_minigame([5, 5, 1, 1, 0])
         self.assertEqual(affinity, Affinity.FIRE)
+
+    def test_assign_affinity_from_choices_counts_majority(self):
+        affinity = assign_affinity_from_choices(["water", "fire", "water", "earth"])
+        self.assertEqual(affinity, Affinity.WATER)
+
+    def test_assign_affinity_from_choices_tie_breaker_prefers_fire_then_order(self):
+        affinity = assign_affinity_from_choices(["wind", "fire", "water", "earth"])
+        self.assertEqual(affinity, Affinity.FIRE)
+
+    def test_assign_affinity_from_choices_rejects_empty_input(self):
+        with self.assertRaises(ValueError):
+            assign_affinity_from_choices([])
+
+    def test_assign_affinity_from_choices_rejects_unknown_choice(self):
+        with self.assertRaises(ValueError):
+            assign_affinity_from_choices(["lightning"])
 
     def test_rogue_reputation_unlocks_black_market(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)

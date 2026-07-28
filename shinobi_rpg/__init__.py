@@ -11,6 +11,7 @@ from .core import (
     ReputationTier,
     Weapon,
     WeaponType,
+    assign_affinity_from_choices,
     build_mvp_world,
     resolve_affinity_minigame,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "ReputationTier",
     "Weapon",
     "WeaponType",
+    "assign_affinity_from_choices",
     "build_mvp_world",
     "resolve_affinity_minigame",
 ]

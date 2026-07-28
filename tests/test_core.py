@@ -1,4 +1,5 @@
 import unittest
+from tempfile import TemporaryDirectory
 
 from shinobi_rpg.core import (
     Affinity,
@@ -6,12 +7,15 @@ from shinobi_rpg.core import (
     Move,
     MoveCategory,
     PlayerProfile,
+    QuestStatus,
     ReputationTier,
     TrophyCategory,
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
+    load_world_snapshot,
     resolve_affinity_minigame,
+    save_world_snapshot,
 )
 
 
@@ -269,6 +273,91 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("encounter_outcomes", summary)
         self.assertIn("villain_stances", summary)
         self.assertIn("trophies", summary)
+
+    def test_save_and_load_snapshot_restores_world_and_player_state(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "kill")
+        world.clear_region(player, "Verdant Gate", "weapon")
+        world.complete_quest(player, "Q1")
+        with TemporaryDirectory() as temp_dir:
+            snapshot_path = f"{temp_dir}/snapshot.json"
+            save_world_snapshot(world, player, snapshot_path)
+            restored_world, restored_player = load_world_snapshot(snapshot_path)
+        self.assertEqual(restored_player.name, player.name)
+        self.assertEqual(restored_player.credits, player.credits)
+        self.assertTrue(restored_world.regions[0].cleared)
+        self.assertEqual(restored_player.quest_log["Q1"], QuestStatus.COMPLETED)
+        self.assertEqual(restored_world.villains[0].decision_memory.get("kill"), 1)
+
+    def test_quest_log_initializes_with_first_quest_active(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        self.assertEqual(player.quest_log["Q1"], QuestStatus.ACTIVE)
+        self.assertNotIn("Q2", player.quest_log)
+
+    def test_complete_quest_rewards_xp_credits_and_unlocks_next(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        result = world.complete_quest(player, "Q1")
+        self.assertEqual(player.quest_log["Q1"], QuestStatus.COMPLETED)
+        self.assertEqual(player.quest_log["Q2"], QuestStatus.ACTIVE)
+        self.assertEqual(result["reward_xp"], 120)
+        self.assertGreater(result["credit_reward"], 0)
+        self.assertGreater(player.credits, 100)
+
+    def test_start_quest_requires_previous_completion(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        with self.assertRaisesRegex(ValueError, "Previous quest must be completed first."):
+            world.start_quest(player, "Q2")
+
+    def test_fail_quest_marks_failed_and_reduces_loyalty(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        baseline = player.ally_loyalty["Dan"]
+        world.fail_quest(player, "Q1")
+        self.assertEqual(player.quest_log["Q1"], QuestStatus.FAILED)
+        self.assertLess(player.ally_loyalty["Dan"], baseline)
+
+    def test_resolve_region_encounter_uses_region_encounter_table_cycle(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        first = world.resolve_region_encounter(player, "Verdant Gate")
+        second = world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertNotEqual(first["encounter"], second["encounter"])
+        self.assertEqual(player.encounter_history["Verdant Gate"], 2)
+
+    def test_shop_inventory_respects_black_market_unlock(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        public_inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertIn("market_smoke_bomb", public_inventory)
+        self.assertNotIn("black_market_kunai", public_inventory)
+        player.update_reputation(-60)
+        rogue_inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertIn("black_market_kunai", rogue_inventory)
+
+    def test_purchase_shop_item_spends_credits_and_grants_reward(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.update_reputation(-60)
+        before = player.credits
+        result = world.purchase_shop_item(player, "black_market_kunai")
+        self.assertLess(player.credits, before)
+        self.assertIn("Nightglass Kunai", player.reward_inventory["weapon"])
+        self.assertEqual(result["remaining_credits"], player.credits)
+
+    def test_trophy_progress_contains_near_miss(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(2):
+            world.apply_player_decision(player, "stealth")
+        progress = world.get_trophy_progress(player)
+        ghost_step = next(item for item in progress if item["key"] == "ghost_step")
+        self.assertEqual(ghost_step["remaining"], 1)
+        self.assertTrue(ghost_step["near_miss"])
+
+    def test_playthrough_summary_includes_new_tracking_fields(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "charm")
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("villain_decision_memory", summary)
+        self.assertIn("quest_log", summary)
+        self.assertIn("ally_loyalty", summary)
+        self.assertIn("credits", summary)
+        self.assertIn("trophy_progress", summary)
 
 
 if __name__ == "__main__":

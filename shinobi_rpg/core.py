@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Sequence, Set, Tuple
 
 
@@ -45,12 +47,21 @@ class ReputationTier(str, Enum):
     NEUTRAL = "neutral"
     ROGUE = "rogue"
 
+
+class QuestStatus(str, Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 # Reputation at or below this value unlocks Rogue Ninja state and Black Market.
 ROGUE_THRESHOLD_MIN = -50
 # Reputation at or above this value sets Heroic status.
 HEROIC_THRESHOLD_MIN = 50
 # Base XP requirement per level in the level-based progression curve.
 BASE_XP_PER_LEVEL = 100
+QUEST_CREDIT_REWARD_BASE = 35
+QUEST_CREDIT_REWARD_STEP = 10
+ROGUE_SHOP_DISCOUNT_PERCENT = 20
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
 STEALTH_TROPHY_BASE_THRESHOLD = 3
 STEALTH_TROPHY_ADVANCED_THRESHOLD = 5
@@ -134,10 +145,12 @@ class VillainProfile:
     backstory: str
     aggression_score: int = 0
     stance: VillainStance = VillainStance.BALANCED
+    decision_memory: Dict[str, int] = field(default_factory=dict)
 
     def apply_decision(self, decision_tag: str, intensity: int = 1) -> VillainStance:
         """Update villain temperament from player decisions over time."""
         normalized = decision_tag.strip().lower()
+        self.decision_memory[normalized] = self.decision_memory.get(normalized, 0) + intensity
         if normalized in {"kill", "aggressive", "betray"}:
             self.aggression_score += 2 * intensity
         elif normalized in {"stealth", "evasion"}:
@@ -181,6 +194,7 @@ class Region:
     boss: str
     boss_rewards: Dict[str, str]
     tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
+    encounter_table: List[str] = field(default_factory=list)
     cleared: bool = False
 
 
@@ -234,6 +248,10 @@ class PlayerProfile:
         default_factory=lambda: {"kill": 0, "charm": 0, "stealth": 0, "evasion": 0}
     )
     trophies: Set[str] = field(default_factory=set)
+    quest_log: Dict[str, QuestStatus] = field(default_factory=dict)
+    ally_loyalty: Dict[str, int] = field(default_factory=dict)
+    encounter_history: Dict[str, int] = field(default_factory=dict)
+    credits: int = 100
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -360,12 +378,93 @@ class PlayerProfile:
         if node_name not in self.unlocked_fast_travel_nodes:
             self.unlocked_fast_travel_nodes.append(node_name)
 
+    def initialize_quest_log(self, quest_ids: Sequence[str]) -> None:
+        if self.quest_log:
+            return
+        if quest_ids:
+            self.quest_log[quest_ids[0]] = QuestStatus.ACTIVE
+
+    def get_active_quest_id(self) -> str | None:
+        return next(
+            (quest_id for quest_id, status in self.quest_log.items() if status == QuestStatus.ACTIVE),
+            None,
+        )
+
+    def set_quest_status(self, quest_id: str, status: QuestStatus) -> None:
+        self.quest_log[quest_id] = status
+
+    def adjust_ally_loyalty(self, ally_name: str, delta: int) -> int:
+        current = self.ally_loyalty.get(ally_name, 0)
+        updated = max(-100, min(100, current + delta))
+        self.ally_loyalty[ally_name] = updated
+        return updated
+
+    def record_region_encounter(self, region_name: str) -> int:
+        current = self.encounter_history.get(region_name, 0)
+        updated = current + 1
+        self.encounter_history[region_name] = updated
+        return updated
+
+    def earn_credits(self, amount: int) -> int:
+        if amount < 0:
+            raise ValueError("Credit gain cannot be negative.")
+        self.credits += amount
+        return self.credits
+
+    def spend_credits(self, amount: int) -> int:
+        if amount < 0:
+            raise ValueError("Credit spend cannot be negative.")
+        if amount > self.credits:
+            raise ValueError("Insufficient credits.")
+        self.credits -= amount
+        return self.credits
+
     def grant_boss_reward(self, reward_type: str, reward_name: str) -> None:
         if reward_type not in self.reward_inventory:
             raise ValueError("Reward choice must be weapon, clothing, or move.")
         if reward_name in self.reward_inventory[reward_type]:
             raise ValueError(f'"{reward_name}" has already been granted for {reward_type}.')
         self.reward_inventory[reward_type].append(reward_name)
+
+    def to_snapshot(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "affinity": self.affinity.value,
+            "stats": {
+                "level": self.stats.level,
+                "xp": self.stats.xp,
+                "power": self.stats.power,
+                "defense": self.stats.defense,
+                "agility": self.stats.agility,
+                "focus": self.stats.focus,
+            },
+            "reputation": self.reputation,
+            "unlocked_zones": list(self.unlocked_zones),
+            "unlocked_fast_travel_nodes": list(self.unlocked_fast_travel_nodes),
+            "unlocked_skins": [skin.name for skin in self.unlocked_skins],
+            "weapons": [weapon.name for weapon in self.weapons],
+            "reward_inventory": {key: list(values) for key, values in self.reward_inventory.items()},
+            "moves_by_set": {
+                category.value: [
+                    {
+                        "name": move.name,
+                        "category": move.category.value,
+                        "affinities": [affinity.value for affinity in move.affinities],
+                        "power_scale": move.power_scale,
+                    }
+                    for move in moves
+                ]
+                for category, moves in self.moves_by_set.items()
+            },
+            "selected_backstory": self.selected_backstory.key if self.selected_backstory else None,
+            "narrative_tags": sorted(self.narrative_tags),
+            "encounter_outcomes": dict(self.encounter_outcomes),
+            "trophies": sorted(self.trophies),
+            "quest_log": {quest_id: status.value for quest_id, status in self.quest_log.items()},
+            "ally_loyalty": dict(self.ally_loyalty),
+            "encounter_history": dict(self.encounter_history),
+            "credits": self.credits,
+        }
 
 
 @dataclass
@@ -379,6 +478,7 @@ class NinjaWorld:
     villain_behavior_rules: Dict[str, Dict[VillainStance, str]]
     player_backstories: List[Backstory]
     trophy_catalog: Dict[str, Trophy]
+    shop_inventory: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     vault_historic_ninjas: List[dict] = field(default_factory=list)
 
     def clear_region(
@@ -406,6 +506,8 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         player.unlock_fast_travel(region.name)
+        for ally in region.allies:
+            player.adjust_ally_loyalty(ally, 1)
         self.evaluate_trophies(player)
         return reward_name
 
@@ -419,6 +521,7 @@ class NinjaWorld:
                 "backstory": player.selected_backstory.key if player.selected_backstory else None,
                 "trophies": sorted(player.trophies),
                 "nonlethal_path": player.is_nonlethal_path_active(),
+                "credits": player.credits,
             }
         )
 
@@ -426,6 +529,14 @@ class NinjaWorld:
         normalized = decision_tag.strip().lower()
         for villain in self.villains:
             villain.apply_decision(normalized, intensity=intensity)
+        loyalty_delta = 0
+        if normalized == "kill":
+            loyalty_delta = -1
+        elif normalized == "charm":
+            loyalty_delta = 1
+        if loyalty_delta:
+            for ally in self.allies:
+                player.adjust_ally_loyalty(ally, loyalty_delta)
         if normalized in DECISION_OUTCOMES:
             player.record_encounter_outcome(normalized)
         self.evaluate_trophies(player)
@@ -467,6 +578,66 @@ class NinjaWorld:
             "outcome": outcome,
         }
 
+    def start_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, str]:
+        if not any(q.quest_id == quest_id for q in self.quests):
+            raise ValueError(f'Quest "{quest_id}" not found.')
+        if not player.quest_log:
+            player.initialize_quest_log([quest.quest_id for quest in self.quests])
+
+        quest_index = next(idx for idx, quest in enumerate(self.quests) if quest.quest_id == quest_id)
+        if quest_index > 0:
+            previous_quest = self.quests[quest_index - 1].quest_id
+            if player.quest_log.get(previous_quest) != QuestStatus.COMPLETED:
+                raise ValueError("Previous quest must be completed first.")
+
+        active_quest_id = player.get_active_quest_id()
+        if active_quest_id and active_quest_id != quest_id:
+            raise ValueError("Another quest is already active.")
+
+        if player.quest_log.get(quest_id) == QuestStatus.COMPLETED:
+            raise ValueError(f'Quest "{quest_id}" has already been completed.')
+        player.set_quest_status(quest_id, QuestStatus.ACTIVE)
+        return self.resolve_quest_branch(player, quest_id)
+
+    def complete_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
+        quest = next((q for q in self.quests if q.quest_id == quest_id), None)
+        if not quest:
+            raise ValueError(f'Quest "{quest_id}" not found.')
+        if player.quest_log.get(quest_id) != QuestStatus.ACTIVE:
+            raise ValueError(f'Quest "{quest_id}" must be active before completion.')
+
+        player.set_quest_status(quest_id, QuestStatus.COMPLETED)
+        levels_gained = player.stats.gain_xp(quest.reward_xp)
+        credit_reward = QUEST_CREDIT_REWARD_BASE + (max(player.stats.level - 1, 0) * QUEST_CREDIT_REWARD_STEP)
+        player.earn_credits(credit_reward)
+
+        for ally in self.allies:
+            player.adjust_ally_loyalty(ally, 1)
+
+        quest_index = next(idx for idx, q in enumerate(self.quests) if q.quest_id == quest_id)
+        if quest_index + 1 < len(self.quests):
+            next_quest_id = self.quests[quest_index + 1].quest_id
+            if player.quest_log.get(next_quest_id) != QuestStatus.COMPLETED:
+                player.set_quest_status(next_quest_id, QuestStatus.ACTIVE)
+
+        self.evaluate_trophies(player)
+        return {
+            "quest_id": quest.quest_id,
+            "reward_xp": quest.reward_xp,
+            "levels_gained": levels_gained,
+            "credit_reward": credit_reward,
+            "new_balance": player.credits,
+        }
+
+    def fail_quest(self, player: PlayerProfile, quest_id: str) -> None:
+        if not any(q.quest_id == quest_id for q in self.quests):
+            raise ValueError(f'Quest "{quest_id}" not found.')
+        if player.quest_log.get(quest_id) != QuestStatus.ACTIVE:
+            raise ValueError(f'Quest "{quest_id}" must be active before failing.')
+        player.set_quest_status(quest_id, QuestStatus.FAILED)
+        for ally in self.allies:
+            player.adjust_ally_loyalty(ally, -1)
+
     def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
         """Resolve branch precedence: explicit backstory first, then narrative tags, then default.
 
@@ -491,7 +662,65 @@ class NinjaWorld:
             "boss": villain.name,
             "stance": villain.stance.value,
             "behavior": behavior,
+            "decision_memory": dict(villain.decision_memory),
             "tutorial_mechanics": list(region.tutorial_mechanics),
+        }
+
+    def resolve_region_encounter(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        region = self._find_region(region_name)
+        encounter_pool = region.encounter_table if region.encounter_table else region.enemies
+        if not encounter_pool:
+            raise ValueError(f'Region "{region_name}" has no encounters configured.')
+        encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
+        encounter = encounter_pool[encounter_index]
+        encounter_count = player.record_region_encounter(region_name)
+        return {
+            "region": region_name,
+            "encounter": encounter,
+            "encounter_index": encounter_index,
+            "times_seen": encounter_count,
+        }
+
+    def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
+        can_access_black_market = "black_market" in player.unlocked_zones
+        visible_items = []
+        for item_key, item in self.shop_inventory.items():
+            if item.get("requires_black_market") and not can_access_black_market:
+                continue
+            rep_min = item.get("min_reputation")
+            rep_max = item.get("max_reputation")
+            if rep_min is not None and player.reputation < rep_min:
+                continue
+            if rep_max is not None and player.reputation > rep_max:
+                continue
+            price = int(item.get("price", 0))
+            if (
+                player.current_reputation_tier() == ReputationTier.ROGUE
+                and item.get("requires_black_market")
+            ):
+                price = max(1, int(round(price * (100 - ROGUE_SHOP_DISCOUNT_PERCENT) / 100)))
+            visible_items.append(
+                {
+                    "key": item_key,
+                    "name": item.get("name", item_key),
+                    "reward_type": item.get("reward_type"),
+                    "reward_name": item.get("reward_name"),
+                    "price": price,
+                }
+            )
+        return visible_items
+
+    def purchase_shop_item(self, player: PlayerProfile, item_key: str) -> Dict[str, Any]:
+        inventory = {item["key"]: item for item in self.get_shop_inventory(player)}
+        if item_key not in inventory:
+            raise ValueError(f'Item "{item_key}" is not available for this player.')
+        item = inventory[item_key]
+        player.spend_credits(item["price"])
+        player.grant_boss_reward(item["reward_type"], item["reward_name"])
+        return {
+            "item_key": item_key,
+            "price": item["price"],
+            "remaining_credits": player.credits,
         }
 
     def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
@@ -550,6 +779,7 @@ class NinjaWorld:
             if key in self.trophy_catalog
         ]
         villain_states = {villain.name: villain.stance.value for villain in self.villains}
+        villain_memories = {villain.name: dict(villain.decision_memory) for villain in self.villains}
         return {
             "player_name": player.name,
             "affinity": player.affinity.value,
@@ -560,8 +790,309 @@ class NinjaWorld:
             "encounter_outcomes": dict(player.encounter_outcomes),
             "cleared_regions": [region.name for region in self.regions if region.cleared],
             "villain_stances": villain_states,
+            "villain_decision_memory": villain_memories,
+            "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
+            "ally_loyalty": dict(player.ally_loyalty),
+            "credits": player.credits,
             "trophies": trophy_details,
+            "trophy_progress": self.get_trophy_progress(player),
         }
+
+    def get_trophy_progress(self, player: PlayerProfile) -> List[Dict[str, Any]]:
+        progress = []
+        cleared_regions = sum(1 for region in self.regions if region.cleared)
+        trophy_targets = {
+            TROPHY_GHOST_STEP: ("stealth", STEALTH_TROPHY_BASE_THRESHOLD),
+            TROPHY_VEIL_MASTER: ("stealth", STEALTH_TROPHY_ADVANCED_THRESHOLD),
+            TROPHY_SILVER_TONGUE: ("charm", CHARM_TROPHY_BASE_THRESHOLD),
+            TROPHY_DIPLOMAT_SUPREME: ("charm", CHARM_TROPHY_ADVANCED_THRESHOLD),
+            TROPHY_WINDWALK_SURVIVOR: ("evasion", EVASION_TROPHY_THRESHOLD),
+            TROPHY_PACIFIST_SHADOW: ("nonlethal_actions", PACIFIST_TROPHY_ACTIONS_THRESHOLD),
+            TROPHY_FIRST_BLOODLINE_VICTORY: ("regions_cleared", 1),
+            TROPHY_WORLD_WALKER: ("regions_cleared", len(self.regions)),
+        }
+        nonlethal_actions = (
+            player.encounter_outcomes["charm"]
+            + player.encounter_outcomes["stealth"]
+            + player.encounter_outcomes["evasion"]
+        )
+        for trophy_key, trophy in self.trophy_catalog.items():
+            tracked = trophy_targets.get(trophy_key)
+            if tracked is None:
+                continue
+            metric_key, target = tracked
+            if metric_key == "regions_cleared":
+                current_value = cleared_regions
+            elif metric_key == "nonlethal_actions":
+                current_value = nonlethal_actions
+            else:
+                current_value = player.encounter_outcomes.get(metric_key, 0)
+            remaining = max(target - current_value, 0)
+            progress.append(
+                {
+                    "key": trophy.key,
+                    "name": trophy.name,
+                    "current": current_value,
+                    "target": target,
+                    "remaining": remaining,
+                    "near_miss": trophy.key not in player.trophies and remaining == 1,
+                    "unlocked": trophy.key in player.trophies,
+                }
+            )
+        return sorted(progress, key=lambda item: item["key"])
+
+    def to_snapshot(self, player: PlayerProfile) -> Dict[str, Any]:
+        return {
+            "world": {
+                "regions": [
+                    {
+                        "name": region.name,
+                        "village_hub": region.village_hub,
+                        "enemies": list(region.enemies),
+                        "allies": list(region.allies),
+                        "boss": region.boss,
+                        "boss_rewards": dict(region.boss_rewards),
+                        "tutorial_mechanics": list(region.tutorial_mechanics),
+                        "encounter_table": list(region.encounter_table),
+                        "cleared": region.cleared,
+                    }
+                    for region in self.regions
+                ],
+                "quests": [
+                    {
+                        "quest_id": quest.quest_id,
+                        "title": quest.title,
+                        "objective": quest.objective,
+                        "stealth_required": quest.stealth_required,
+                        "reward_xp": quest.reward_xp,
+                        "branch_outcomes": dict(quest.branch_outcomes),
+                    }
+                    for quest in self.quests
+                ],
+                "allies": list(self.allies),
+                "weapons": [
+                    {
+                        "name": weapon.name,
+                        "weapon_type": weapon.weapon_type.value,
+                        "play_style": weapon.play_style,
+                        "base_power": weapon.base_power,
+                    }
+                    for weapon in self.weapons
+                ],
+                "skins": [
+                    {"name": skin.name, "stat_boosts": dict(skin.stat_boosts)} for skin in self.skins
+                ],
+                "villains": [
+                    {
+                        "name": villain.name,
+                        "backstory": villain.backstory,
+                        "aggression_score": villain.aggression_score,
+                        "stance": villain.stance.value,
+                        "decision_memory": dict(villain.decision_memory),
+                    }
+                    for villain in self.villains
+                ],
+                "villain_behavior_rules": {
+                    villain_name: {stance.value: text for stance, text in behavior_by_stance.items()}
+                    for villain_name, behavior_by_stance in self.villain_behavior_rules.items()
+                },
+                "player_backstories": [
+                    {
+                        "key": backstory.key,
+                        "title": backstory.title,
+                        "narrative_tags": list(backstory.narrative_tags),
+                        "reputation_bias": backstory.reputation_bias,
+                    }
+                    for backstory in self.player_backstories
+                ],
+                "trophy_catalog": {
+                    trophy_key: {
+                        "key": trophy.key,
+                        "name": trophy.name,
+                        "description": trophy.description,
+                        "category": trophy.category.value,
+                    }
+                    for trophy_key, trophy in self.trophy_catalog.items()
+                },
+                "shop_inventory": {key: dict(value) for key, value in self.shop_inventory.items()},
+                "vault_historic_ninjas": list(self.vault_historic_ninjas),
+            },
+            "player": player.to_snapshot(),
+        }
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Dict[str, Any]) -> Tuple["NinjaWorld", PlayerProfile]:
+        world_snapshot = snapshot["world"]
+        player_snapshot = snapshot["player"]
+
+        regions = [
+            Region(
+                name=item["name"],
+                village_hub=item["village_hub"],
+                enemies=list(item["enemies"]),
+                allies=list(item["allies"]),
+                boss=item["boss"],
+                boss_rewards=dict(item["boss_rewards"]),
+                tutorial_mechanics=tuple(item.get("tutorial_mechanics", [])),
+                encounter_table=list(item.get("encounter_table", [])),
+                cleared=item.get("cleared", False),
+            )
+            for item in world_snapshot["regions"]
+        ]
+        quests = [
+            Quest(
+                quest_id=item["quest_id"],
+                title=item["title"],
+                objective=item["objective"],
+                stealth_required=item["stealth_required"],
+                reward_xp=item["reward_xp"],
+                branch_outcomes=dict(item.get("branch_outcomes", {})),
+            )
+            for item in world_snapshot["quests"]
+        ]
+        weapons = [
+            Weapon(
+                name=item["name"],
+                weapon_type=WeaponType(item["weapon_type"]),
+                play_style=item["play_style"],
+                base_power=item["base_power"],
+            )
+            for item in world_snapshot["weapons"]
+        ]
+        skins = [Skin(name=item["name"], stat_boosts=dict(item["stat_boosts"])) for item in world_snapshot["skins"]]
+        villains = [
+            VillainProfile(
+                name=item["name"],
+                backstory=item["backstory"],
+                aggression_score=item.get("aggression_score", 0),
+                stance=VillainStance(item.get("stance", VillainStance.BALANCED.value)),
+                decision_memory=dict(item.get("decision_memory", {})),
+            )
+            for item in world_snapshot["villains"]
+        ]
+        behavior_rules = {
+            villain_name: {
+                VillainStance(stance): text for stance, text in behavior_by_stance.items()
+            }
+            for villain_name, behavior_by_stance in world_snapshot["villain_behavior_rules"].items()
+        }
+        backstories = [
+            Backstory(
+                key=item["key"],
+                title=item["title"],
+                narrative_tags=tuple(item["narrative_tags"]),
+                reputation_bias=item.get("reputation_bias", 0),
+            )
+            for item in world_snapshot["player_backstories"]
+        ]
+        trophy_catalog = {
+            trophy_key: Trophy(
+                key=item["key"],
+                name=item["name"],
+                description=item["description"],
+                category=TrophyCategory(item["category"]),
+            )
+            for trophy_key, item in world_snapshot["trophy_catalog"].items()
+        }
+
+        world = cls(
+            regions=regions,
+            quests=quests,
+            allies=list(world_snapshot["allies"]),
+            weapons=weapons,
+            skins=skins,
+            villains=villains,
+            villain_behavior_rules=behavior_rules,
+            player_backstories=backstories,
+            trophy_catalog=trophy_catalog,
+            shop_inventory={key: dict(value) for key, value in world_snapshot.get("shop_inventory", {}).items()},
+            vault_historic_ninjas=list(world_snapshot.get("vault_historic_ninjas", [])),
+        )
+
+        skin_by_name = {skin.name: skin for skin in world.skins}
+        weapon_by_name = {weapon.name: weapon for weapon in world.weapons}
+        backstory_by_key = {backstory.key: backstory for backstory in world.player_backstories}
+
+        player = PlayerProfile(
+            name=player_snapshot["name"],
+            affinity=Affinity(player_snapshot["affinity"]),
+            stats=PlayerStats(
+                level=player_snapshot["stats"]["level"],
+                xp=player_snapshot["stats"]["xp"],
+                power=player_snapshot["stats"]["power"],
+                defense=player_snapshot["stats"]["defense"],
+                agility=player_snapshot["stats"]["agility"],
+                focus=player_snapshot["stats"]["focus"],
+            ),
+            reputation=player_snapshot["reputation"],
+            unlocked_zones=list(player_snapshot.get("unlocked_zones", [])),
+            unlocked_fast_travel_nodes=list(player_snapshot.get("unlocked_fast_travel_nodes", [])),
+            unlocked_skins=[
+                skin_by_name[name] for name in player_snapshot.get("unlocked_skins", []) if name in skin_by_name
+            ],
+            weapons=[weapon_by_name[name] for name in player_snapshot.get("weapons", []) if name in weapon_by_name],
+            reward_inventory={
+                key: list(values)
+                for key, values in player_snapshot.get(
+                    "reward_inventory", {"weapon": [], "clothing": [], "move": []}
+                ).items()
+            },
+            selected_backstory=backstory_by_key.get(player_snapshot.get("selected_backstory")),
+            narrative_tags=set(player_snapshot.get("narrative_tags", [])),
+            encounter_outcomes=dict(
+                player_snapshot.get(
+                    "encounter_outcomes",
+                    {"kill": 0, "charm": 0, "stealth": 0, "evasion": 0},
+                )
+            ),
+            trophies=set(player_snapshot.get("trophies", [])),
+            quest_log={
+                quest_id: QuestStatus(status)
+                for quest_id, status in player_snapshot.get("quest_log", {}).items()
+            },
+            ally_loyalty={
+                ally_name: int(value)
+                for ally_name, value in player_snapshot.get("ally_loyalty", {}).items()
+            },
+            encounter_history={
+                region_name: int(value)
+                for region_name, value in player_snapshot.get("encounter_history", {}).items()
+            },
+            credits=int(player_snapshot.get("credits", 100)),
+        )
+        for category_name, moves in player_snapshot.get("moves_by_set", {}).items():
+            category = MoveCategory(category_name)
+            player.moves_by_set[category] = [
+                Move(
+                    name=move["name"],
+                    category=MoveCategory(move["category"]),
+                    affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
+                    power_scale=move.get("power_scale", 1.0),
+                )
+                for move in moves
+            ]
+
+        if not player.quest_log:
+            player.initialize_quest_log([quest.quest_id for quest in world.quests])
+        for ally in world.allies:
+            player.ally_loyalty.setdefault(ally, 0)
+
+        return world, player
+
+
+def save_world_snapshot(world: NinjaWorld, player: PlayerProfile, path: str | Path) -> None:
+    snapshot_path = Path(path)
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        json.dumps(world.to_snapshot(player), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def load_world_snapshot(path: str | Path) -> Tuple[NinjaWorld, PlayerProfile]:
+    snapshot_path = Path(path)
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    return NinjaWorld.from_snapshot(snapshot)
 
 
 def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
@@ -653,6 +1184,7 @@ def _seed_regions() -> List[Region]:
             name="Verdant Gate",
             village_hub="Leafrise Village",
             enemies=["Bandit Scouts", "Mist Ronin", "Root Stalkers"],
+            encounter_table=["Bandit Scouts", "Mist Ronin", "Root Stalkers", "Hidden Sentry"],
             allies=["Dan"],
             boss="Kage Renda",
             boss_rewards={
@@ -666,6 +1198,7 @@ def _seed_regions() -> List[Region]:
             name="Ashen Cradle",
             village_hub="Cinder Port",
             enemies=["Ash Mercenaries", "Lava Hounds"],
+            encounter_table=["Ash Mercenaries", "Lava Hounds", "Ember Raiders"],
             allies=["Moon", "Sleep"],
             boss="General Voln",
             boss_rewards={
@@ -679,6 +1212,7 @@ def _seed_regions() -> List[Region]:
             name="Tideglass Basin",
             village_hub="Azure Rest",
             enemies=["Tide Hunters", "Reef Assassins"],
+            encounter_table=["Tide Hunters", "Reef Assassins", "Basin Corsairs"],
             allies=["Dot", "Porter"],
             boss="Admiral Neris",
             boss_rewards={
@@ -891,6 +1425,38 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
     return {trophy.key: trophy for trophy in trophies}
 
 
+def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
+    return {
+        "market_smoke_bomb": {
+            "name": "Market Smoke Bomb",
+            "reward_type": "move",
+            "reward_name": "Smoke Lattice",
+            "price": 40,
+            "min_reputation": -49,
+            "max_reputation": 1000,
+            "requires_black_market": False,
+        },
+        "rogue_shadow_wrap": {
+            "name": "Rogue Shadow Wrap",
+            "reward_type": "clothing",
+            "reward_name": "Shadow Wrap",
+            "price": 70,
+            "min_reputation": -1000,
+            "max_reputation": -20,
+            "requires_black_market": True,
+        },
+        "black_market_kunai": {
+            "name": "Black Market Kunai",
+            "reward_type": "weapon",
+            "reward_name": "Nightglass Kunai",
+            "price": 90,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": True,
+        },
+    }
+
+
 def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tuple[NinjaWorld, PlayerProfile]:
     """Build the MVP world and player state.
 
@@ -918,7 +1484,11 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
         villain_behavior_rules=_seed_villain_behavior_rules(),
         player_backstories=_seed_player_backstories(),
         trophy_catalog=_seed_trophy_catalog(),
+        shop_inventory=_seed_shop_inventory(),
     )
     player.weapons.extend(world.weapons)
     player.unlocked_skins.append(world.skins[0])
+    player.initialize_quest_log([quest.quest_id for quest in world.quests])
+    for ally in world.allies:
+        player.ally_loyalty[ally] = 0
     return world, player

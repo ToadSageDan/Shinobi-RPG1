@@ -8,6 +8,7 @@ from .core import (
     NinjaWorld,
     PlayerProfile,
     Quest,
+    QuestStatus,
     Region,
     ReputationTier,
     Trophy,
@@ -18,7 +19,9 @@ from .core import (
     WeaponType,
     assign_affinity_from_choices,
     build_mvp_world,
+    load_world_snapshot,
     resolve_affinity_minigame,
+    save_world_snapshot,
 )
 
 __all__ = [
@@ -29,6 +32,7 @@ __all__ = [
     "NinjaWorld",
     "PlayerProfile",
     "Quest",
+    "QuestStatus",
     "Region",
     "ReputationTier",
     "Trophy",
@@ -39,5 +43,7 @@ __all__ = [
     "WeaponType",
     "assign_affinity_from_choices",
     "build_mvp_world",
+    "load_world_snapshot",
     "resolve_affinity_minigame",
+    "save_world_snapshot",
 ]

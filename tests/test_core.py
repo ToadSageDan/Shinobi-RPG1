@@ -76,7 +76,7 @@ class CoreSystemTests(unittest.TestCase):
         affinity = resolve_affinity_minigame([5, 5, 1, 1, 0])
         self.assertEqual(affinity, Affinity.FIRE)
 
-    def test_affinity_minigame_wraps_scoring_after_four_decisions(self):
+    def test_affinity_minigame_fifth_decision_can_push_fire_ahead(self):
         affinity = resolve_affinity_minigame([1, 2, 3, 4, 10])
         self.assertEqual(affinity, Affinity.FIRE)
 

@@ -210,8 +210,8 @@ def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
     return ranked[0][0]
 
 
-def _complementary_affinity(primary: Affinity) -> Affinity:
-    """Select a simple complementary affinity for starter mixed ultimates.
+def _paired_affinity_for_ultimate(primary: Affinity) -> Affinity:
+    """Select a simple paired affinity for starter mixed ultimates.
 
     MVP design pairs Wind with Fire; all other primaries pair with Wind.
     """
@@ -244,7 +244,7 @@ def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
             Move(
                 "Twin Dragon Convergence",
                 MoveCategory.ULTIMATE,
-                (player_affinity, _complementary_affinity(player_affinity)),
+                (player_affinity, _paired_affinity_for_ultimate(player_affinity)),
                 power_scale=2.5,
             )
         ],

@@ -277,6 +277,22 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["branch_key"], "wandering_monk")
         self.assertIn("without a killing blow", result["outcome"])
 
+    def test_quest_branching_expands_backstory_specific_outcome_for_q2(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        monk = next(backstory for backstory in world.player_backstories if backstory.key == "wandering_monk")
+        player.choose_backstory(monk)
+        result = world.resolve_quest_branch(player, "Q2")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("de-escalates the ambush", result["outcome"])
+
+    def test_quest_branching_prefers_backstory_key_over_narrative_tag(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        ghost = next(backstory for backstory in world.player_backstories if backstory.key == "street_ghost")
+        player.choose_backstory(ghost)
+        result = world.resolve_quest_branch(player, "Q1")
+        self.assertEqual(result["branch_key"], "street_ghost")
+        self.assertIn("underworld contacts", result["outcome"])
+
     def test_region_boss_behavior_uses_villain_specific_rules(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         behavior = world.get_region_boss_behavior("Verdant Gate", player)

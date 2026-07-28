@@ -47,6 +47,12 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
+## Project standards
+
+- License: [MIT](LICENSE)
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Community code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
 ## Example usage
 
 ```python

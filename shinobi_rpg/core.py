@@ -312,7 +312,7 @@ class PlayerProfile:
 
         If multiple defense moves are unlocked, the highest ``power_scale`` move is
         selected to represent the strongest available defensive technique (ties break
-        alphabetically by move name). The same defense scale is applied to both guard
+        lexicographically by move name). The same defense scale is applied to both guard
         reduction and agility-based parry timing in this MVP model.
         """
         if incoming_damage < 0:

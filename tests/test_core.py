@@ -53,8 +53,9 @@ class CoreSystemTests(unittest.TestCase):
     def test_resolve_block_parry_uses_best_defense_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.resolve_block_parry(15)
-        expected_guard = int(player.stats.defense * 0.8)
-        expected_parry_score = int(player.stats.agility * 0.8)
+        defense_move = player.moves_by_set[MoveCategory.DEFENSE][0]
+        expected_guard = int(player.stats.defense * defense_move.power_scale)
+        expected_parry_score = int(player.stats.agility * defense_move.power_scale)
         expected_remaining_damage = max(15 - expected_guard, 0)
         self.assertEqual(result["category"], "defense")
         self.assertEqual(result["move"], "Guarding Veil")
@@ -67,7 +68,7 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_resolve_block_parry_falls_back_without_defense_move(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WATER)
-        result = player.resolve_block_parry(15)
+        result = player.resolve_block_parry(15, base_guard_scale=0.5)
         expected_guard = int(player.stats.defense * 0.5)
         expected_parry_score = int(player.stats.agility * 0.5)
         expected_remaining_damage = max(15 - expected_guard, 0)

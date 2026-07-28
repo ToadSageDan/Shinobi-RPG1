@@ -165,18 +165,21 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
-        self.assertFalse(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
+        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        self.assertNotIn(reward_move_name, unlocked_names)
         reward = world.clear_region(player, "Verdant Gate", "move")
         self.assertEqual(reward, reward_move_name)
         self.assertIn(reward_move_name, player.reward_inventory["move"])
-        self.assertTrue(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
+        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        self.assertIn(reward_move_name, unlocked_names)
 
     def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
         world.clear_region(player, "Verdant Gate", "weapon")
-        self.assertFalse(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
+        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        self.assertNotIn(reward_move_name, unlocked_names)
 
     def test_region_clear_requires_previous_region(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])

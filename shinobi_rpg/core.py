@@ -2015,8 +2015,10 @@ def _seed_regions() -> List[Region]:
 
 
 def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
+    """Build the boss-only move reward configured for a region boss."""
     reward_move_specs = {
         "Kage Renda": {
+            "name": "Razorwind Spiral",
             "category": MoveCategory.ATTACK,
             "affinities": (Affinity.WIND,),
             "power_scale": 1.28,
@@ -2024,6 +2026,7 @@ def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
             "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
         },
         "General Voln": {
+            "name": "Inferno Vortex",
             "category": MoveCategory.ATTACK,
             "affinities": (Affinity.FIRE,),
             "power_scale": 1.3,
@@ -2031,6 +2034,7 @@ def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
             "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
         },
         "Admiral Neris": {
+            "name": "Maelstrom Guard",
             "category": MoveCategory.DEFENSE,
             "affinities": (Affinity.WATER,),
             "power_scale": 1.08,
@@ -2041,8 +2045,13 @@ def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
     spec = reward_move_specs.get(villain_name)
     if not spec:
         raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
+    if reward_name != spec["name"]:
+        raise ValueError(
+            f'Boss move reward mismatch for "{villain_name}": '
+            f'expected "{spec["name"]}", got "{reward_name}".'
+        )
     return _make_move(
-        reward_name,
+        spec["name"],
         spec["category"],
         spec["affinities"],
         spec["power_scale"],

@@ -11,6 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - Quest Q6 "Legacy of the Fallen Shinobi": final epilogue quest at the Ashen Spire with full backstory, nonlethal, heroic, and rogue branch outcomes
+- Quest Q7 "Shattered Moon Accord" and Q8 "Dawn of the Hidden Age" with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Ten new trophies across combat, progression, social, and alignment categories:
   - **Battle Hardened** (combat/early) — 5 lethal kills
   - **War Veteran** (combat/mid) — 20 lethal kills
@@ -24,6 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
   - **Monk Ascendant** (progression/late) — clear every region as Wandering Monk
 - Threshold constants for kill milestones, level milestones, and ally loyalty evaluation
 - 20 new tests covering Q6 branching and all new trophy unlock conditions
+- Extended kill-counter progression output in playthrough summaries, including remaining kills to next trophy milestones
+- Two new combat trophies:
+  - **Crimson Reaper** (combat/late) — 35 lethal kills
+  - **Apex Predator** (combat/late) — 50 lethal kills
 
 ---
 

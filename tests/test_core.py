@@ -563,8 +563,10 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("quest_log", summary)
         self.assertIn("ally_loyalty", summary)
         self.assertIn("credits", summary)
+        self.assertIn("kill_counter", summary)
         self.assertIn("trophy_progress", summary)
         self.assertIn("villain_evolution", summary)
+        self.assertEqual(summary["kill_counter"]["total_kills"], 0)
 
     def test_villain_evolution_checkpoints_escalate_with_pressure(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -644,13 +646,15 @@ class CoreSystemTests(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # Q6 quest branching tests
+    # Q6-Q8 quest branching tests
     # ------------------------------------------------------------------
 
     def test_q6_exists_in_seeded_world(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         quest_ids = [q.quest_id for q in world.quests]
         self.assertIn("Q6", quest_ids)
+        self.assertIn("Q7", quest_ids)
+        self.assertIn("Q8", quest_ids)
 
     def test_q6_branching_uses_exiled_heir_backstory(self):
         world, player = build_mvp_world("Heir", [3, 1, 2, 4])
@@ -697,6 +701,21 @@ class CoreSystemTests(unittest.TestCase):
         result = world.resolve_quest_branch(player, "Q6")
         self.assertEqual(result["branch_key"], "default")
 
+    def test_q7_branching_uses_nonlethal_path(self):
+        world, player = build_mvp_world("Pacifist", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q7")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+        self.assertIn("without a single execution", result["outcome"])
+
+    def test_q8_branching_uses_heroic_path(self):
+        world, player = build_mvp_world("Hero", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q8")
+        self.assertEqual(result["branch_key"], "heroic_path")
+        self.assertIn("first guardian of the new age", result["outcome"])
+
     # ------------------------------------------------------------------
     # New trophy evaluation tests
     # ------------------------------------------------------------------
@@ -713,6 +732,19 @@ class CoreSystemTests(unittest.TestCase):
         for _ in range(20):
             world.apply_player_decision(player, "kill")
         self.assertIn("war_veteran", player.trophies)
+
+    def test_crimson_reaper_trophy_awarded_at_thirty_five_kills(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(35):
+            world.apply_player_decision(player, "kill")
+        self.assertIn("crimson_reaper", player.trophies)
+        self.assertNotIn("apex_predator", player.trophies)
+
+    def test_apex_predator_trophy_awarded_at_fifty_kills(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(50):
+            world.apply_player_decision(player, "kill")
+        self.assertIn("apex_predator", player.trophies)
 
     def test_rising_ninja_trophy_awarded_at_level_5(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -797,6 +829,8 @@ class CoreSystemTests(unittest.TestCase):
         expected_keys = {
             "battle_hardened",
             "war_veteran",
+            "crimson_reaper",
+            "apex_predator",
             "rising_ninja",
             "seasoned_ninja",
             "loyal_bonds",
@@ -813,6 +847,8 @@ class CoreSystemTests(unittest.TestCase):
         world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         self.assertEqual(world.trophy_catalog["battle_hardened"].tier, TrophyTier.EARLY)
         self.assertEqual(world.trophy_catalog["war_veteran"].tier, TrophyTier.MID)
+        self.assertEqual(world.trophy_catalog["crimson_reaper"].tier, TrophyTier.LATE)
+        self.assertEqual(world.trophy_catalog["apex_predator"].tier, TrophyTier.LATE)
         self.assertEqual(world.trophy_catalog["rising_ninja"].tier, TrophyTier.EARLY)
         self.assertEqual(world.trophy_catalog["seasoned_ninja"].tier, TrophyTier.MID)
         self.assertEqual(world.trophy_catalog["villain_slayer"].tier, TrophyTier.LATE)

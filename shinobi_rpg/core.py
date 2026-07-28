@@ -122,6 +122,8 @@ EVASION_TROPHY_MASTER_THRESHOLD = 5
 NONLETHAL_STYLE_BALANCE_THRESHOLD = 2
 KILL_TROPHY_BASE_THRESHOLD = 5
 KILL_TROPHY_ADVANCED_THRESHOLD = 20
+KILL_TROPHY_ELITE_THRESHOLD = 35
+KILL_TROPHY_MASTER_THRESHOLD = 50
 LEVEL_TROPHY_BASE_THRESHOLD = 5
 LEVEL_TROPHY_ADVANCED_THRESHOLD = 10
 ALLY_LOYALTY_TROPHY_THRESHOLD = 5
@@ -147,6 +149,8 @@ TROPHY_PEACEKEEPER_EMBLEM = "peacekeeper_emblem"
 TROPHY_MERCY_CROWN = "mercy_crown"
 TROPHY_BATTLE_HARDENED = "battle_hardened"
 TROPHY_WAR_VETERAN = "war_veteran"
+TROPHY_CRIMSON_REAPER = "crimson_reaper"
+TROPHY_APEX_PREDATOR = "apex_predator"
 TROPHY_RISING_NINJA = "rising_ninja"
 TROPHY_SEASONED_NINJA = "seasoned_ninja"
 TROPHY_LOYAL_BONDS = "loyal_bonds"
@@ -1278,6 +1282,10 @@ class NinjaWorld:
             _award(TROPHY_BATTLE_HARDENED)
         if player.encounter_outcomes["kill"] >= KILL_TROPHY_ADVANCED_THRESHOLD:
             _award(TROPHY_WAR_VETERAN)
+        if player.encounter_outcomes["kill"] >= KILL_TROPHY_ELITE_THRESHOLD:
+            _award(TROPHY_CRIMSON_REAPER)
+        if player.encounter_outcomes["kill"] >= KILL_TROPHY_MASTER_THRESHOLD:
+            _award(TROPHY_APEX_PREDATOR)
 
         # Level progression trophies
         if player.stats.level >= LEVEL_TROPHY_BASE_THRESHOLD:
@@ -1363,6 +1371,23 @@ class NinjaWorld:
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
             "ally_loyalty": dict(player.ally_loyalty),
             "credits": player.credits,
+            "kill_counter": {
+                "total_kills": player.encounter_outcomes["kill"],
+                "next_milestones": [
+                    {
+                        "trophy_key": trophy_key,
+                        "target": target,
+                        "remaining": max(target - player.encounter_outcomes["kill"], 0),
+                    }
+                    for trophy_key, target in (
+                        (TROPHY_BATTLE_HARDENED, KILL_TROPHY_BASE_THRESHOLD),
+                        (TROPHY_WAR_VETERAN, KILL_TROPHY_ADVANCED_THRESHOLD),
+                        (TROPHY_CRIMSON_REAPER, KILL_TROPHY_ELITE_THRESHOLD),
+                        (TROPHY_APEX_PREDATOR, KILL_TROPHY_MASTER_THRESHOLD),
+                    )
+                    if trophy_key not in player.trophies
+                ],
+            },
             "trophies": trophy_details,
             "trophy_progress": self.get_trophy_progress(player),
             "villain_evolution": self.get_villain_evolution_checkpoints(),
@@ -1393,6 +1418,10 @@ class NinjaWorld:
             TROPHY_WORLD_WALKER: ("regions_cleared", len(self.regions)),
             TROPHY_SILENT_LEGEND: ("regions_cleared", len(self.regions)),
             TROPHY_MERCY_CROWN: ("completed_quests", len(self.quests)),
+            TROPHY_BATTLE_HARDENED: ("kill", KILL_TROPHY_BASE_THRESHOLD),
+            TROPHY_WAR_VETERAN: ("kill", KILL_TROPHY_ADVANCED_THRESHOLD),
+            TROPHY_CRIMSON_REAPER: ("kill", KILL_TROPHY_ELITE_THRESHOLD),
+            TROPHY_APEX_PREDATOR: ("kill", KILL_TROPHY_MASTER_THRESHOLD),
         }
         nonlethal_actions = player.nonlethal_action_count()
         completed_quests = sum(
@@ -2499,6 +2528,66 @@ def _seed_quests() -> List[Quest]:
                 ),
             },
         ),
+        Quest(
+            quest_id="Q7",
+            title="Shattered Moon Accord",
+            objective="Secure the Moonwell sanctum and decide whether to bind, expose, or dissolve the surviving war pacts.",
+            stealth_required=False,
+            reward_xp=520,
+            branch_outcomes={
+                "exiled_heir": (
+                    "You restore the moon oath in your clan's name, forcing rival houses to swear peace under your seal."
+                ),
+                "street_ghost": (
+                    "You leak pact ledgers to every syndicate at once and collapse the war pacts through public betrayal."
+                ),
+                "wandering_monk": (
+                    "You disarm both factions in the sanctum and guide them into a shared vow of restraint."
+                ),
+                "nonlethal_path": (
+                    "You disable every sentry and lock the sanctum without a single execution, leaving the pact leaders no path but negotiation."
+                ),
+                "heroic_path": (
+                    "Your heroic banner unites scattered villages around the sanctum and compels the war pacts to surrender terms."
+                ),
+                "rogue_path": (
+                    "You seize the pact archives and force signatures through covert leverage before dawn."
+                ),
+                "default": (
+                    "You break into the Moonwell vaults and dictate the accord after a brutal sanctum showdown."
+                ),
+            },
+        ),
+        Quest(
+            quest_id="Q8",
+            title="Dawn of the Hidden Age",
+            objective="Lead the first council of the new era and secure a lasting balance between shinobi factions.",
+            stealth_required=False,
+            reward_xp=620,
+            branch_outcomes={
+                "exiled_heir": (
+                    "You inaugurate the hidden council from your ancestral seat and bind every faction to a bloodline charter."
+                ),
+                "street_ghost": (
+                    "You establish a decentralized council of informants, ensuring no single faction can seize absolute control again."
+                ),
+                "wandering_monk": (
+                    "You dissolve old rank lines, creating a peace council where restraint and service outrank conquest."
+                ),
+                "nonlethal_path": (
+                    "With no blood debt behind you, the final council ratifies a disarmament era in your name."
+                ),
+                "heroic_path": (
+                    "Your heroic record crowns you first guardian of the new age, with former enemies pledging open cooperation."
+                ),
+                "rogue_path": (
+                    "You broker a shadow compact that keeps open war impossible while preserving your underground influence."
+                ),
+                "default": (
+                    "You force a final compromise after one last clash and declare the dawn of a harder but united age."
+                ),
+            },
+        ),
     ]
 
 
@@ -3089,6 +3178,20 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             "Defeat twenty enemies in lethal combat.",
             TrophyCategory.COMBAT,
             TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_CRIMSON_REAPER,
+            "Crimson Reaper",
+            "Defeat thirty-five enemies in lethal combat.",
+            TrophyCategory.COMBAT,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_APEX_PREDATOR,
+            "Apex Predator",
+            "Defeat fifty enemies in lethal combat.",
+            TrophyCategory.COMBAT,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_RISING_NINJA,

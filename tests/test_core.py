@@ -55,7 +55,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertGreater(player.stats.power, before_power)
 
     def test_vault_archives_historic_ninja(self):
-        world, player = build_mvp_world("Dot", [1, 3, 5, 2])
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
         world.archive_historic_ninja(player)
         self.assertEqual(world.vault_historic_ninjas[0]["name"], "Dot")
 

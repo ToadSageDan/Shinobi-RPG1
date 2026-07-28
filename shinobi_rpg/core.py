@@ -196,7 +196,17 @@ def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
     order = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
     for idx, value in enumerate(decisions):
         scores[order[idx % len(order)]] += value
-    return max(scores, key=scores.get)
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: (-item[1], order.index(item[0])),
+    )
+    return ranked[0][0]
+
+
+def _complementary_affinity(primary: Affinity) -> Affinity:
+    if primary == Affinity.WIND:
+        return Affinity.FIRE
+    return Affinity.WIND
 
 
 def _seed_weapons() -> List[Weapon]:
@@ -223,7 +233,7 @@ def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
             Move(
                 "Twin Dragon Convergence",
                 MoveCategory.ULTIMATE,
-                (player_affinity, Affinity.WIND if player_affinity != Affinity.WIND else Affinity.FIRE),
+                (player_affinity, _complementary_affinity(player_affinity)),
                 power_scale=2.5,
             )
         ],

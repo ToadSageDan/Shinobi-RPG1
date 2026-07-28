@@ -138,6 +138,7 @@ TROPHY_WORLD_WALKER = "world_walker"
 TROPHY_ROGUE_ASCENDANT = "rogue_ascendant"
 TROPHY_HEROIC_CREST = "heroic_crest"
 TROPHY_PEACEKEEPER_EMBLEM = "peacekeeper_emblem"
+TROPHY_MERCY_CROWN = "mercy_crown"
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -878,7 +879,11 @@ class NinjaWorld:
     def get_villain_evolution_checkpoints(self) -> List[Dict[str, Any]]:
         checkpoints: List[Dict[str, Any]] = []
         for villain in self.villains:
-            pressure = sum(villain.decision_memory.values())
+            raw_pressure = sum(villain.decision_memory.values())
+            pacification_index = sum(
+                villain.decision_memory.get(key, 0) for key in ("charm", "mercy", "diplomacy")
+            )
+            pressure = max(raw_pressure - pacification_index, 0)
             if pressure >= 8:
                 phase = "apex"
             elif pressure >= 4:
@@ -890,6 +895,8 @@ class NinjaWorld:
                     "villain": villain.name,
                     "phase": phase,
                     "pressure_index": pressure,
+                    "raw_pressure": raw_pressure,
+                    "pacification_index": pacification_index,
                     "stance": villain.stance.value,
                     "encounter_variant": self.villain_behavior_rules.get(villain.name, {}).get(villain.stance, ""),
                 }
@@ -1141,6 +1148,7 @@ class NinjaWorld:
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
         can_access_black_market = "black_market" in player.unlocked_zones
+        regions_cleared = sum(1 for region in self.regions if region.cleared)
         visible_items = []
         for item_key, item in self.shop_inventory.items():
             if item.get("requires_black_market") and not can_access_black_market:
@@ -1158,6 +1166,16 @@ class NinjaWorld:
             ):
                 price = max(1, int(round(price * (100 - ROGUE_SHOP_DISCOUNT_PERCENT) / 100)))
             if item.get("requires_nonlethal") and not player.is_nonlethal_path_active():
+                continue
+            if player.nonlethal_action_count() < int(item.get("min_nonlethal_actions", 0)):
+                continue
+            if (
+                item.get("requires_world_clear_nonlethal")
+                and (
+                    not player.is_nonlethal_path_active()
+                    or regions_cleared < len(self.regions)
+                )
+            ):
                 continue
             visible_items.append(
                 {
@@ -1234,6 +1252,10 @@ class NinjaWorld:
             and player.encounter_outcomes["charm"] >= CHARM_TROPHY_BASE_THRESHOLD
         ):
             _award(TROPHY_PEACEKEEPER_EMBLEM)
+        if player.is_nonlethal_path_active() and all(
+            player.quest_log.get(quest.quest_id) == QuestStatus.COMPLETED for quest in self.quests
+        ):
+            _award(TROPHY_MERCY_CROWN)
 
         return newly_awarded
 
@@ -1314,8 +1336,12 @@ class NinjaWorld:
             TROPHY_FIRST_BLOODLINE_VICTORY: ("regions_cleared", 1),
             TROPHY_WORLD_WALKER: ("regions_cleared", len(self.regions)),
             TROPHY_SILENT_LEGEND: ("regions_cleared", len(self.regions)),
+            TROPHY_MERCY_CROWN: ("completed_quests", len(self.quests)),
         }
         nonlethal_actions = player.nonlethal_action_count()
+        completed_quests = sum(
+            1 for quest in self.quests if player.quest_log.get(quest.quest_id) == QuestStatus.COMPLETED
+        )
         for trophy_key, trophy in self.trophy_catalog.items():
             tracked = trophy_targets.get(trophy_key)
             if tracked is None:
@@ -1327,10 +1353,14 @@ class NinjaWorld:
                 current_value = nonlethal_actions
             elif metric_key == "balanced_nonlethal":
                 current_value = min(player.encounter_outcomes[action] for action in ("charm", "stealth", "evasion"))
+            elif metric_key == "completed_quests":
+                current_value = completed_quests
             else:
                 current_value = player.encounter_outcomes.get(metric_key, 0)
             remaining = max(target - current_value, 0)
             if trophy.key == TROPHY_SILENT_LEGEND and player.encounter_outcomes["kill"] > 0:
+                remaining = target
+            if trophy.key == TROPHY_MERCY_CROWN and player.encounter_outcomes["kill"] > 0:
                 remaining = target
             progress.append(
                 {
@@ -2360,6 +2390,22 @@ def _seed_quests() -> List[Quest]:
                 "default": "You seize command of the frontline and end the siege through direct pressure.",
             },
         ),
+        Quest(
+            quest_id="Q5",
+            title="Moonlit Reckoning",
+            objective="Confront the Tideglass command ring and decide the final terms of peace.",
+            stealth_required=False,
+            reward_xp=320,
+            branch_outcomes={
+                "exiled_heir": "You restore the old charter and bind the command ring to a public oath.",
+                "street_ghost": "You expose the ring's hidden ledgers and force surrender through leverage.",
+                "wandering_monk": "You dismantle the command ring without executions and secure a disarmament pact.",
+                "nonlethal_path": "You neutralize every squad with charm, stealth, and evasion before talks begin.",
+                "heroic_path": "Your heroic standing secures a regionwide truce under your witness.",
+                "rogue_path": "You force compliance through shadow contracts that keep open war at bay.",
+                "default": "You break the command ring in a decisive final confrontation.",
+            },
+        ),
     ]
 
 
@@ -2930,6 +2976,13 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             TrophyCategory.ALIGNMENT,
             TrophyTier.LATE,
         ),
+        Trophy(
+            TROPHY_MERCY_CROWN,
+            "Mercy Crown",
+            "Complete every seeded quest in a kill-free run.",
+            TrophyCategory.ALIGNMENT,
+            TrophyTier.LATE,
+        ),
     ]
     return {trophy.key: trophy for trophy in trophies}
 
@@ -2972,6 +3025,18 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": 1000,
             "requires_black_market": False,
             "requires_nonlethal": True,
+        },
+        "silent_legend_insignia": {
+            "name": "Silent Legend Insignia",
+            "reward_type": "clothing",
+            "reward_name": "Moonveil Crest",
+            "price": 120,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": False,
+            "requires_nonlethal": True,
+            "min_nonlethal_actions": 8,
+            "requires_world_clear_nonlethal": True,
         },
     }
 

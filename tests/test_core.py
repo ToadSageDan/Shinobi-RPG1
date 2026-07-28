@@ -231,6 +231,44 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(archive["level"], player.stats.level)
         self.assertEqual(archive["reputation"], player.reputation)
 
+    def test_vault_replay_summary_defaults_when_no_runs(self):
+        world, _ = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        summary = world.get_vault_replay_summary()
+        self.assertEqual(summary["total_runs"], 0)
+        self.assertEqual(summary["unique_ninjas"], [])
+        self.assertEqual(summary["nonlethal_runs"], 0)
+        self.assertEqual(summary["heroic_runs"], 0)
+        self.assertEqual(summary["rogue_runs"], 0)
+        self.assertIsNone(summary["highest_level_run"])
+        self.assertEqual(summary["most_collected_trophies"], [])
+
+    def test_vault_replay_summary_tracks_history_and_trophies(self):
+        world, first_player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        for decision in ["stealth", "stealth", "charm", "charm", "evasion", "evasion"]:
+            world.apply_player_decision(first_player, decision)
+        first_player.stats.gain_xp(1500)
+        first_player.update_reputation(-80)
+        world.archive_historic_ninja(first_player)
+
+        _, second_player = build_mvp_world("Moon", [5, 1, 1, 1])
+        second_player.update_reputation(80)
+        world.archive_historic_ninja(second_player)
+
+        summary = world.get_vault_replay_summary()
+        self.assertEqual(summary["total_runs"], 2)
+        self.assertEqual(summary["unique_ninjas"], ["Dot", "Moon"])
+        self.assertEqual(summary["nonlethal_runs"], 1)
+        self.assertEqual(summary["heroic_runs"], 1)
+        self.assertEqual(summary["rogue_runs"], 1)
+        self.assertEqual(summary["highest_level_run"]["name"], "Dot")
+        self.assertIn("trinity_operator", {item["key"] for item in summary["most_collected_trophies"]})
+
+        dot_history = world.get_player_vault_history("Dot")
+        self.assertEqual(len(dot_history), 1)
+        self.assertEqual(dot_history[0]["name"], "Dot")
+        with self.assertRaisesRegex(ValueError, "Player name cannot be empty."):
+            world.get_player_vault_history("   ")
+
     def test_player_backstory_updates_tags_and_reputation(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
         backstory = Backstory(

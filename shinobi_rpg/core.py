@@ -747,6 +747,94 @@ class NinjaWorld:
             }
         )
 
+    def get_player_vault_history(self, player_name: str) -> List[Dict[str, Any]]:
+        normalized_name = player_name.strip()
+        if not normalized_name:
+            raise ValueError("Player name cannot be empty.")
+        return [
+            dict(entry)
+            for entry in self.vault_historic_ninjas
+            if str(entry.get("name", "")).strip() == normalized_name
+        ]
+
+    def get_vault_replay_summary(self) -> Dict[str, Any]:
+        if not self.vault_historic_ninjas:
+            return {
+                "total_runs": 0,
+                "unique_ninjas": [],
+                "nonlethal_runs": 0,
+                "heroic_runs": 0,
+                "rogue_runs": 0,
+                "highest_level_run": None,
+                "most_collected_trophies": [],
+            }
+
+        unique_ninjas: Set[str] = set()
+        nonlethal_runs = 0
+        heroic_runs = 0
+        rogue_runs = 0
+        highest_level_run: Dict[str, Any] | None = None
+        trophy_counts: Dict[str, int] = {}
+
+        for entry in self.vault_historic_ninjas:
+            name = str(entry.get("name", "")).strip()
+            if name:
+                unique_ninjas.add(name)
+
+            if bool(entry.get("nonlethal_path", False)):
+                nonlethal_runs += 1
+
+            reputation = int(entry.get("reputation", 0))
+            if reputation >= HEROIC_THRESHOLD_MIN:
+                heroic_runs += 1
+            if reputation <= ROGUE_THRESHOLD_MIN:
+                rogue_runs += 1
+
+            level = int(entry.get("level", 0))
+            if (
+                highest_level_run is None
+                or level > highest_level_run["level"]
+                or (
+                    level == highest_level_run["level"]
+                    and name
+                    and name < highest_level_run["name"]
+                )
+            ):
+                highest_level_run = {
+                    "name": name,
+                    "affinity": entry.get("affinity"),
+                    "level": level,
+                    "backstory": entry.get("backstory"),
+                    "trophies": list(entry.get("trophies", [])),
+                }
+
+            for trophy_key in entry.get("trophies", []):
+                if not isinstance(trophy_key, str):
+                    continue
+                trophy_counts[trophy_key] = trophy_counts.get(trophy_key, 0) + 1
+
+        most_collected_trophies = [
+            {
+                "key": key,
+                "name": self.trophy_catalog[key].name if key in self.trophy_catalog else key,
+                "category": (
+                    self.trophy_catalog[key].category.value if key in self.trophy_catalog else "unknown"
+                ),
+                "earned_runs": count,
+            }
+            for key, count in sorted(trophy_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+
+        return {
+            "total_runs": len(self.vault_historic_ninjas),
+            "unique_ninjas": sorted(unique_ninjas),
+            "nonlethal_runs": nonlethal_runs,
+            "heroic_runs": heroic_runs,
+            "rogue_runs": rogue_runs,
+            "highest_level_run": highest_level_run,
+            "most_collected_trophies": most_collected_trophies,
+        }
+
     def apply_player_decision(self, player: PlayerProfile, decision_tag: str, intensity: int = 1) -> None:
         normalized = decision_tag.strip().lower()
         for villain in self.villains:

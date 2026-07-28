@@ -20,6 +20,7 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Unlockable skins with stat boosts
 - Fast travel unlocks from progression
 - Vault archive for historic ninja runs
+- Vault replay analytics for run history, trophy frequency, and top run summary
 - Player backstory selection with narrative/reputation impact
 - Villain backstories with aggression/passivity shifts from player decisions
 - Villain-specific decision memory in behavior and summary reporting

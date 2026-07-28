@@ -31,8 +31,11 @@ class ReputationTier(str, Enum):
     NEUTRAL = "neutral"
     ROGUE = "rogue"
 
+# Reputation at or below this value unlocks Rogue Ninja state and Black Market.
 ROGUE_THRESHOLD_MIN = -50
+# Reputation at or above this value sets Heroic status.
 HEROIC_THRESHOLD_MIN = 50
+# XP multiplier used by the level-based progression curve.
 XP_PER_LEVEL_MULTIPLIER = 100
 
 
@@ -208,6 +211,10 @@ def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
 
 
 def _complementary_affinity(primary: Affinity) -> Affinity:
+    """Select a simple complementary affinity for starter mixed ultimates.
+
+    MVP design pairs Wind with Fire; all other primaries pair with Wind.
+    """
     if primary == Affinity.WIND:
         return Affinity.FIRE
     return Affinity.WIND
@@ -324,7 +331,7 @@ def _seed_allies(min_count: int = 10) -> List[str]:
     return allies
 
 
-def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> tuple[NinjaWorld, PlayerProfile]:
+def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tuple[NinjaWorld, PlayerProfile]:
     """Build the MVP world and player state.
 
     ``affinity_decisions`` is an integer sequence from the affinity mini-game;

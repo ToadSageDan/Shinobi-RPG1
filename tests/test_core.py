@@ -43,9 +43,12 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(tier.value, "rogue")
         self.assertIn("black_market", player.unlocked_zones)
 
-    def test_world_seed_meets_mvp_size_and_region_clear_reward(self):
+    def test_world_seed_meets_mvp_size(self):
         world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
         self.assertGreaterEqual(len(world.allies), 10)
+
+    def test_region_clear_reward_unlocks_fast_travel(self):
+        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
         reward = world.clear_region(player, "Verdant Gate", "weapon")
         self.assertEqual(reward, "Renda Fang Blade")
         self.assertIn("Verdant Gate", player.unlocked_fast_travel_nodes)

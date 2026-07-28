@@ -2366,8 +2366,8 @@ def _seed_quests() -> List[Quest]:
 def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:
     """Return ally names with seeded characters plus curated fillers.
 
-    The five core seeded allies are always included. ``min_count`` is treated
-    as a lower bound above that baseline.
+    The five core seeded allies are always included. ``min_count`` is the
+    total minimum ally count (including those five core allies).
     ``AutoNinja-*`` placeholders are only used if counts exceed the curated
     name pool.
     """

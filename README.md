@@ -14,7 +14,7 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Save/load snapshots for full world + player progression state
 - Quest state flow (active/completed/failed) with sequential gating
 - Quest chain including stealth-required content
-- Seeded allies (Dan, Moon, Sleep, Dot, Porter) with auto-generation to 10+
+- Seeded allies (Dan, Moon, Sleep, Dot, Porter) plus curated roster names, with AutoNinja fallback to 10+
 - Ally loyalty tracking influenced by decisions and quest outcomes
 - Region-specific encounter tables for replayable deterministic rotations
 - Unlockable skins with stat boosts

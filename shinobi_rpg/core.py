@@ -670,6 +670,15 @@ class NinjaWorld:
         region.cleared = True
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
+        if reward_choice == "move":
+            boss_move = _boss_exclusive_move_for(region.boss)
+            if boss_move.name != reward_name:
+                raise ValueError(
+                    f'Boss move reward mismatch for "{region.boss}": '
+                    f'expected "{boss_move.name}", got "{reward_name}".'
+                )
+            if boss_move.name not in player.unlocked_move_names:
+                player.add_move(boss_move, allow_cross_affinity=True)
         player.unlock_fast_travel(region.name)
         self.defeat_red_bar_ninja(player, region.boss)
         for ally in region.allies:
@@ -1976,7 +1985,7 @@ def _seed_regions() -> List[Region]:
             boss_rewards={
                 "weapon": "Renda Fang Blade",
                 "clothing": "Shadow Mantle",
-                "move": "Rending Spiral",
+                "move": "Razorwind Spiral",
             },
             tutorial_mechanics=("blocking", "substitution"),
         ),
@@ -1990,7 +1999,7 @@ def _seed_regions() -> List[Region]:
             boss_rewards={
                 "weapon": "Cradle Cleaver",
                 "clothing": "Molten Gi",
-                "move": "Ember Cyclone",
+                "move": "Inferno Vortex",
             },
             tutorial_mechanics=("aoe_attacks",),
         ),
@@ -2004,10 +2013,43 @@ def _seed_regions() -> List[Region]:
             boss_rewards={
                 "weapon": "Basin Pike",
                 "clothing": "Tidewoven Cloak",
-                "move": "Abyss Arc",
+                "move": "Maelstrom Guard",
             },
         ),
     ]
+
+
+def _boss_exclusive_move_for(villain_name: str) -> Move:
+    reward_moves = {
+        "Kage Renda": _make_move(
+            "Razorwind Spiral",
+            MoveCategory.ATTACK,
+            (Affinity.WIND,),
+            1.28,
+            JutsuType.WEAPON_STYLE,
+            (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
+        ),
+        "General Voln": _make_move(
+            "Inferno Vortex",
+            MoveCategory.ATTACK,
+            (Affinity.FIRE,),
+            1.3,
+            JutsuType.ELEMENTAL,
+            (StatusEffectType.BURN, StatusEffectType.STAGGER),
+        ),
+        "Admiral Neris": _make_move(
+            "Maelstrom Guard",
+            MoveCategory.DEFENSE,
+            (Affinity.WATER,),
+            1.08,
+            JutsuType.BARRIER,
+            (StatusEffectType.DRENCH, StatusEffectType.CHILL),
+        ),
+    }
+    move = reward_moves.get(villain_name)
+    if not move:
+        raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
+    return move
 
 
 def _seed_quests() -> List[Quest]:

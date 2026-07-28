@@ -161,6 +161,19 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("Renda Fang Blade", player.reward_inventory["weapon"])
         self.assertIn("Verdant Gate", player.unlocked_fast_travel_nodes)
 
+    def test_region_move_reward_unlocks_boss_exclusive_move(self):
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        self.assertFalse(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+        reward = world.clear_region(player, "Verdant Gate", "move")
+        self.assertEqual(reward, "Razorwind Spiral")
+        self.assertIn("Razorwind Spiral", player.reward_inventory["move"])
+        self.assertTrue(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+
+    def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        world.clear_region(player, "Verdant Gate", "weapon")
+        self.assertFalse(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+
     def test_region_clear_requires_previous_region(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         with self.assertRaisesRegex(ValueError, "Previous region must be cleared first."):

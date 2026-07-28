@@ -115,6 +115,8 @@ class CoreSystemTests(unittest.TestCase):
         before_defense = player.stats.defense
         before_agility = player.stats.agility
         before_focus = player.stats.focus
+        # With base XP-per-level at 100, 500 XP yields two level-ups:
+        # level 1->2 costs 100 and level 2->3 costs 200 (200 XP remains).
         player.stats.gain_xp(500)
         self.assertEqual(player.stats.level, before_level + 2)
         self.assertEqual(player.stats.power, before_power + 4)

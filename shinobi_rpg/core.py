@@ -35,8 +35,8 @@ class ReputationTier(str, Enum):
 ROGUE_THRESHOLD_MIN = -50
 # Reputation at or above this value sets Heroic status.
 HEROIC_THRESHOLD_MIN = 50
-# XP multiplier used by the level-based progression curve.
-XP_PER_LEVEL_MULTIPLIER = 100
+# Base XP requirement per level in the level-based progression curve.
+BASE_XP_PER_LEVEL = 100
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -110,8 +110,8 @@ class PlayerStats:
     def gain_xp(self, amount: int) -> int:
         self.xp += amount
         levels_gained = 0
-        while self.xp >= self.level * XP_PER_LEVEL_MULTIPLIER:
-            self.xp -= self.level * XP_PER_LEVEL_MULTIPLIER
+        while self.xp >= self.level * BASE_XP_PER_LEVEL:
+            self.xp -= self.level * BASE_XP_PER_LEVEL
             self.level += 1
             self.power += 2
             self.defense += 2

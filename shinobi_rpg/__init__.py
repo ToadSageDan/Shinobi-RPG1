@@ -4,6 +4,7 @@ __version__ = "0.1.0"
 
 from .core import (
     Affinity,
+    ArcDefinition,
     Backstory,
     JutsuType,
     Move,
@@ -33,6 +34,7 @@ from .core import (
 __all__ = [
     "__version__",
     "Affinity",
+    "ArcDefinition",
     "Backstory",
     "JutsuType",
     "Move",

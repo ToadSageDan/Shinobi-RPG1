@@ -217,6 +217,65 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+WORLD_EVENT_LIBRARY: Dict[str, Dict[str, Any]] = {
+    "tornado": {
+        "label": "Tornado tears through frontier villages.",
+        "region_pressure": 2,
+        "recovery_delta": -2,
+        "villain_signal": "chaos",
+        "arc_bias": "fracture_front",
+        "stance_shift": "kill",
+    },
+    "supply_collapse": {
+        "label": "Supply collapse starves border outposts.",
+        "region_pressure": 1,
+        "recovery_delta": -1,
+        "villain_signal": "scarcity",
+        "arc_bias": "political_war",
+        "stance_shift": "aggressive",
+    },
+    "political_coup": {
+        "label": "A political coup fractures council command.",
+        "region_pressure": 1,
+        "recovery_delta": -1,
+        "villain_signal": "betrayal",
+        "arc_bias": "rebellion_wave",
+        "stance_shift": "betray",
+    },
+    "plague_wave": {
+        "label": "A plague wave forces quarantines and mistrust.",
+        "region_pressure": 2,
+        "recovery_delta": -2,
+        "villain_signal": "fear",
+        "arc_bias": "recovery_mandate",
+        "stance_shift": "kill",
+    },
+    "migration_surge": {
+        "label": "Mass migration reshapes alliances and guard lines.",
+        "region_pressure": 1,
+        "recovery_delta": 0,
+        "villain_signal": "pressure",
+        "arc_bias": "fracture_front",
+        "stance_shift": "stealth",
+    },
+    "reconstruction_success": {
+        "label": "Reconstruction succeeds and villages regain leverage.",
+        "region_pressure": -2,
+        "recovery_delta": 2,
+        "villain_signal": "stability",
+        "arc_bias": "recovery_mandate",
+        "stance_shift": "charm",
+    },
+    "rebuild_failure": {
+        "label": "Rebuild failure sparks ration riots and extremism.",
+        "region_pressure": 2,
+        "recovery_delta": -2,
+        "villain_signal": "radicalization",
+        "arc_bias": "rebellion_wave",
+        "stance_shift": "kill",
+    },
+}
+
 
 def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
@@ -277,6 +336,16 @@ class Backstory:
     title: str
     narrative_tags: Tuple[str, ...]
     reputation_bias: int = 0
+
+
+@dataclass(frozen=True)
+class ArcDefinition:
+    key: str
+    title: str
+    tone: str
+    stakes: str
+    regions: Tuple[str, ...]
+    era_band: str
 
 
 @dataclass
@@ -344,6 +413,7 @@ class Region:
     allies: List[str]
     boss: str
     boss_rewards: Dict[str, str]
+    arc_key: str = "political_war"
     tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
     encounter_table: List[str] = field(default_factory=list)
     cleared: bool = False
@@ -756,9 +826,284 @@ class NinjaWorld:
     villain_behavior_rules: Dict[str, Dict[VillainStance, str]]
     player_backstories: List[Backstory]
     trophy_catalog: Dict[str, Trophy]
+    arcs: List[ArcDefinition] = field(default_factory=list)
+    era_timeline: List[Dict[str, Any]] = field(default_factory=list)
     ninjutsu_library: List[Move] = field(default_factory=list)
     shop_inventory: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     vault_historic_ninjas: List[dict] = field(default_factory=list)
+    vault_meta_tapestry: List[Dict[str, Any]] = field(default_factory=list)
+    active_run_tapestry: List[Dict[str, Any]] = field(default_factory=list)
+    world_event_history: List[Dict[str, Any]] = field(default_factory=list)
+    dynamic_region_chain: List[str] = field(default_factory=list)
+    recent_boss_chains: List[List[str]] = field(default_factory=list)
+    region_state: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    boss_availability: Dict[str, bool] = field(default_factory=dict)
+    antagonist_candidates: List[str] = field(default_factory=list)
+    antagonist_scoreboard: Dict[str, int] = field(default_factory=dict)
+    antagonist_signal_log: Dict[str, List[str]] = field(default_factory=dict)
+    selected_final_antagonist: Dict[str, Any] | None = None
+    current_arc_key: str = "political_war"
+    current_age: int = 16
+    current_era_index: int = 0
+    world_recovery_score: int = 0
+    run_counter: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.era_timeline:
+            self.era_timeline = _seed_era_timeline()
+        if not self.arcs:
+            self.arcs = _seed_arcs()
+        if not self.region_state:
+            self.region_state = {
+                region.name: {
+                    "region": region.name,
+                    "arc_key": region.arc_key,
+                    "pressure": 0,
+                    "recovery": 0,
+                    "disasters": 0,
+                    "rebuilds": 0,
+                }
+                for region in self.regions
+            }
+        if not self.boss_availability:
+            self.boss_availability = {region.boss: True for region in self.regions}
+        if not self.antagonist_candidates:
+            allied_candidates = sorted(set(self.allies[:5]))
+            villain_candidates = [villain.name for villain in self.villains]
+            self.antagonist_candidates = villain_candidates + allied_candidates
+        if not self.antagonist_scoreboard:
+            self.antagonist_scoreboard = {name: 0 for name in self.antagonist_candidates}
+        if not self.antagonist_signal_log:
+            self.antagonist_signal_log = {name: [] for name in self.antagonist_candidates}
+        if not self.dynamic_region_chain:
+            self.dynamic_region_chain = [region.name for region in self.regions]
+
+    def _current_era(self) -> Dict[str, Any]:
+        timeline = self.era_timeline or _seed_era_timeline()
+        bounded_index = min(max(self.current_era_index, 0), len(timeline) - 1)
+        return timeline[bounded_index]
+
+    def _arc_for_region(self, region_name: str) -> ArcDefinition | None:
+        for arc in self.arcs:
+            if region_name in arc.regions:
+                return arc
+        return None
+
+    def _log_tapestry(
+        self,
+        *,
+        event_type: str,
+        label: str,
+        causes: Sequence[str] | None = None,
+        effects: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        entry = {
+            "index": len(self.active_run_tapestry) + 1,
+            "event_type": event_type,
+            "label": label,
+            "arc_key": self.current_arc_key,
+            "era_key": self._current_era()["key"],
+            "age": self.current_age,
+            "causes": list(causes or []),
+            "effects": dict(effects or {}),
+        }
+        self.active_run_tapestry.append(entry)
+        return entry
+
+    def _refresh_arc_and_era(self) -> None:
+        cleared = sum(1 for region in self.regions if region.cleared)
+        if cleared >= 3:
+            self.current_era_index = min(2, len(self.era_timeline) - 1)
+        elif cleared >= 1:
+            self.current_era_index = min(1, len(self.era_timeline) - 1)
+        else:
+            self.current_era_index = 0
+        self.current_age = 16 + len(self.world_event_history) + cleared
+
+        arc_pressure: Dict[str, int] = {}
+        for state in self.region_state.values():
+            arc_key = str(state.get("arc_key", "political_war"))
+            pressure = int(state.get("pressure", 0))
+            recovery = int(state.get("recovery", 0))
+            arc_pressure[arc_key] = arc_pressure.get(arc_key, 0) + pressure - recovery
+        if arc_pressure:
+            self.current_arc_key = sorted(arc_pressure.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    def _penalty_for_recent_boss_chain(self, chain: Sequence[str]) -> int:
+        if not self.recent_boss_chains:
+            return 0
+        penalty = 0
+        for prior in self.recent_boss_chains[-5:]:
+            overlap = sum(1 for idx, boss in enumerate(chain) if idx < len(prior) and prior[idx] == boss)
+            penalty += overlap
+        return penalty
+
+    def _schedule_dynamic_regions(self, player: PlayerProfile) -> List[str]:
+        uncleared_regions = [region for region in self.regions if not region.cleared]
+        if not uncleared_regions:
+            self.dynamic_region_chain = []
+            return []
+
+        base_signal = (
+            player.reputation
+            + player.nonlethal_action_count()
+            + sum(player.ally_loyalty.values())
+            + len(self.world_event_history)
+        )
+        region_scores: Dict[str, int] = {}
+        for idx, region in enumerate(uncleared_regions):
+            state = self.region_state.get(region.name, {})
+            pressure = int(state.get("pressure", 0))
+            recovery = int(state.get("recovery", 0))
+            region_seed = sum(ord(ch) for ch in region.name)
+            pseudo_random = (base_signal + region_seed + idx * 7) % 6
+            availability_penalty = 0 if self.boss_availability.get(region.boss, True) else 10
+            progression_anchor = idx * 3
+            region_scores[region.name] = pressure * 3 - recovery + pseudo_random + progression_anchor - availability_penalty
+
+        ordered = sorted(uncleared_regions, key=lambda region: (-region_scores[region.name], region.name))
+        scheduled = [region.name for region in ordered]
+
+        if scheduled:
+            opening_regions = {
+                region.name
+                for region in uncleared_regions
+                if region.arc_key == "political_war"
+            }
+            if opening_regions and scheduled[0] not in opening_regions:
+                scheduled = sorted(scheduled, key=lambda name: (name not in opening_regions, scheduled.index(name)))
+
+        boss_chain = [self._find_region(name).boss for name in scheduled]
+        if self._penalty_for_recent_boss_chain(boss_chain) >= max(2, len(boss_chain) - 1):
+            scheduled = list(reversed(scheduled))
+
+        self.dynamic_region_chain = scheduled
+        return scheduled
+
+    def _update_antagonist_scores(
+        self,
+        *,
+        signal: str,
+        intensity: int = 1,
+        focal_points: Sequence[str] | None = None,
+        causes: Sequence[str] | None = None,
+    ) -> None:
+        if focal_points:
+            targets = [name for name in focal_points if name in self.antagonist_candidates]
+            if not targets:
+                targets = list(self.antagonist_candidates)
+        else:
+            targets = list(self.antagonist_candidates)
+        for name in targets:
+            self.antagonist_scoreboard[name] += intensity
+            reason = signal if not causes else f"{signal}: {' -> '.join(causes)}"
+            self.antagonist_signal_log[name].append(reason)
+
+    def _resolve_final_antagonist(self) -> Dict[str, Any]:
+        if not self.antagonist_scoreboard:
+            self.selected_final_antagonist = {
+                "name": None,
+                "origin_story": "No antagonist pressure registered.",
+                "score": 0,
+                "signals": [],
+            }
+            return self.selected_final_antagonist
+
+        ranked = sorted(self.antagonist_scoreboard.items(), key=lambda item: (-item[1], item[0]))
+        winner, score = ranked[0]
+        signals = self.antagonist_signal_log.get(winner, [])
+        origin_story = (
+            f"{winner} emerged through {'; '.join(signals[-3:])}."
+            if signals
+            else f"{winner} emerged from accumulating regional pressure."
+        )
+        self.selected_final_antagonist = {
+            "name": winner,
+            "origin_story": origin_story,
+            "score": score,
+            "signals": list(signals[-6:]),
+        }
+        return self.selected_final_antagonist
+
+    def trigger_world_event(
+        self,
+        player: PlayerProfile,
+        *,
+        event_key: str | None = None,
+        causes: Sequence[str] | None = None,
+    ) -> Dict[str, Any]:
+        if event_key is None:
+            keys = sorted(WORLD_EVENT_LIBRARY.keys())
+            index = (len(self.world_event_history) + player.nonlethal_action_count() + abs(player.reputation)) % len(keys)
+            event_key = keys[index]
+        if event_key not in WORLD_EVENT_LIBRARY:
+            raise ValueError(f'World event "{event_key}" is not recognized.')
+        event = dict(WORLD_EVENT_LIBRARY[event_key])
+        target_region = self.dynamic_region_chain[0] if self.dynamic_region_chain else next(
+            (region.name for region in self.regions if not region.cleared),
+            self.regions[0].name,
+        )
+        state = self.region_state.setdefault(
+            target_region,
+            {"region": target_region, "arc_key": "political_war", "pressure": 0, "recovery": 0, "disasters": 0, "rebuilds": 0},
+        )
+        state["pressure"] = max(0, int(state.get("pressure", 0)) + int(event.get("region_pressure", 0)))
+        state["recovery"] = max(0, int(state.get("recovery", 0)) + max(int(event.get("recovery_delta", 0)), 0))
+        if int(event.get("region_pressure", 0)) > 0:
+            state["disasters"] = int(state.get("disasters", 0)) + 1
+        if int(event.get("recovery_delta", 0)) > 0:
+            state["rebuilds"] = int(state.get("rebuilds", 0)) + 1
+        target_boss = self._find_region(target_region).boss
+        pressure_value = int(state.get("pressure", 0))
+        self.boss_availability[target_boss] = pressure_value < 4
+
+        self.world_recovery_score += int(event.get("recovery_delta", 0))
+        event_record = {
+            "event_key": event_key,
+            "label": event["label"],
+            "region": target_region,
+            "causes": list(causes or []),
+            "effects": {
+                "region_pressure": int(event.get("region_pressure", 0)),
+                "recovery_delta": int(event.get("recovery_delta", 0)),
+                "arc_bias": event.get("arc_bias"),
+            },
+        }
+        self.world_event_history.append(event_record)
+
+        stance_shift = str(event.get("stance_shift", "kill"))
+        for villain in self.villains:
+            villain.apply_decision(stance_shift, intensity=1)
+        self._update_antagonist_scores(
+            signal=f"world_event:{event_key}",
+            intensity=max(1, int(event.get("region_pressure", 1))),
+            focal_points=[self._find_region(target_region).boss, *self.allies[:2]],
+            causes=causes,
+        )
+
+        if event_key == "rebuild_failure" and "tornado" in {entry["event_key"] for entry in self.world_event_history}:
+            radicalized = self.allies[0] if self.allies else "Unknown Operative"
+            self._update_antagonist_scores(
+                signal="minor_event_escalation",
+                intensity=4,
+                focal_points=[radicalized],
+                causes=["tornado", "hardship", "rebuild_failure", "radicalization"],
+            )
+
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        self._log_tapestry(
+            event_type="world_event",
+            label=event["label"],
+            causes=causes,
+            effects={
+                "event_key": event_key,
+                "region": target_region,
+                "region_pressure": int(event.get("region_pressure", 0)),
+                "recovery_delta": int(event.get("recovery_delta", 0)),
+            },
+        )
+        return event_record
 
     def clear_region(
         self,
@@ -766,14 +1111,17 @@ class NinjaWorld:
         region_name: str,
         reward_choice: str,
     ) -> str:
+        self._schedule_dynamic_regions(player)
         region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), -1)
         if region_index == -1:
             raise ValueError(f'Region "{region_name}" not found.')
         region = self.regions[region_index]
         if region.cleared:
             raise ValueError(f'Region "{region_name}" has already been cleared.')
-        if region_index > 0 and not self.regions[region_index - 1].cleared:
+        if self.dynamic_region_chain and self.dynamic_region_chain[0] != region_name:
             raise ValueError("Previous region must be cleared first.")
+        if not self.boss_availability.get(region.boss, True):
+            raise ValueError(f'Region "{region_name}" boss is currently unavailable due to world events.')
         if reward_choice not in region.boss_rewards:
             valid_choices = ", ".join(region.boss_rewards.keys())
             raise ValueError(
@@ -791,10 +1139,47 @@ class NinjaWorld:
         self.defeat_red_bar_ninja(player, region.boss)
         for ally in region.allies:
             player.adjust_ally_loyalty(ally, 1)
+        self.region_state.setdefault(
+            region.name,
+            {"region": region.name, "arc_key": region.arc_key, "pressure": 0, "recovery": 0, "disasters": 0, "rebuilds": 0},
+        )
+        self.region_state[region.name]["recovery"] = int(self.region_state[region.name].get("recovery", 0)) + 2
+        self.region_state[region.name]["pressure"] = max(
+            0,
+            int(self.region_state[region.name].get("pressure", 0)) - 1,
+        )
+        self.world_recovery_score += 1
+        cleared_chain = [item.boss for item in self.regions if item.cleared]
+        if len(cleared_chain) >= 2:
+            self.recent_boss_chains.append(cleared_chain)
+            self.recent_boss_chains = self.recent_boss_chains[-10:]
+        self._update_antagonist_scores(
+            signal="boss_outcome",
+            intensity=2,
+            focal_points=[region.boss],
+            causes=[f"region_clear:{region.name}", f"reward:{reward_choice}"],
+        )
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        self._resolve_final_antagonist()
+        self._log_tapestry(
+            event_type="boss_outcome",
+            label=f"{region.boss} fell at {region.name}.",
+            causes=[f"reward_choice:{reward_choice}"],
+            effects={
+                "region": region.name,
+                "boss": region.boss,
+                "reward": reward_name,
+                "remaining_chain": list(self.dynamic_region_chain),
+            },
+        )
         self.evaluate_trophies(player)
         return reward_name
 
     def archive_historic_ninja(self, player: PlayerProfile) -> None:
+        run_signature = self.generate_run_signature(player)
+        archived_tapestry = [dict(entry) for entry in self.active_run_tapestry]
+        self.run_counter += 1
         self.vault_historic_ninjas.append(
             {
                 "name": player.name,
@@ -805,8 +1190,15 @@ class NinjaWorld:
                 "trophies": sorted(player.trophies),
                 "nonlethal_path": player.is_nonlethal_path_active(),
                 "credits": player.credits,
+                "run_signature": run_signature,
+                "living_tapestry": archived_tapestry,
             }
         )
+        for entry in archived_tapestry:
+            meta_entry = dict(entry)
+            meta_entry["run_id"] = self.run_counter
+            self.vault_meta_tapestry.append(meta_entry)
+        self.active_run_tapestry = []
 
     def get_player_vault_history(self, player_name: str) -> List[Dict[str, Any]]:
         normalized_name = player_name.strip()
@@ -828,6 +1220,8 @@ class NinjaWorld:
                 "rogue_runs": 0,
                 "highest_level_run": None,
                 "most_collected_trophies": [],
+                "meta_tapestry_entries": 0,
+                "run_signatures": [],
             }
 
         unique_ninjas: Set[str] = set()
@@ -894,6 +1288,12 @@ class NinjaWorld:
             "rogue_runs": rogue_runs,
             "highest_level_run": highest_level_run,
             "most_collected_trophies": most_collected_trophies,
+            "meta_tapestry_entries": len(self.vault_meta_tapestry),
+            "run_signatures": [
+                dict(entry.get("run_signature", {}))
+                for entry in self.vault_historic_ninjas
+                if isinstance(entry.get("run_signature"), dict)
+            ],
         }
 
     def get_villain_evolution_checkpoints(self) -> List[Dict[str, Any]]:
@@ -937,6 +1337,29 @@ class NinjaWorld:
                 player.adjust_ally_loyalty(ally, loyalty_delta)
         if normalized in DECISION_OUTCOMES:
             player.record_encounter_outcome(normalized)
+        self._update_antagonist_scores(
+            signal=f"decision:{normalized}",
+            intensity=max(1, intensity),
+            focal_points=[villain.name for villain in self.villains[:3]],
+            causes=[normalized],
+        )
+        if normalized in {"kill", "betray"}:
+            self.world_recovery_score -= 1
+        elif normalized in {"charm", "stealth", "evasion"}:
+            self.world_recovery_score += 1
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        self._resolve_final_antagonist()
+        self._log_tapestry(
+            event_type="major_choice",
+            label=f"Player choice registered: {normalized}.",
+            causes=[normalized],
+            effects={
+                "intensity": intensity,
+                "reputation": player.reputation,
+                "nonlethal_path": player.is_nonlethal_path_active(),
+            },
+        )
         self.evaluate_trophies(player)
 
     def _find_villain(self, name: str) -> VillainProfile:
@@ -1099,6 +1522,23 @@ class NinjaWorld:
             if player.quest_log.get(next_quest_id) != QuestStatus.COMPLETED:
                 player.set_quest_status(next_quest_id, QuestStatus.ACTIVE)
 
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        self._update_antagonist_scores(
+            signal="quest_completion",
+            intensity=1,
+            focal_points=[self.villains[0].name, *self.allies[:1]],
+            causes=[quest_id],
+        )
+        self._log_tapestry(
+            event_type="rebuild",
+            label=f"Quest {quest_id} completed.",
+            causes=[quest_id],
+            effects={"credit_reward": credit_reward, "levels_gained": levels_gained},
+        )
+        if quest_id in {"Q3", "Q5", "Q7"}:
+            self.trigger_world_event(player, causes=[f"quest:{quest_id}"])
+
         self.evaluate_trophies(player)
         return {
             "quest_id": quest.quest_id,
@@ -1116,6 +1556,18 @@ class NinjaWorld:
         player.set_quest_status(quest_id, QuestStatus.FAILED)
         for ally in self.allies:
             player.adjust_ally_loyalty(ally, -1)
+        self._update_antagonist_scores(
+            signal="quest_failure",
+            intensity=2,
+            focal_points=self.allies[:2],
+            causes=[quest_id],
+        )
+        self._log_tapestry(
+            event_type="betrayal",
+            label=f"Quest {quest_id} failed.",
+            causes=[quest_id],
+            effects={"loyalty_impact": -1},
+        )
 
     def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
         """Resolve branch precedence: explicit backstory first, then narrative tags, then default.
@@ -1150,6 +1602,19 @@ class NinjaWorld:
             "decision_memory": dict(villain.decision_memory),
             "tutorial_mechanics": list(region.tutorial_mechanics),
         }
+
+    def get_dynamic_arc_schedule(self, player: PlayerProfile) -> Dict[str, Any]:
+        scheduled = self._schedule_dynamic_regions(player)
+        return {
+            "current_arc_key": self.current_arc_key,
+            "era": dict(self._current_era()),
+            "scheduled_regions": list(scheduled),
+            "scheduled_bosses": [self._find_region(region_name).boss for region_name in scheduled],
+            "boss_availability": dict(self.boss_availability),
+        }
+
+    def get_final_antagonist_projection(self) -> Dict[str, Any]:
+        return self._resolve_final_antagonist()
 
     def resolve_region_encounter(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
         region = self._find_region(region_name)
@@ -1323,7 +1788,58 @@ class NinjaWorld:
 
         return newly_awarded
 
+    def get_living_tapestry_delta(self) -> Dict[str, Any]:
+        current_counts: Dict[str, int] = {}
+        prior_counts: Dict[str, int] = {}
+        for entry in self.active_run_tapestry:
+            key = str(entry.get("event_type", "unknown"))
+            current_counts[key] = current_counts.get(key, 0) + 1
+        for entry in self.vault_meta_tapestry:
+            key = str(entry.get("event_type", "unknown"))
+            prior_counts[key] = prior_counts.get(key, 0) + 1
+        differences = []
+        for key in sorted(set(current_counts) | set(prior_counts)):
+            current = current_counts.get(key, 0)
+            prior_avg = 0
+            if self.vault_historic_ninjas:
+                prior_avg = int(round(prior_counts.get(key, 0) / len(self.vault_historic_ninjas)))
+            differences.append(
+                {
+                    "event_type": key,
+                    "current_run": current,
+                    "prior_average": prior_avg,
+                    "delta": current - prior_avg,
+                }
+            )
+        return {"event_differences": differences}
+
+    def generate_run_signature(self, player: PlayerProfile) -> Dict[str, Any]:
+        arc_counts: Dict[str, int] = {}
+        for entry in self.active_run_tapestry:
+            arc_key = str(entry.get("arc_key", "political_war"))
+            arc_counts[arc_key] = arc_counts.get(arc_key, 0) + 1
+        dominant_arc = None
+        if arc_counts:
+            dominant_arc = sorted(arc_counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        final_antagonist = self._resolve_final_antagonist()
+        critical_events = [
+            f'{item.get("event_type")}::{item.get("label")}'
+            for item in self.active_run_tapestry[-6:]
+        ]
+        return {
+            "dominant_arc_path": dominant_arc or self.current_arc_key,
+            "final_antagonist_origin_story": final_antagonist.get("origin_story"),
+            "world_recovery_decay_score": self.world_recovery_score,
+            "critical_event_chain": critical_events,
+            "era_endpoint": self._current_era().get("key"),
+            "age_endpoint": self.current_age,
+            "nonlethal_signature": player.is_nonlethal_path_active(),
+        }
+
     def generate_playthrough_summary(self, player: PlayerProfile) -> Dict[str, Any]:
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        final_antagonist = self._resolve_final_antagonist()
         trophy_details = [
             {
                 "key": key,
@@ -1391,6 +1907,20 @@ class NinjaWorld:
             "trophies": trophy_details,
             "trophy_progress": self.get_trophy_progress(player),
             "villain_evolution": self.get_villain_evolution_checkpoints(),
+            "arc_state": {
+                "current_arc_key": self.current_arc_key,
+                "scheduled_regions": list(self.dynamic_region_chain),
+                "era": dict(self._current_era()),
+                "age": self.current_age,
+            },
+            "living_tapestry": {
+                "active_run_entries": [dict(entry) for entry in self.active_run_tapestry],
+                "vault_meta_entries": len(self.vault_meta_tapestry),
+                "delta_vs_prior_runs": self.get_living_tapestry_delta()["event_differences"],
+            },
+            "world_events": [dict(entry) for entry in self.world_event_history],
+            "final_antagonist": dict(final_antagonist),
+            "run_signature_preview": self.generate_run_signature(player),
         }
 
     def generate_replay_hub_report(self, player: PlayerProfile) -> Dict[str, Any]:
@@ -1398,6 +1928,7 @@ class NinjaWorld:
             "active_run": self.generate_playthrough_summary(player),
             "vault_overview": self.get_vault_replay_summary(),
             "player_archive_history": self.get_player_vault_history(player.name),
+            "living_tapestry_delta": self.get_living_tapestry_delta(),
         }
 
     def get_trophy_progress(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -1472,6 +2003,7 @@ class NinjaWorld:
                         "allies": list(region.allies),
                         "boss": region.boss,
                         "boss_rewards": dict(region.boss_rewards),
+                        "arc_key": region.arc_key,
                         "tutorial_mechanics": list(region.tutorial_mechanics),
                         "encounter_table": list(region.encounter_table),
                         "cleared": region.cleared,
@@ -1565,6 +2097,38 @@ class NinjaWorld:
                 ],
                 "shop_inventory": {key: dict(value) for key, value in self.shop_inventory.items()},
                 "vault_historic_ninjas": list(self.vault_historic_ninjas),
+                "vault_meta_tapestry": list(self.vault_meta_tapestry),
+                "active_run_tapestry": list(self.active_run_tapestry),
+                "world_event_history": list(self.world_event_history),
+                "dynamic_region_chain": list(self.dynamic_region_chain),
+                "recent_boss_chains": [list(chain) for chain in self.recent_boss_chains],
+                "region_state": {key: dict(value) for key, value in self.region_state.items()},
+                "boss_availability": dict(self.boss_availability),
+                "antagonist_candidates": list(self.antagonist_candidates),
+                "antagonist_scoreboard": dict(self.antagonist_scoreboard),
+                "antagonist_signal_log": {
+                    key: list(value) for key, value in self.antagonist_signal_log.items()
+                },
+                "selected_final_antagonist": (
+                    dict(self.selected_final_antagonist) if self.selected_final_antagonist else None
+                ),
+                "arcs": [
+                    {
+                        "key": arc.key,
+                        "title": arc.title,
+                        "tone": arc.tone,
+                        "stakes": arc.stakes,
+                        "regions": list(arc.regions),
+                        "era_band": arc.era_band,
+                    }
+                    for arc in self.arcs
+                ],
+                "era_timeline": [dict(item) for item in self.era_timeline],
+                "current_arc_key": self.current_arc_key,
+                "current_age": self.current_age,
+                "current_era_index": self.current_era_index,
+                "world_recovery_score": self.world_recovery_score,
+                "run_counter": self.run_counter,
             },
             "player": player.to_snapshot(),
         }
@@ -1582,6 +2146,7 @@ class NinjaWorld:
                 allies=list(item["allies"]),
                 boss=item["boss"],
                 boss_rewards=dict(item["boss_rewards"]),
+                arc_key=item.get("arc_key", "political_war"),
                 tutorial_mechanics=tuple(item.get("tutorial_mechanics", [])),
                 encounter_table=list(item.get("encounter_table", [])),
                 cleared=item.get("cleared", False),
@@ -1688,6 +2253,17 @@ class NinjaWorld:
             )
             for move in world_snapshot.get("ninjutsu_library", [])
         ]
+        arcs = [
+            ArcDefinition(
+                key=item["key"],
+                title=item["title"],
+                tone=item["tone"],
+                stakes=item["stakes"],
+                regions=tuple(item.get("regions", [])),
+                era_band=item.get("era_band", "war_age"),
+            )
+            for item in world_snapshot.get("arcs", [])
+        ]
 
         world = cls(
             regions=regions,
@@ -1699,9 +2275,33 @@ class NinjaWorld:
             villain_behavior_rules=behavior_rules,
             player_backstories=backstories,
             trophy_catalog=trophy_catalog,
+            arcs=arcs,
+            era_timeline=[dict(item) for item in world_snapshot.get("era_timeline", [])],
             ninjutsu_library=ninjutsu_library,
             shop_inventory={key: dict(value) for key, value in world_snapshot.get("shop_inventory", {}).items()},
             vault_historic_ninjas=list(world_snapshot.get("vault_historic_ninjas", [])),
+            vault_meta_tapestry=list(world_snapshot.get("vault_meta_tapestry", [])),
+            active_run_tapestry=list(world_snapshot.get("active_run_tapestry", [])),
+            world_event_history=list(world_snapshot.get("world_event_history", [])),
+            dynamic_region_chain=list(world_snapshot.get("dynamic_region_chain", [])),
+            recent_boss_chains=[list(chain) for chain in world_snapshot.get("recent_boss_chains", [])],
+            region_state={
+                key: dict(value) for key, value in world_snapshot.get("region_state", {}).items()
+            },
+            boss_availability=dict(world_snapshot.get("boss_availability", {})),
+            antagonist_candidates=list(world_snapshot.get("antagonist_candidates", [])),
+            antagonist_scoreboard={
+                key: int(value) for key, value in world_snapshot.get("antagonist_scoreboard", {}).items()
+            },
+            antagonist_signal_log={
+                key: list(value) for key, value in world_snapshot.get("antagonist_signal_log", {}).items()
+            },
+            selected_final_antagonist=world_snapshot.get("selected_final_antagonist"),
+            current_arc_key=world_snapshot.get("current_arc_key", "political_war"),
+            current_age=int(world_snapshot.get("current_age", 16)),
+            current_era_index=int(world_snapshot.get("current_era_index", 0)),
+            world_recovery_score=int(world_snapshot.get("world_recovery_score", 0)),
+            run_counter=int(world_snapshot.get("run_counter", 0)),
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}
@@ -2334,6 +2934,66 @@ def _seed_ninjutsu_library() -> List[Move]:
     return [move for category in ordered_categories for move in pool[category]]
 
 
+def _seed_era_timeline() -> List[Dict[str, Any]]:
+    return [
+        {
+            "key": "war_age",
+            "title": "War Age",
+            "tone": "fractured",
+            "stakes": "survival and territorial pressure",
+        },
+        {
+            "key": "recovery_age",
+            "title": "Recovery Age",
+            "tone": "fragile",
+            "stakes": "rebuild momentum and social trust",
+        },
+        {
+            "key": "hidden_age",
+            "title": "Hidden Age",
+            "tone": "transformative",
+            "stakes": "long-term balance or irreversible decay",
+        },
+    ]
+
+
+def _seed_arcs() -> List[ArcDefinition]:
+    return [
+        ArcDefinition(
+            key="political_war",
+            title="Political Warfront",
+            tone="siege politics",
+            stakes="council leverage and control of supply routes",
+            regions=("Verdant Gate",),
+            era_band="war_age",
+        ),
+        ArcDefinition(
+            key="fracture_front",
+            title="Fracture Front",
+            tone="attrition",
+            stakes="alliances fail or harden under pressure",
+            regions=("Ashen Cradle",),
+            era_band="recovery_age",
+        ),
+        ArcDefinition(
+            key="recovery_mandate",
+            title="Recovery Mandate",
+            tone="reconstruction",
+            stakes="world stabilizes or collapses into splinter rule",
+            regions=("Tideglass Basin",),
+            era_band="hidden_age",
+        ),
+        ArcDefinition(
+            key="rebellion_wave",
+            title="Rebellion Wave",
+            tone="volatile",
+            stakes="minor actors radicalize into existential threats",
+            regions=("Verdant Gate", "Ashen Cradle"),
+            era_band="hidden_age",
+        ),
+    ]
+
+
 def _seed_regions() -> List[Region]:
     return [
         Region(
@@ -2348,6 +3008,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Shadow Mantle",
                 "move": "Razorwind Spiral",
             },
+            arc_key="political_war",
             tutorial_mechanics=("blocking", "substitution"),
         ),
         Region(
@@ -2362,6 +3023,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Molten Gi",
                 "move": "Inferno Vortex",
             },
+            arc_key="fracture_front",
             tutorial_mechanics=("aoe_attacks",),
         ),
         Region(
@@ -2376,6 +3038,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Tidewoven Cloak",
                 "move": "Maelstrom Guard",
             },
+            arc_key="recovery_mandate",
         ),
     ]
 
@@ -3336,6 +3999,8 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
         villain_behavior_rules=_seed_villain_behavior_rules(),
         player_backstories=_seed_player_backstories(),
         trophy_catalog=_seed_trophy_catalog(),
+        arcs=_seed_arcs(),
+        era_timeline=_seed_era_timeline(),
         ninjutsu_library=_seed_ninjutsu_library(),
         shop_inventory=_seed_shop_inventory(),
     )
@@ -3344,4 +4009,15 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
     player.initialize_quest_log([quest.quest_id for quest in world.quests])
     for ally in world.allies:
         player.ally_loyalty[ally] = 0
+    world._refresh_arc_and_era()
+    world._schedule_dynamic_regions(player)
+    world._log_tapestry(
+        event_type="arc_shift",
+        label="Run initialized with opening political arc.",
+        causes=["new_run"],
+        effects={
+            "scheduled_regions": list(world.dynamic_region_chain),
+            "era": world._current_era()["key"],
+        },
+    )
     return world, player

@@ -289,6 +289,52 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(report["vault_overview"]["total_runs"], 1)
         self.assertEqual(len(report["player_archive_history"]), 1)
 
+    def test_world_initializes_arc_era_and_living_tapestry(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("arc_state", summary)
+        self.assertEqual(summary["arc_state"]["era"]["key"], "war_age")
+        self.assertGreaterEqual(len(summary["living_tapestry"]["active_run_entries"]), 1)
+        self.assertEqual(summary["living_tapestry"]["active_run_entries"][0]["event_type"], "arc_shift")
+
+    def test_world_event_updates_state_and_logs_cause_effect(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        event = world.trigger_world_event(player, event_key="tornado", causes=["test_driver"])
+        self.assertEqual(event["event_key"], "tornado")
+        self.assertEqual(event["causes"], ["test_driver"])
+        self.assertTrue(world.world_event_history)
+        tapestry_entry = world.active_run_tapestry[-1]
+        self.assertEqual(tapestry_entry["event_type"], "world_event")
+        self.assertIn("region_pressure", tapestry_entry["effects"])
+        self.assertIn("scheduled_regions", world.generate_playthrough_summary(player)["arc_state"])
+
+    def test_minor_event_escalation_can_radicalize_npc_antagonist(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.trigger_world_event(player, event_key="tornado", causes=["weather"])
+        world.trigger_world_event(player, event_key="rebuild_failure", causes=["hardship"])
+        projection = world.get_final_antagonist_projection()
+        self.assertIn("minor_event_escalation", " ".join(projection["signals"]))
+        self.assertTrue(projection["name"] in world.antagonist_candidates)
+
+    def test_archive_captures_run_signature_and_vault_meta_tapestry(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.apply_player_decision(player, "charm")
+        world.archive_historic_ninja(player)
+        archived = world.vault_historic_ninjas[0]
+        self.assertIn("run_signature", archived)
+        self.assertIn("dominant_arc_path", archived["run_signature"])
+        self.assertIn("living_tapestry", archived)
+        self.assertGreater(len(world.vault_meta_tapestry), 0)
+
+    def test_replay_hub_report_surfaces_tapestry_delta(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.apply_player_decision(player, "stealth")
+        world.archive_historic_ninja(player)
+        world.apply_player_decision(player, "kill")
+        report = world.generate_replay_hub_report(player)
+        self.assertIn("living_tapestry_delta", report)
+        self.assertIn("event_differences", report["living_tapestry_delta"])
+
     def test_player_backstory_updates_tags_and_reputation(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
         backstory = Backstory(

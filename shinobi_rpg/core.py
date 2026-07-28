@@ -1,0 +1,322 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Dict, List, Sequence, Tuple
+
+
+class Affinity(str, Enum):
+    FIRE = "fire"
+    WATER = "water"
+    EARTH = "earth"
+    WIND = "wind"
+
+
+class MoveCategory(str, Enum):
+    ESCAPE = "escape"
+    ATTACK = "attack"
+    DEFENSE = "defense"
+    ULTIMATE = "ultimate"
+
+
+class WeaponType(str, Enum):
+    SWORD = "sword"
+    KUNAI = "kunai"
+    BOW_STAFF = "bow_staff"
+    NINJA_STARS = "ninja_stars"
+
+
+class ReputationTier(str, Enum):
+    HEROIC = "heroic"
+    NEUTRAL = "neutral"
+    ROGUE = "rogue"
+
+
+@dataclass(frozen=True)
+class Move:
+    name: str
+    category: MoveCategory
+    affinities: Tuple[Affinity, ...]
+    power_scale: float = 1.0
+
+    def validate(self) -> None:
+        if self.category != MoveCategory.ULTIMATE and len(self.affinities) != 1:
+            raise ValueError("Non-ultimate moves must have exactly one affinity.")
+        if self.category == MoveCategory.ULTIMATE and not self.affinities:
+            raise ValueError("Ultimate moves must include at least one affinity.")
+
+
+@dataclass(frozen=True)
+class Weapon:
+    name: str
+    weapon_type: WeaponType
+    play_style: str
+    base_power: int
+
+
+@dataclass(frozen=True)
+class Skin:
+    name: str
+    stat_boosts: Dict[str, int]
+
+
+@dataclass
+class Quest:
+    quest_id: str
+    title: str
+    objective: str
+    stealth_required: bool
+    reward_xp: int
+
+
+@dataclass
+class Region:
+    name: str
+    village_hub: str
+    enemies: List[str]
+    allies: List[str]
+    boss: str
+    boss_rewards: Dict[str, str]
+    cleared: bool = False
+
+
+@dataclass
+class PlayerStats:
+    level: int = 1
+    xp: int = 0
+    power: int = 10
+    defense: int = 10
+    agility: int = 10
+    focus: int = 10
+
+    def gain_xp(self, amount: int) -> int:
+        self.xp += amount
+        levels_gained = 0
+        while self.xp >= self.level * 100:
+            self.xp -= self.level * 100
+            self.level += 1
+            self.power += 2
+            self.defense += 2
+            self.agility += 2
+            self.focus += 2
+            levels_gained += 1
+        return levels_gained
+
+
+@dataclass
+class PlayerProfile:
+    name: str
+    affinity: Affinity
+    stats: PlayerStats = field(default_factory=PlayerStats)
+    reputation: int = 0
+    unlocked_zones: List[str] = field(default_factory=lambda: ["village_hub"])
+    unlocked_fast_travel_nodes: List[str] = field(default_factory=lambda: ["village_hub"])
+    unlocked_skins: List[Skin] = field(default_factory=list)
+    weapons: List[Weapon] = field(default_factory=list)
+    moves_by_set: Dict[MoveCategory, List[Move]] = field(
+        default_factory=lambda: {
+            MoveCategory.ESCAPE: [],
+            MoveCategory.ATTACK: [],
+            MoveCategory.DEFENSE: [],
+            MoveCategory.ULTIMATE: [],
+        }
+    )
+
+    def add_move(self, move: Move) -> None:
+        move.validate()
+        if move.category != MoveCategory.ULTIMATE and move.affinities[0] != self.affinity:
+            raise ValueError("Non-ultimate moves must match player affinity.")
+        self.moves_by_set[move.category].append(move)
+
+    def update_reputation(self, delta: int) -> ReputationTier:
+        self.reputation += delta
+        if self.reputation <= -50:
+            if "black_market" not in self.unlocked_zones:
+                self.unlocked_zones.append("black_market")
+            return ReputationTier.ROGUE
+        if self.reputation >= 50:
+            return ReputationTier.HEROIC
+        return ReputationTier.NEUTRAL
+
+    def unlock_fast_travel(self, node_name: str) -> None:
+        if node_name not in self.unlocked_fast_travel_nodes:
+            self.unlocked_fast_travel_nodes.append(node_name)
+
+
+@dataclass
+class NinjaWorld:
+    regions: List[Region]
+    quests: List[Quest]
+    allies: List[str]
+    weapons: List[Weapon]
+    skins: List[Skin]
+    vault_historic_ninjas: List[dict] = field(default_factory=list)
+
+    def clear_region(
+        self,
+        player: PlayerProfile,
+        region_name: str,
+        reward_choice: str,
+    ) -> str:
+        region = next((r for r in self.regions if r.name == region_name), None)
+        if not region:
+            raise ValueError("Region not found.")
+        if reward_choice not in region.boss_rewards:
+            raise ValueError("Reward choice must be weapon, clothing, or move.")
+
+        region.cleared = True
+        player.unlock_fast_travel(region.name)
+        return region.boss_rewards[reward_choice]
+
+    def archive_historic_ninja(self, player: PlayerProfile) -> None:
+        self.vault_historic_ninjas.append(
+            {
+                "name": player.name,
+                "affinity": player.affinity.value,
+                "level": player.stats.level,
+                "reputation": player.reputation,
+            }
+        )
+
+
+def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
+    scores = {
+        Affinity.FIRE: 0,
+        Affinity.WATER: 0,
+        Affinity.EARTH: 0,
+        Affinity.WIND: 0,
+    }
+    order = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
+    for idx, value in enumerate(decisions):
+        scores[order[idx % len(order)]] += value
+    return max(scores, key=scores.get)
+
+
+def _seed_weapons() -> List[Weapon]:
+    return [
+        Weapon("Dawn Cutter", WeaponType.SWORD, "balanced duelist", 18),
+        Weapon("Silent Fang", WeaponType.KUNAI, "high-mobility burst", 14),
+        Weapon("Temple Branch", WeaponType.BOW_STAFF, "control and spacing", 16),
+        Weapon("Storm Scatter", WeaponType.NINJA_STARS, "ranged precision", 15),
+    ]
+
+
+def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
+    return {
+        MoveCategory.ESCAPE: [
+            Move("Smoke Step", MoveCategory.ESCAPE, (player_affinity,), power_scale=0.6)
+        ],
+        MoveCategory.ATTACK: [
+            Move("Edge Current", MoveCategory.ATTACK, (player_affinity,), power_scale=1.0)
+        ],
+        MoveCategory.DEFENSE: [
+            Move("Guarding Veil", MoveCategory.DEFENSE, (player_affinity,), power_scale=0.8)
+        ],
+        MoveCategory.ULTIMATE: [
+            Move(
+                "Twin Dragon Convergence",
+                MoveCategory.ULTIMATE,
+                (player_affinity, Affinity.WIND if player_affinity != Affinity.WIND else Affinity.FIRE),
+                power_scale=2.5,
+            )
+        ],
+    }
+
+
+def _seed_regions() -> List[Region]:
+    return [
+        Region(
+            name="Verdant Gate",
+            village_hub="Leafrise Village",
+            enemies=["Bandit Scouts", "Mist Ronin", "Root Stalkers"],
+            allies=["Dan"],
+            boss="Kage Renda",
+            boss_rewards={
+                "weapon": "Renda Fang Blade",
+                "clothing": "Shadow Mantle",
+                "move": "Rending Spiral",
+            },
+        ),
+        Region(
+            name="Ashen Cradle",
+            village_hub="Cinder Port",
+            enemies=["Ash Mercenaries", "Lava Hounds"],
+            allies=["Moon", "Sleep"],
+            boss="General Voln",
+            boss_rewards={
+                "weapon": "Cradle Cleaver",
+                "clothing": "Molten Gi",
+                "move": "Ember Cyclone",
+            },
+        ),
+        Region(
+            name="Tideglass Basin",
+            village_hub="Azure Rest",
+            enemies=["Tide Hunters", "Reef Assassins"],
+            allies=["Dot", "Porter"],
+            boss="Admiral Neris",
+            boss_rewards={
+                "weapon": "Basin Pike",
+                "clothing": "Tidewoven Cloak",
+                "move": "Abyss Arc",
+            },
+        ),
+    ]
+
+
+def _seed_quests() -> List[Quest]:
+    return [
+        Quest(
+            quest_id="Q1",
+            title="Trial of Quiet Steps",
+            objective="Infiltrate the watchpost unseen and recover clan records.",
+            stealth_required=True,
+            reward_xp=120,
+        ),
+        Quest(
+            quest_id="Q2",
+            title="Allies in the Dark",
+            objective="Escort Dan through the forest and repel ambushes.",
+            stealth_required=False,
+            reward_xp=140,
+        ),
+        Quest(
+            quest_id="Q3",
+            title="Break the Gate",
+            objective="Defeat Kage Renda and secure Verdant Gate.",
+            stealth_required=False,
+            reward_xp=220,
+        ),
+    ]
+
+
+def _seed_allies(min_count: int = 10) -> List[str]:
+    allies = ["Dan", "Moon", "Sleep", "Dot", "Porter"]
+    index = 1
+    while len(allies) < min_count:
+        allies.append(f"AutoNinja-{index}")
+        index += 1
+    return allies
+
+
+def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> tuple[NinjaWorld, PlayerProfile]:
+    affinity = resolve_affinity_minigame(affinity_decisions)
+    player = PlayerProfile(name=player_name, affinity=affinity)
+
+    for move_set, moves in _seed_moves(affinity).items():
+        for move in moves:
+            player.moves_by_set[move_set].append(move)
+
+    world = NinjaWorld(
+        regions=_seed_regions(),
+        quests=_seed_quests(),
+        allies=_seed_allies(),
+        weapons=_seed_weapons(),
+        skins=[
+            Skin("Founder's Garb", {"power": 2, "focus": 1}),
+            Skin("Rogue Nightwear", {"agility": 3}),
+        ],
+    )
+    player.weapons.extend(world.weapons)
+    player.unlocked_skins.append(world.skins[0])
+    return world, player

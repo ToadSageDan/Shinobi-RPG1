@@ -10,6 +10,7 @@ from shinobi_rpg.core import (
     PlayerProfile,
     QuestStatus,
     ReputationTier,
+    StatusEffectType,
     TrophyCategory,
     VillainStance,
     assign_affinity_from_choices,
@@ -385,6 +386,43 @@ class CoreSystemTests(unittest.TestCase):
         summon_catalog = world.get_ninjutsu_catalog(jutsu_type=JutsuType.SUMMONING)
         self.assertTrue(summon_catalog)
         self.assertTrue(any(item["category"] == MoveCategory.SUMMON.value for item in summon_catalog))
+
+    def test_shared_move_pool_is_evenly_represented(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        counts = {category: 0 for category in MoveCategory}
+        for move in world.ninjutsu_library:
+            counts[move.category] += 1
+        self.assertTrue(all(count == 12 for count in counts.values()))
+
+    def test_execute_move_applies_status_effects(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.execute_move("Cinder Lance")
+        self.assertIn(StatusEffectType.BURN.value, result["applied_statuses"])
+        self.assertIn(StatusEffectType.BURN.value, player.active_status_effects)
+        self.assertEqual(player.active_status_effects[StatusEffectType.BURN.value]["duration"], 2)
+        self.assertEqual(player.active_status_effects[StatusEffectType.BURN.value]["stacks"], 1)
+
+    def test_combo_resolution_applies_status_synergy_bonus(self):
+        world, player = build_mvp_world("TestPlayer", [1, 5, 1, 1])
+        skyline = next(move for move in world.ninjutsu_library if move.name == "Skyline Covenant")
+        player.add_move(skyline, allow_cross_affinity=True)
+        combo = player.resolve_combo("Undertow Slice", "Tidal Blink", "Skyline Covenant")
+        self.assertEqual(combo["combo_bonus"], "storm_burst")
+        self.assertGreater(combo["total_damage"], combo["base_damage"])
+
+    def test_animation_preview_and_villain_kits_exposed_in_summary(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        preview = world.get_move_animation_preview("Edge Current")
+        self.assertIn("startup", preview["animation_profile"])
+        combo_preview = world.preview_affinity_combo_animation(
+            "Undertow Slice",
+            "Crosswind Fade",
+            "Skyline Covenant",
+        )
+        self.assertEqual(len(combo_preview["combo_path"]), 3)
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("villain_kits", summary)
+        self.assertGreaterEqual(len(summary["villain_kits"]), 15)
 
 
 if __name__ == "__main__":

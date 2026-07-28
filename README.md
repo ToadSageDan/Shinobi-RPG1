@@ -25,6 +25,11 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Villain-specific decision memory in behavior and summary reporting
 - Backstory-driven quest branch outcomes
 - Region/boss-specific villain behavior rules by stance
+- Expanded balanced shared move pool (12 per category) for reusable combat design
+- Villain kit design with one signature move plus skinned shared move loadouts
+- Status effects on weapons/jutsu/summons with capped duration and stack bands
+- Combo resolution helper with status-affinity synergy bonuses
+- Affinity animation preview metadata for move startup/travel/hit/recovery beats
 - Nonlethal progression tracking via charm, stealth, and evasion outcomes
 - Reputation-aware shop inventory and Black Market purchasing
 - Expanded trophy catalog with category-based unlock conditions

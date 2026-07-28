@@ -42,6 +42,19 @@ class WeaponType(str, Enum):
     NINJA_STARS = "ninja_stars"
 
 
+class StatusEffectType(str, Enum):
+    BURN = "burn"
+    BLEED = "bleed"
+    CHILL = "chill"
+    DRENCH = "drench"
+    CRACK_ARMOR = "crack_armor"
+    STAGGER = "stagger"
+    BLIND = "blind"
+    SILENCE = "silence"
+    ROOT = "root"
+    FEAR = "fear"
+
+
 class VillainStance(str, Enum):
     AGGRESSIVE = "aggressive"
     BALANCED = "balanced"
@@ -103,6 +116,24 @@ AFFINITY_MINIGAME_CHOICES = {
     "earth": Affinity.EARTH,
     "wind": Affinity.WIND,
 }
+STATUS_EFFECT_BANDS: Dict[StatusEffectType, Dict[str, int]] = {
+    StatusEffectType.BURN: {"duration_min": 2, "duration_max": 4, "max_stacks": 3},
+    StatusEffectType.BLEED: {"duration_min": 2, "duration_max": 4, "max_stacks": 3},
+    StatusEffectType.CHILL: {"duration_min": 1, "duration_max": 3, "max_stacks": 2},
+    StatusEffectType.DRENCH: {"duration_min": 1, "duration_max": 3, "max_stacks": 2},
+    StatusEffectType.CRACK_ARMOR: {"duration_min": 1, "duration_max": 3, "max_stacks": 2},
+    StatusEffectType.STAGGER: {"duration_min": 1, "duration_max": 2, "max_stacks": 1},
+    StatusEffectType.BLIND: {"duration_min": 1, "duration_max": 2, "max_stacks": 1},
+    StatusEffectType.SILENCE: {"duration_min": 1, "duration_max": 2, "max_stacks": 1},
+    StatusEffectType.ROOT: {"duration_min": 1, "duration_max": 2, "max_stacks": 1},
+    StatusEffectType.FEAR: {"duration_min": 1, "duration_max": 2, "max_stacks": 1},
+}
+COMBO_BONUSES: Dict[Tuple[StatusEffectType, Affinity], Dict[str, Any]] = {
+    (StatusEffectType.DRENCH, Affinity.WIND): {"damage_bonus": 0.2, "label": "storm_burst"},
+    (StatusEffectType.CHILL, Affinity.EARTH): {"damage_bonus": 0.15, "label": "shatter_window"},
+    (StatusEffectType.CRACK_ARMOR, Affinity.FIRE): {"damage_bonus": 0.25, "label": "armor_melt"},
+    (StatusEffectType.BLIND, Affinity.WIND): {"damage_bonus": 0.1, "label": "ambush_followup"},
+}
 
 
 def _empty_affinity_scores() -> Dict[Affinity, int]:
@@ -124,6 +155,8 @@ class Move:
     affinities: Tuple[Affinity, ...]
     power_scale: float = 1.0
     jutsu_type: JutsuType = JutsuType.ELEMENTAL
+    status_effects: Tuple[StatusEffectType, ...] = ()
+    animation_profile: Dict[str, str] = field(default_factory=dict)
 
     def validate(self) -> None:
         if self.category != MoveCategory.ULTIMATE and len(self.affinities) != 1:
@@ -138,6 +171,16 @@ class Weapon:
     weapon_type: WeaponType
     play_style: str
     base_power: int
+    status_effects: Tuple[StatusEffectType, ...] = ()
+
+
+@dataclass(frozen=True)
+class MoveSkin:
+    skin_name: str
+    base_move_name: str
+    affinity: Affinity
+    visual_theme: str
+    animation_profile: Dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -159,6 +202,10 @@ class VillainProfile:
     name: str
     backstory: str
     signature_power: Move
+    primary_affinity: Affinity = Affinity.FIRE
+    role: str = "duelist"
+    skinned_move_names: Dict[str, str] = field(default_factory=dict)
+    ultimate_skin_name: str = ""
     aggression_score: int = 0
     stance: VillainStance = VillainStance.BALANCED
     decision_memory: Dict[str, int] = field(default_factory=dict)
@@ -262,6 +309,7 @@ class PlayerProfile:
             MoveCategory.ULTIMATE: [],
         }
     )
+    unlocked_move_names: Set[str] = field(default_factory=set)
     selected_backstory: Backstory | None = None
     narrative_tags: Set[str] = field(default_factory=set)
     encounter_outcomes: Dict[str, int] = field(
@@ -272,6 +320,7 @@ class PlayerProfile:
     ally_loyalty: Dict[str, int] = field(default_factory=dict)
     encounter_history: Dict[str, int] = field(default_factory=dict)
     credits: int = 100
+    active_status_effects: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -304,13 +353,62 @@ class PlayerProfile:
         ):
             raise ValueError("Non-ultimate moves must match player affinity.")
         self.moves_by_set[move.category].append(move)
+        self.unlocked_move_names.add(move.name)
 
     def get_move(self, move_name: str) -> Move:
+        if move_name not in self.unlocked_move_names:
+            raise ValueError(f'Move "{move_name}" is not unlocked for this player.')
         for move_set in self.moves_by_set.values():
             for move in move_set:
                 if move.name == move_name:
                     return move
         raise ValueError(f'Move "{move_name}" is not unlocked for this player.')
+
+    def _clamp_status_effect(
+        self, effect: StatusEffectType, *, duration: int, stacks: int
+    ) -> Dict[str, int]:
+        band = STATUS_EFFECT_BANDS[effect]
+        return {
+            "duration": max(band["duration_min"], min(duration, band["duration_max"])),
+            "stacks": max(1, min(stacks, band["max_stacks"])),
+        }
+
+    def apply_status_effects(
+        self, effects: Sequence[StatusEffectType], *, duration: int = 2, stacks: int = 1
+    ) -> Dict[str, Dict[str, int]]:
+        for effect in effects:
+            clamped = self._clamp_status_effect(effect, duration=duration, stacks=stacks)
+            self.active_status_effects[effect.value] = clamped
+        return dict(self.active_status_effects)
+
+    def resolve_combo(
+        self, starter_move: str, link_move: str, finisher_move: str
+    ) -> Dict[str, Any]:
+        starter = self.get_move(starter_move)
+        link = self.get_move(link_move)
+        finisher = self.get_move(finisher_move)
+        if starter.category == MoveCategory.ULTIMATE:
+            raise ValueError("Starter move cannot be an ultimate.")
+        if finisher.category != MoveCategory.ULTIMATE:
+            raise ValueError("Finisher move must be an ultimate.")
+        base_damage = int((self.stats.power + self.stats.focus) * finisher.power_scale)
+        applied_bonus = {"label": "none", "damage_bonus": 0.0}
+        for active_effect in starter.status_effects + link.status_effects:
+            for finisher_affinity in finisher.affinities:
+                bonus = COMBO_BONUSES.get((active_effect, finisher_affinity))
+                if bonus and bonus["damage_bonus"] > applied_bonus["damage_bonus"]:
+                    applied_bonus = bonus
+        bonus_damage = int(base_damage * applied_bonus["damage_bonus"])
+        total_damage = base_damage + bonus_damage
+        return {
+            "starter": starter.name,
+            "link": link.name,
+            "finisher": finisher.name,
+            "base_damage": base_damage,
+            "bonus_damage": bonus_damage,
+            "total_damage": total_damage,
+            "combo_bonus": applied_bonus["label"],
+        }
 
     def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, Any]:
         """Execute an unlocked move and return deterministic MVP combat output.
@@ -319,12 +417,24 @@ class PlayerProfile:
         Attack, Defense, and Ultimate categories.
         """
         move = self.get_move(move_name)
+        if move.status_effects:
+            self.apply_status_effects(move.status_effects)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
-            return {"move": move.name, "category": move.category.value, "damage": damage}
+            return {
+                "move": move.name,
+                "category": move.category.value,
+                "damage": damage,
+                "applied_statuses": [effect.value for effect in move.status_effects],
+            }
         if move.category == MoveCategory.DEFENSE:
             guard = int(self.stats.defense * move.power_scale)
-            return {"move": move.name, "category": move.category.value, "guard": guard}
+            return {
+                "move": move.name,
+                "category": move.category.value,
+                "guard": guard,
+                "applied_statuses": [effect.value for effect in move.status_effects],
+            }
         if move.category == MoveCategory.ESCAPE:
             escape_score = int(self.stats.agility * move.power_scale)
             escaped = escape_score >= escape_difficulty
@@ -333,10 +443,16 @@ class PlayerProfile:
                 "category": move.category.value,
                 "escape_score": escape_score,
                 "escaped": escaped,
+                "applied_statuses": [effect.value for effect in move.status_effects],
             }
         if move.category == MoveCategory.ULTIMATE:
             damage = int((self.stats.power + self.stats.focus) * move.power_scale)
-            return {"move": move.name, "category": move.category.value, "damage": damage}
+            return {
+                "move": move.name,
+                "category": move.category.value,
+                "damage": damage,
+                "applied_statuses": [effect.value for effect in move.status_effects],
+            }
         if move.category == MoveCategory.SUMMON:
             summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
             return {
@@ -344,6 +460,7 @@ class PlayerProfile:
                 "category": move.category.value,
                 "summon_power": summon_power,
                 "summon_type": move.jutsu_type.value,
+                "applied_statuses": [effect.value for effect in move.status_effects],
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 
@@ -458,7 +575,7 @@ class PlayerProfile:
         if villain_name in self.red_bar_power_claims:
             return
         self.red_bar_power_claims[villain_name] = move.name
-        if not any(unlocked.name == move.name for move_set in self.moves_by_set.values() for unlocked in move_set):
+        if move.name not in self.unlocked_move_names:
             self.add_move(move, allow_cross_affinity=True)
 
     def to_snapshot(self) -> Dict[str, Any]:
@@ -488,11 +605,14 @@ class PlayerProfile:
                         "affinities": [affinity.value for affinity in move.affinities],
                         "power_scale": move.power_scale,
                         "jutsu_type": move.jutsu_type.value,
+                        "status_effects": [effect.value for effect in move.status_effects],
+                        "animation_profile": dict(move.animation_profile),
                     }
                     for move in moves
                 ]
                 for category, moves in self.moves_by_set.items()
             },
+            "unlocked_move_names": sorted(self.unlocked_move_names),
             "selected_backstory": self.selected_backstory.key if self.selected_backstory else None,
             "narrative_tags": sorted(self.narrative_tags),
             "encounter_outcomes": dict(self.encounter_outcomes),
@@ -501,6 +621,13 @@ class PlayerProfile:
             "ally_loyalty": dict(self.ally_loyalty),
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
+            "active_status_effects": {
+                effect_name: {
+                    "duration": int(payload.get("duration", 0)),
+                    "stacks": int(payload.get("stacks", 0)),
+                }
+                for effect_name, payload in self.active_status_effects.items()
+            },
         }
 
 
@@ -606,9 +733,43 @@ class NinjaWorld:
                 "category": move.category.value,
                 "affinities": [affinity.value for affinity in move.affinities],
                 "jutsu_type": move.jutsu_type.value,
+                "status_effects": [effect.value for effect in move.status_effects],
+                "animation_profile": dict(move.animation_profile),
             }
             for move in moves
         ]
+
+    def get_move_animation_preview(self, move_name: str) -> Dict[str, Any]:
+        move = next((item for item in self.ninjutsu_library if item.name == move_name), None)
+        if not move:
+            raise ValueError(f'Move "{move_name}" not found in ninjutsu catalog.')
+        return {
+            "move": move.name,
+            "affinities": [affinity.value for affinity in move.affinities],
+            "animation_profile": dict(move.animation_profile),
+        }
+
+    def preview_affinity_combo_animation(
+        self, starter_move: str, link_move: str, finisher_move: str
+    ) -> Dict[str, Any]:
+        staged = []
+        for beat, move_name in enumerate((starter_move, link_move, finisher_move), start=1):
+            move = next((item for item in self.ninjutsu_library if item.name == move_name), None)
+            if not move:
+                raise ValueError(f'Move "{move_name}" not found in ninjutsu catalog.')
+            staged.append(
+                {
+                    "beat": beat,
+                    "move": move.name,
+                    "category": move.category.value,
+                    "affinities": [affinity.value for affinity in move.affinities],
+                    "startup": move.animation_profile.get("startup", ""),
+                    "travel": move.animation_profile.get("travel", ""),
+                    "hit": move.animation_profile.get("hit", ""),
+                    "recovery": move.animation_profile.get("recovery", ""),
+                }
+            )
+        return {"combo_path": staged}
 
     def defeat_red_bar_ninja(self, player: PlayerProfile, villain_name: str) -> Dict[str, Any]:
         villain = self._find_villain(villain_name)
@@ -869,6 +1030,17 @@ class NinjaWorld:
             "cleared_regions": [region.name for region in self.regions if region.cleared],
             "villain_stances": villain_states,
             "villain_decision_memory": villain_memories,
+            "villain_kits": [
+                {
+                    "name": villain.name,
+                    "role": villain.role,
+                    "primary_affinity": villain.primary_affinity.value,
+                    "signature": villain.signature_power.name,
+                    "skinned_moves": dict(villain.skinned_move_names),
+                    "ultimate_skin": villain.ultimate_skin_name,
+                }
+                for villain in self.villains
+            ],
             "red_bar_power_claims": dict(player.red_bar_power_claims),
             "red_bar_progress": red_bar_progress,
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
@@ -956,6 +1128,7 @@ class NinjaWorld:
                         "weapon_type": weapon.weapon_type.value,
                         "play_style": weapon.play_style,
                         "base_power": weapon.base_power,
+                        "status_effects": [effect.value for effect in weapon.status_effects],
                     }
                     for weapon in self.weapons
                 ],
@@ -972,7 +1145,13 @@ class NinjaWorld:
                             "affinities": [affinity.value for affinity in villain.signature_power.affinities],
                             "power_scale": villain.signature_power.power_scale,
                             "jutsu_type": villain.signature_power.jutsu_type.value,
+                            "status_effects": [effect.value for effect in villain.signature_power.status_effects],
+                            "animation_profile": dict(villain.signature_power.animation_profile),
                         },
+                        "primary_affinity": villain.primary_affinity.value,
+                        "role": villain.role,
+                        "skinned_move_names": dict(villain.skinned_move_names),
+                        "ultimate_skin_name": villain.ultimate_skin_name,
                         "aggression_score": villain.aggression_score,
                         "stance": villain.stance.value,
                         "decision_memory": dict(villain.decision_memory),
@@ -1010,6 +1189,8 @@ class NinjaWorld:
                         "affinities": [affinity.value for affinity in move.affinities],
                         "power_scale": move.power_scale,
                         "jutsu_type": move.jutsu_type.value,
+                        "status_effects": [effect.value for effect in move.status_effects],
+                        "animation_profile": dict(move.animation_profile),
                     }
                     for move in self.ninjutsu_library
                 ],
@@ -1055,6 +1236,9 @@ class NinjaWorld:
                 weapon_type=WeaponType(item["weapon_type"]),
                 play_style=item["play_style"],
                 base_power=item["base_power"],
+                status_effects=tuple(
+                    StatusEffectType(effect) for effect in item.get("status_effects", [])
+                ),
             )
             for item in world_snapshot["weapons"]
         ]
@@ -1076,7 +1260,18 @@ class NinjaWorld:
                     jutsu_type=JutsuType(
                         item.get("signature_power", {}).get("jutsu_type", JutsuType.ELEMENTAL.value)
                     ),
+                    status_effects=tuple(
+                        StatusEffectType(effect)
+                        for effect in item.get("signature_power", {}).get("status_effects", [])
+                    ),
+                    animation_profile=dict(
+                        item.get("signature_power", {}).get("animation_profile", {})
+                    ),
                 ),
+                primary_affinity=Affinity(item.get("primary_affinity", Affinity.FIRE.value)),
+                role=item.get("role", "duelist"),
+                skinned_move_names=dict(item.get("skinned_move_names", {})),
+                ultimate_skin_name=item.get("ultimate_skin_name", ""),
                 aggression_score=item.get("aggression_score", 0),
                 stance=VillainStance(item.get("stance", VillainStance.BALANCED.value)),
                 decision_memory=dict(item.get("decision_memory", {})),
@@ -1116,6 +1311,10 @@ class NinjaWorld:
                 affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
                 power_scale=move.get("power_scale", 1.0),
                 jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
+                status_effects=tuple(
+                    StatusEffectType(effect) for effect in move.get("status_effects", [])
+                ),
+                animation_profile=dict(move.get("animation_profile", {})),
             )
             for move in world_snapshot.get("ninjutsu_library", [])
         ]
@@ -1189,6 +1388,14 @@ class NinjaWorld:
                 for region_name, value in player_snapshot.get("encounter_history", {}).items()
             },
             credits=int(player_snapshot.get("credits", 100)),
+            unlocked_move_names=set(player_snapshot.get("unlocked_move_names", [])),
+            active_status_effects={
+                effect_name: {
+                    "duration": int(payload.get("duration", 0)),
+                    "stacks": int(payload.get("stacks", 0)),
+                }
+                for effect_name, payload in player_snapshot.get("active_status_effects", {}).items()
+            },
         )
         for category_name, moves in player_snapshot.get("moves_by_set", {}).items():
             category = MoveCategory(category_name)
@@ -1199,9 +1406,17 @@ class NinjaWorld:
                     affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
                     power_scale=move.get("power_scale", 1.0),
                     jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
+                    status_effects=tuple(
+                        StatusEffectType(effect) for effect in move.get("status_effects", [])
+                    ),
+                    animation_profile=dict(move.get("animation_profile", {})),
                 )
                 for move in moves
             ]
+        if not player.unlocked_move_names:
+            player.unlocked_move_names = {
+                move.name for move_set in player.moves_by_set.values() for move in move_set
+            }
 
         if not player.quest_log:
             player.initialize_quest_log([quest.quest_id for quest in world.quests])
@@ -1289,164 +1504,464 @@ def _summon_names_for_affinity(primary: Affinity) -> Tuple[str, str]:
 
 def _seed_weapons() -> List[Weapon]:
     return [
-        Weapon("Dawn Cutter", WeaponType.SWORD, "balanced duelist", 18),
-        Weapon("Silent Fang", WeaponType.KUNAI, "high-mobility burst", 14),
-        Weapon("Temple Branch", WeaponType.BOW_STAFF, "control and spacing", 16),
-        Weapon("Storm Scatter", WeaponType.NINJA_STARS, "ranged precision", 15),
+        Weapon(
+            "Dawn Cutter",
+            WeaponType.SWORD,
+            "balanced duelist",
+            18,
+            status_effects=(StatusEffectType.BLEED,),
+        ),
+        Weapon(
+            "Silent Fang",
+            WeaponType.KUNAI,
+            "high-mobility burst",
+            14,
+            status_effects=(StatusEffectType.BLIND,),
+        ),
+        Weapon(
+            "Temple Branch",
+            WeaponType.BOW_STAFF,
+            "control and spacing",
+            16,
+            status_effects=(StatusEffectType.STAGGER,),
+        ),
+        Weapon(
+            "Storm Scatter",
+            WeaponType.NINJA_STARS,
+            "ranged precision",
+            15,
+            status_effects=(StatusEffectType.CRACK_ARMOR,),
+        ),
     ]
 
 
-def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
-    summon_one, summon_two = _summon_names_for_affinity(player_affinity)
+def _affinity_animation_profile(affinity: Affinity, category: MoveCategory) -> Dict[str, str]:
+    style = {
+        Affinity.FIRE: {
+            "startup": "embers flare at shoulders",
+            "travel": "corkscrew flame lane",
+            "hit": "expanding orange-red shock ring",
+            "recovery": "ash drift and heat shimmer",
+        },
+        Affinity.WATER: {
+            "startup": "water ribbon spiral at feet",
+            "travel": "mist-lined current slash",
+            "hit": "splash arc with ripple pulse",
+            "recovery": "droplets fall into still wake",
+        },
+        Affinity.EARTH: {
+            "startup": "seal stamp with rising rock plates",
+            "travel": "debris-skid pressure lane",
+            "hit": "fissure burst and heavy camera thud",
+            "recovery": "stone fragments settle",
+        },
+        Affinity.WIND: {
+            "startup": "compressed air ring gathers",
+            "travel": "slicing crescent streaks",
+            "hit": "pressure ripple cross-cut",
+            "recovery": "feather-light afterimage fade",
+        },
+    }[affinity]
+    return {
+        "startup": style["startup"],
+        "travel": style["travel"],
+        "hit": f'{style["hit"]} ({category.value})',
+        "recovery": style["recovery"],
+    }
+
+
+def _make_move(
+    name: str,
+    category: MoveCategory,
+    affinities: Tuple[Affinity, ...],
+    power_scale: float,
+    jutsu_type: JutsuType,
+    status_effects: Tuple[StatusEffectType, ...] = (),
+) -> Move:
+    primary = affinities[0]
+    return Move(
+        name=name,
+        category=category,
+        affinities=affinities,
+        power_scale=power_scale,
+        jutsu_type=jutsu_type,
+        status_effects=status_effects,
+        animation_profile=_affinity_animation_profile(primary, category),
+    )
+
+
+def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
     return {
         MoveCategory.ESCAPE: [
-            Move(
-                "Smoke Step",
+            _make_move("Smoke Step", MoveCategory.ESCAPE, (Affinity.FIRE,), 0.6, JutsuType.MOBILITY),
+            _make_move("Afterimage Drift", MoveCategory.ESCAPE, (Affinity.WATER,), 0.7, JutsuType.CLONE),
+            _make_move("Silent Reed Slip", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.75, JutsuType.SENSORY),
+            _make_move("Mistfold Break", MoveCategory.ESCAPE, (Affinity.WATER,), 0.72, JutsuType.ILLUSION),
+            _make_move("Stone Skip Dash", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.68, JutsuType.MOBILITY),
+            _make_move("Crosswind Fade", MoveCategory.ESCAPE, (Affinity.WIND,), 0.74, JutsuType.CLONE),
+            _make_move(
+                "Ember Veil Vault",
                 MoveCategory.ESCAPE,
-                (player_affinity,),
-                power_scale=0.6,
-                jutsu_type=JutsuType.MOBILITY,
+                (Affinity.FIRE,),
+                0.71,
+                JutsuType.MOBILITY,
+                (StatusEffectType.BURN,),
             ),
-            Move(
-                "Afterimage Drift",
+            _make_move(
+                "Tidal Blink",
                 MoveCategory.ESCAPE,
-                (player_affinity,),
-                power_scale=0.7,
-                jutsu_type=JutsuType.CLONE,
+                (Affinity.WATER,),
+                0.73,
+                JutsuType.SUPPORT,
+                (StatusEffectType.DRENCH,),
             ),
-            Move(
-                "Silent Reed Slip",
+            _make_move("Burrow Snap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.69, JutsuType.MOBILITY),
+            _make_move("Gale Feather Shift", MoveCategory.ESCAPE, (Affinity.WIND,), 0.76, JutsuType.SENSORY),
+            _make_move(
+                "Phantom Lantern Exit",
                 MoveCategory.ESCAPE,
-                (player_affinity,),
-                power_scale=0.75,
-                jutsu_type=JutsuType.SENSORY,
+                (Affinity.WIND,),
+                0.75,
+                JutsuType.ILLUSION,
+                (StatusEffectType.BLIND,),
             ),
+            _make_move("Iron Cicada Swap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.7, JutsuType.CLONE),
         ],
         MoveCategory.ATTACK: [
-            Move(
-                "Edge Current",
-                MoveCategory.ATTACK,
-                (player_affinity,),
-                power_scale=1.0,
-                jutsu_type=JutsuType.ELEMENTAL,
-            ),
-            Move(
+            _make_move("Edge Current", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, JutsuType.ELEMENTAL),
+            _make_move(
                 "Threadline Volley",
                 MoveCategory.ATTACK,
-                (player_affinity,),
-                power_scale=1.05,
-                jutsu_type=JutsuType.WEAPON_STYLE,
+                (Affinity.WATER,),
+                1.05,
+                JutsuType.WEAPON_STYLE,
             ),
-            Move(
+            _make_move(
                 "Pressure Knot Strike",
                 MoveCategory.ATTACK,
-                (player_affinity,),
-                power_scale=1.1,
-                jutsu_type=JutsuType.SUPPORT,
+                (Affinity.EARTH,),
+                1.1,
+                JutsuType.SUPPORT,
+            ),
+            _make_move(
+                "Cinder Lance",
+                MoveCategory.ATTACK,
+                (Affinity.FIRE,),
+                1.02,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN,),
+            ),
+            _make_move(
+                "Undertow Slice",
+                MoveCategory.ATTACK,
+                (Affinity.WATER,),
+                1.03,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.DRENCH,),
+            ),
+            _make_move(
+                "Faultline Jab",
+                MoveCategory.ATTACK,
+                (Affinity.EARTH,),
+                1.04,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.CRACK_ARMOR,),
+            ),
+            _make_move("Razor Gale Arc", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, JutsuType.ELEMENTAL),
+            _make_move(
+                "Ash Fang Drive",
+                MoveCategory.ATTACK,
+                (Affinity.FIRE,),
+                1.08,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.BLEED,),
+            ),
+            _make_move(
+                "Torrent Breaker",
+                MoveCategory.ATTACK,
+                (Affinity.WATER,),
+                1.06,
+                JutsuType.SUPPORT,
+                (StatusEffectType.CHILL,),
+            ),
+            _make_move("Granite Spearline", MoveCategory.ATTACK, (Affinity.EARTH,), 1.07, JutsuType.ELEMENTAL),
+            _make_move(
+                "Tempest Hook",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                1.05,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.STAGGER,),
+            ),
+            _make_move(
+                "Shadow Nail Burst",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                1.09,
+                JutsuType.ILLUSION,
+                (StatusEffectType.FEAR,),
             ),
         ],
         MoveCategory.DEFENSE: [
-            Move(
-                "Guarding Veil",
+            _make_move("Guarding Veil", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.8, JutsuType.BARRIER),
+            _make_move("Lattice Ward", MoveCategory.DEFENSE, (Affinity.WATER,), 0.78, JutsuType.SEALING),
+            _make_move("Flowback Mantle", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.75, JutsuType.SUPPORT),
+            _make_move("Current Shell", MoveCategory.DEFENSE, (Affinity.WATER,), 0.9, JutsuType.BARRIER),
+            _make_move("Ash Aegis", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.74, JutsuType.BARRIER),
+            _make_move("Granite Net Seal", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.95, JutsuType.SEALING),
+            _make_move(
+                "Pressure Dome",
                 MoveCategory.DEFENSE,
-                (player_affinity,),
-                power_scale=0.8,
-                jutsu_type=JutsuType.BARRIER,
+                (Affinity.WIND,),
+                0.84,
+                JutsuType.BARRIER,
+                (StatusEffectType.STAGGER,),
             ),
-            Move(
-                "Lattice Ward",
+            _make_move("Mirror Bark Plate", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.88, JutsuType.SUPPORT),
+            _make_move(
+                "Cyclone Parry Ring",
                 MoveCategory.DEFENSE,
-                (player_affinity,),
-                power_scale=0.78,
-                jutsu_type=JutsuType.SEALING,
+                (Affinity.WIND,),
+                0.86,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.BLIND,),
             ),
-            Move(
-                "Flowback Mantle",
+            _make_move("Reef Anchor Guard", MoveCategory.DEFENSE, (Affinity.WATER,), 0.89, JutsuType.BARRIER),
+            _make_move("Dune Bastion", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.87, JutsuType.SEALING),
+            _make_move(
+                "Moonlit Counter Seal",
                 MoveCategory.DEFENSE,
-                (player_affinity,),
-                power_scale=0.75,
-                jutsu_type=JutsuType.SUPPORT,
+                (Affinity.WIND,),
+                0.83,
+                JutsuType.ILLUSION,
+                (StatusEffectType.SILENCE,),
             ),
         ],
         MoveCategory.SUMMON: [
-            Move(
-                summon_one,
+            _make_move(
+                "Blazehound Pact",
                 MoveCategory.SUMMON,
-                (player_affinity,),
-                power_scale=1.0,
-                jutsu_type=JutsuType.SUMMONING,
+                (Affinity.FIRE,),
+                1.0,
+                JutsuType.SUMMONING,
+                (StatusEffectType.BURN,),
             ),
-            Move(
-                summon_two,
+            _make_move(
+                "Cinder Mantis Pact",
                 MoveCategory.SUMMON,
-                (player_affinity,),
-                power_scale=1.1,
-                jutsu_type=JutsuType.SUMMONING,
+                (Affinity.FIRE,),
+                1.1,
+                JutsuType.SUMMONING,
+                (StatusEffectType.BLEED,),
+            ),
+            _make_move(
+                "Undertow Serpent Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WATER,),
+                1.0,
+                JutsuType.SUMMONING,
+                (StatusEffectType.DRENCH,),
+            ),
+            _make_move(
+                "Mist Heron Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WATER,),
+                1.08,
+                JutsuType.SUMMONING,
+                (StatusEffectType.BLIND,),
+            ),
+            _make_move(
+                "Stone Ram Pact",
+                MoveCategory.SUMMON,
+                (Affinity.EARTH,),
+                1.0,
+                JutsuType.SUMMONING,
+                (StatusEffectType.STAGGER,),
+            ),
+            _make_move(
+                "Granite Tortoise Pact",
+                MoveCategory.SUMMON,
+                (Affinity.EARTH,),
+                1.1,
+                JutsuType.SUMMONING,
+                (StatusEffectType.CRACK_ARMOR,),
+            ),
+            _make_move(
+                "Sky Hawk Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WIND,),
+                1.0,
+                JutsuType.SUMMONING,
+                (StatusEffectType.BLIND,),
+            ),
+            _make_move(
+                "Tempest Lynx Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WIND,),
+                1.1,
+                JutsuType.SUMMONING,
+                (StatusEffectType.CHILL,),
+            ),
+            _make_move(
+                "Ember Jackal Pact",
+                MoveCategory.SUMMON,
+                (Affinity.FIRE,),
+                1.06,
+                JutsuType.SUMMONING,
+                (StatusEffectType.FEAR,),
+            ),
+            _make_move(
+                "Tide Eel Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WATER,),
+                1.04,
+                JutsuType.SUMMONING,
+                (StatusEffectType.ROOT,),
+            ),
+            _make_move(
+                "Obsidian Ape Pact",
+                MoveCategory.SUMMON,
+                (Affinity.EARTH,),
+                1.07,
+                JutsuType.SUMMONING,
+                (StatusEffectType.STAGGER,),
+            ),
+            _make_move(
+                "Whisper Owl Pact",
+                MoveCategory.SUMMON,
+                (Affinity.WIND,),
+                1.05,
+                JutsuType.SUMMONING,
+                (StatusEffectType.SILENCE,),
             ),
         ],
         MoveCategory.ULTIMATE: [
-            Move(
+            _make_move(
                 "Twin Dragon Convergence",
                 MoveCategory.ULTIMATE,
-                (player_affinity, _paired_affinity_for_ultimate(player_affinity)),
-                power_scale=2.5,
-                jutsu_type=JutsuType.ELEMENTAL,
+                (Affinity.FIRE, Affinity.WIND),
+                2.5,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN,),
             ),
-            Move(
+            _make_move(
                 "Covenant Horizon Break",
                 MoveCategory.ULTIMATE,
-                (player_affinity, _paired_affinity_for_ultimate(player_affinity)),
-                power_scale=2.2,
-                jutsu_type=JutsuType.SUMMONING,
-            )
+                (Affinity.WATER, Affinity.EARTH),
+                2.2,
+                JutsuType.SUMMONING,
+                (StatusEffectType.ROOT,),
+            ),
+            _make_move(
+                "Concord Nova",
+                MoveCategory.ULTIMATE,
+                (Affinity.FIRE, Affinity.WIND),
+                2.4,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN,),
+            ),
+            _make_move(
+                "Tidal Monolith Break",
+                MoveCategory.ULTIMATE,
+                (Affinity.WATER, Affinity.EARTH),
+                2.35,
+                JutsuType.SUPPORT,
+                (StatusEffectType.DRENCH,),
+            ),
+            _make_move(
+                "Skyline Covenant",
+                MoveCategory.ULTIMATE,
+                (Affinity.WIND, Affinity.WATER),
+                2.3,
+                JutsuType.SUMMONING,
+                (StatusEffectType.BLIND,),
+            ),
+            _make_move(
+                "Furnace Eclipse",
+                MoveCategory.ULTIMATE,
+                (Affinity.FIRE, Affinity.EARTH),
+                2.45,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN, StatusEffectType.CRACK_ARMOR),
+            ),
+            _make_move(
+                "Leviathan Breakfall",
+                MoveCategory.ULTIMATE,
+                (Affinity.WATER, Affinity.WIND),
+                2.42,
+                JutsuType.SUMMONING,
+                (StatusEffectType.DRENCH, StatusEffectType.CHILL),
+            ),
+            _make_move(
+                "Worldroot Fracture",
+                MoveCategory.ULTIMATE,
+                (Affinity.EARTH, Affinity.FIRE),
+                2.38,
+                JutsuType.SEALING,
+                (StatusEffectType.ROOT, StatusEffectType.STAGGER),
+            ),
+            _make_move(
+                "Tempest Throne Collapse",
+                MoveCategory.ULTIMATE,
+                (Affinity.WIND, Affinity.EARTH),
+                2.36,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.STAGGER,),
+            ),
+            _make_move(
+                "Ashen Moon Sever",
+                MoveCategory.ULTIMATE,
+                (Affinity.FIRE, Affinity.WATER),
+                2.33,
+                JutsuType.ILLUSION,
+                (StatusEffectType.FEAR,),
+            ),
+            _make_move(
+                "Abyss Crown Rupture",
+                MoveCategory.ULTIMATE,
+                (Affinity.WATER, Affinity.FIRE),
+                2.37,
+                JutsuType.BARRIER,
+                (StatusEffectType.SILENCE,),
+            ),
+            _make_move(
+                "Fourfold Shinobi Oath",
+                MoveCategory.ULTIMATE,
+                (Affinity.FIRE, Affinity.WIND),
+                2.32,
+                JutsuType.SUPPORT,
+                (StatusEffectType.BLIND, StatusEffectType.BURN),
+            ),
         ],
     }
 
 
+def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
+    paired = _paired_affinity_for_ultimate(player_affinity)
+    pool = _seed_shared_move_pool()
+    selected: Dict[MoveCategory, List[Move]] = {category: [] for category in MoveCategory}
+    for category in (MoveCategory.ESCAPE, MoveCategory.ATTACK, MoveCategory.DEFENSE, MoveCategory.SUMMON):
+        selected[category] = [move for move in pool[category] if move.affinities[0] == player_affinity][:3]
+    selected[MoveCategory.ULTIMATE] = [
+        move
+        for move in pool[MoveCategory.ULTIMATE]
+        if player_affinity in move.affinities and paired in move.affinities
+    ][:2]
+    if len(selected[MoveCategory.ULTIMATE]) < 2:
+        selected[MoveCategory.ULTIMATE] = pool[MoveCategory.ULTIMATE][:2]
+    return selected
+
+
 def _seed_ninjutsu_library() -> List[Move]:
-    return [
-        Move("Kindle Lance", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, JutsuType.ELEMENTAL),
-        Move("Cinder Vault", MoveCategory.ESCAPE, (Affinity.FIRE,), 0.7, JutsuType.MOBILITY),
-        Move("Ash Aegis", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.85, JutsuType.BARRIER),
-        Move("Blazehound Pact", MoveCategory.SUMMON, (Affinity.FIRE,), 1.0, JutsuType.SUMMONING),
-        Move("Cinder Mantis Pact", MoveCategory.SUMMON, (Affinity.FIRE,), 1.1, JutsuType.SUMMONING),
-        Move("Boiling Torrent", MoveCategory.ATTACK, (Affinity.WATER,), 1.0, JutsuType.ELEMENTAL),
-        Move("Mist Veil Shift", MoveCategory.ESCAPE, (Affinity.WATER,), 0.72, JutsuType.ILLUSION),
-        Move("Current Shell", MoveCategory.DEFENSE, (Affinity.WATER,), 0.9, JutsuType.BARRIER),
-        Move("Undertow Serpent Pact", MoveCategory.SUMMON, (Affinity.WATER,), 1.0, JutsuType.SUMMONING),
-        Move("Mist Heron Pact", MoveCategory.SUMMON, (Affinity.WATER,), 1.08, JutsuType.SUMMONING),
-        Move("Faultline Burst", MoveCategory.ATTACK, (Affinity.EARTH,), 1.0, JutsuType.ELEMENTAL),
-        Move("Stone Anchor Dash", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.68, JutsuType.MOBILITY),
-        Move("Granite Net Seal", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.95, JutsuType.SEALING),
-        Move("Stone Ram Pact", MoveCategory.SUMMON, (Affinity.EARTH,), 1.0, JutsuType.SUMMONING),
-        Move("Granite Tortoise Pact", MoveCategory.SUMMON, (Affinity.EARTH,), 1.1, JutsuType.SUMMONING),
-        Move("Razor Gale Arc", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, JutsuType.ELEMENTAL),
-        Move("Crosswind Mirage", MoveCategory.ESCAPE, (Affinity.WIND,), 0.75, JutsuType.CLONE),
-        Move("Pressure Dome", MoveCategory.DEFENSE, (Affinity.WIND,), 0.84, JutsuType.BARRIER),
-        Move("Sky Hawk Pact", MoveCategory.SUMMON, (Affinity.WIND,), 1.0, JutsuType.SUMMONING),
-        Move("Tempest Lynx Pact", MoveCategory.SUMMON, (Affinity.WIND,), 1.1, JutsuType.SUMMONING),
-        Move(
-            "Concord Nova",
-            MoveCategory.ULTIMATE,
-            (Affinity.FIRE, Affinity.WIND),
-            2.4,
-            JutsuType.ELEMENTAL,
-        ),
-        Move(
-            "Tidal Monolith Break",
-            MoveCategory.ULTIMATE,
-            (Affinity.WATER, Affinity.EARTH),
-            2.35,
-            JutsuType.SUPPORT,
-        ),
-        Move(
-            "Skyline Covenant",
-            MoveCategory.ULTIMATE,
-            (Affinity.WIND, Affinity.WATER),
-            2.3,
-            JutsuType.SUMMONING,
-        ),
+    pool = _seed_shared_move_pool()
+    ordered_categories = [
+        MoveCategory.ESCAPE,
+        MoveCategory.ATTACK,
+        MoveCategory.DEFENSE,
+        MoveCategory.SUMMON,
+        MoveCategory.ULTIMATE,
     ]
+    return [move for category in ordered_categories for move in pool[category]]
 
 
 def _seed_regions() -> List[Region]:
@@ -1575,46 +2090,352 @@ def _seed_player_backstories() -> List[Backstory]:
 
 
 def _seed_villains() -> List[VillainProfile]:
+    def _kit(*, attack: str, defense: str, escape: str, summon: str, link: str) -> Dict[str, str]:
+        return {
+            "attack_skin": attack,
+            "defense_skin": defense,
+            "escape_skin": escape,
+            "summon_skin": summon,
+            "link_skin": link,
+        }
+
     return [
         VillainProfile(
             name="Kage Renda",
             backstory="A fallen bodyguard who channels wind edges through precision bladework.",
-            signature_power=Move(
+            signature_power=_make_move(
                 "Rending Spiral",
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
-                power_scale=1.2,
-                jutsu_type=JutsuType.WEAPON_STYLE,
+                1.2,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.BLEED,),
             ),
+            primary_affinity=Affinity.WIND,
+            role="duelist",
+            skinned_move_names=_kit(
+                attack="Tempest Hook",
+                defense="Cyclone Parry Ring",
+                escape="Crosswind Fade",
+                summon="Sky Hawk Pact",
+                link="Shadow Nail Burst",
+            ),
+            ultimate_skin_name="Tempest Throne Collapse",
         ),
         VillainProfile(
             name="General Voln",
             backstory="A warlord strategist using fire-forged pressure fields to break formations.",
-            signature_power=Move(
+            signature_power=_make_move(
                 "Ember Cyclone",
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
-                power_scale=1.25,
-                jutsu_type=JutsuType.ELEMENTAL,
+                1.25,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN, StatusEffectType.STAGGER),
             ),
+            primary_affinity=Affinity.FIRE,
+            role="warlord",
+            skinned_move_names=_kit(
+                attack="Cinder Lance",
+                defense="Ash Aegis",
+                escape="Ember Veil Vault",
+                summon="Ember Jackal Pact",
+                link="Ash Fang Drive",
+            ),
+            ultimate_skin_name="Furnace Eclipse",
             aggression_score=1,
         ),
         VillainProfile(
             name="Admiral Neris",
             backstory="A former naval hero who bends water currents into defensive tides.",
-            signature_power=Move(
+            signature_power=_make_move(
                 "Abyss Arc",
                 MoveCategory.DEFENSE,
                 (Affinity.WATER,),
-                power_scale=1.0,
-                jutsu_type=JutsuType.BARRIER,
+                1.0,
+                JutsuType.BARRIER,
+                (StatusEffectType.DRENCH,),
             ),
+            primary_affinity=Affinity.WATER,
+            role="controller",
+            skinned_move_names=_kit(
+                attack="Undertow Slice",
+                defense="Current Shell",
+                escape="Tidal Blink",
+                summon="Tide Eel Pact",
+                link="Torrent Breaker",
+            ),
+            ultimate_skin_name="Leviathan Breakfall",
+        ),
+        VillainProfile(
+            name="Mist Widow",
+            backstory="An ex-assassin who cloaks battlefields in toxic fog and panic.",
+            signature_power=_make_move(
+                "Widow Fog Domain",
+                MoveCategory.ATTACK,
+                (Affinity.WATER,),
+                1.22,
+                JutsuType.ILLUSION,
+                (StatusEffectType.BLIND, StatusEffectType.FEAR),
+            ),
+            primary_affinity=Affinity.WATER,
+            role="assassin",
+            skinned_move_names=_kit(
+                attack="Shadow Nail Burst",
+                defense="Reef Anchor Guard",
+                escape="Mistfold Break",
+                summon="Mist Heron Pact",
+                link="Threadline Volley",
+            ),
+            ultimate_skin_name="Abyss Crown Rupture",
+        ),
+        VillainProfile(
+            name="Iron Lotus",
+            backstory="A defensive grandmaster who turns enemy force into punishing counters.",
+            signature_power=_make_move(
+                "Lotus Counter Bloom",
+                MoveCategory.DEFENSE,
+                (Affinity.EARTH,),
+                1.12,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.STAGGER,),
+            ),
+            primary_affinity=Affinity.EARTH,
+            role="counter",
+            skinned_move_names=_kit(
+                attack="Granite Spearline",
+                defense="Mirror Bark Plate",
+                escape="Iron Cicada Swap",
+                summon="Obsidian Ape Pact",
+                link="Faultline Jab",
+            ),
+            ultimate_skin_name="Worldroot Fracture",
+        ),
+        VillainProfile(
+            name="Stone Maw",
+            backstory="A siege enforcer who breaks formations with tectonic bite patterns.",
+            signature_power=_make_move(
+                "Seismic Bite",
+                MoveCategory.ATTACK,
+                (Affinity.EARTH,),
+                1.24,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.CRACK_ARMOR,),
+            ),
+            primary_affinity=Affinity.EARTH,
+            role="breaker",
+            skinned_move_names=_kit(
+                attack="Faultline Jab",
+                defense="Dune Bastion",
+                escape="Burrow Snap",
+                summon="Stone Ram Pact",
+                link="Pressure Knot Strike",
+            ),
+            ultimate_skin_name="Worldroot Fracture",
+        ),
+        VillainProfile(
+            name="Storm Needle",
+            backstory="A precision hunter who threads wind pressure through armor gaps.",
+            signature_power=_make_move(
+                "Rail Gale Shot",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                1.2,
+                JutsuType.WEAPON_STYLE,
+                (StatusEffectType.BLEED,),
+            ),
+            primary_affinity=Affinity.WIND,
+            role="sniper",
+            skinned_move_names=_kit(
+                attack="Razor Gale Arc",
+                defense="Pressure Dome",
+                escape="Gale Feather Shift",
+                summon="Whisper Owl Pact",
+                link="Tempest Hook",
+            ),
+            ultimate_skin_name="Tempest Throne Collapse",
+        ),
+        VillainProfile(
+            name="Bone Weaver",
+            backstory="A cursed tactician who binds targets with marrow-thread seals.",
+            signature_power=_make_move(
+                "Marrow Thread Prison",
+                MoveCategory.DEFENSE,
+                (Affinity.EARTH,),
+                1.08,
+                JutsuType.SEALING,
+                (StatusEffectType.ROOT, StatusEffectType.BLEED),
+            ),
+            primary_affinity=Affinity.EARTH,
+            role="controller",
+            skinned_move_names=_kit(
+                attack="Threadline Volley",
+                defense="Granite Net Seal",
+                escape="Stone Skip Dash",
+                summon="Granite Tortoise Pact",
+                link="Shadow Nail Burst",
+            ),
+            ultimate_skin_name="Fourfold Shinobi Oath",
+        ),
+        VillainProfile(
+            name="Crimson Lantern",
+            backstory="A ritual illusionist who weaponizes fear through radiant seals.",
+            signature_power=_make_move(
+                "Red Night Mandala",
+                MoveCategory.ATTACK,
+                (Affinity.FIRE,),
+                1.18,
+                JutsuType.ILLUSION,
+                (StatusEffectType.FEAR, StatusEffectType.BLIND),
+            ),
+            primary_affinity=Affinity.FIRE,
+            role="illusionist",
+            skinned_move_names=_kit(
+                attack="Cinder Lance",
+                defense="Moonlit Counter Seal",
+                escape="Phantom Lantern Exit",
+                summon="Ember Jackal Pact",
+                link="Ash Fang Drive",
+            ),
+            ultimate_skin_name="Ashen Moon Sever",
+        ),
+        VillainProfile(
+            name="Silent Bell",
+            backstory="A shrine exile whose resonant bells suppress enemy jutsu flow.",
+            signature_power=_make_move(
+                "Null Resonance",
+                MoveCategory.DEFENSE,
+                (Affinity.WIND,),
+                1.06,
+                JutsuType.SENSORY,
+                (StatusEffectType.SILENCE,),
+            ),
+            primary_affinity=Affinity.WIND,
+            role="support_denial",
+            skinned_move_names=_kit(
+                attack="Tempest Hook",
+                defense="Pressure Dome",
+                escape="Crosswind Fade",
+                summon="Whisper Owl Pact",
+                link="Shadow Nail Burst",
+            ),
+            ultimate_skin_name="Skyline Covenant",
+        ),
+        VillainProfile(
+            name="Frost Viper",
+            backstory="A cold-blooded tracker who layers chill and venom pressure over time.",
+            signature_power=_make_move(
+                "White Venom Coil",
+                MoveCategory.ATTACK,
+                (Affinity.WATER,),
+                1.19,
+                JutsuType.SUPPORT,
+                (StatusEffectType.CHILL, StatusEffectType.BLEED),
+            ),
+            primary_affinity=Affinity.WATER,
+            role="attrition",
+            skinned_move_names=_kit(
+                attack="Torrent Breaker",
+                defense="Current Shell",
+                escape="Tidal Blink",
+                summon="Tide Eel Pact",
+                link="Undertow Slice",
+            ),
+            ultimate_skin_name="Leviathan Breakfall",
+        ),
+        VillainProfile(
+            name="Vanta Puppetmaster",
+            backstory="A rogue artisan who chains souls through forbidden marionette rites.",
+            signature_power=_make_move(
+                "Funeral Marionette",
+                MoveCategory.SUMMON,
+                (Affinity.WIND,),
+                1.16,
+                JutsuType.SUMMONING,
+                (StatusEffectType.ROOT, StatusEffectType.FEAR),
+            ),
+            primary_affinity=Affinity.WIND,
+            role="summoner",
+            skinned_move_names=_kit(
+                attack="Threadline Volley",
+                defense="Lattice Ward",
+                escape="Afterimage Drift",
+                summon="Whisper Owl Pact",
+                link="Phantom Lantern Exit",
+            ),
+            ultimate_skin_name="Fourfold Shinobi Oath",
+        ),
+        VillainProfile(
+            name="Torch Baron",
+            backstory="A black-market tyrant who scorches routes to force desperate choices.",
+            signature_power=_make_move(
+                "Black Market Inferno",
+                MoveCategory.ATTACK,
+                (Affinity.FIRE,),
+                1.23,
+                JutsuType.ELEMENTAL,
+                (StatusEffectType.BURN, StatusEffectType.CRACK_ARMOR),
+            ),
+            primary_affinity=Affinity.FIRE,
+            role="zone_control",
+            skinned_move_names=_kit(
+                attack="Cinder Lance",
+                defense="Ash Aegis",
+                escape="Smoke Step",
+                summon="Blazehound Pact",
+                link="Pressure Knot Strike",
+            ),
+            ultimate_skin_name="Furnace Eclipse",
+        ),
+        VillainProfile(
+            name="Dusk Paladin",
+            backstory="A fallen protector who duels by oath and punishes disordered offense.",
+            signature_power=_make_move(
+                "Oathbreaker Radiance",
+                MoveCategory.ATTACK,
+                (Affinity.EARTH,),
+                1.17,
+                JutsuType.SUPPORT,
+                (StatusEffectType.STAGGER,),
+            ),
+            primary_affinity=Affinity.EARTH,
+            role="duelist",
+            skinned_move_names=_kit(
+                attack="Granite Spearline",
+                defense="Mirror Bark Plate",
+                escape="Iron Cicada Swap",
+                summon="Obsidian Ape Pact",
+                link="Faultline Jab",
+            ),
+            ultimate_skin_name="Tidal Monolith Break",
+        ),
+        VillainProfile(
+            name="Eclipse Maw",
+            backstory="An abyssal war-chief who collapses light and spacing into panic zones.",
+            signature_power=_make_move(
+                "Midnight Gravity Well",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                1.21,
+                JutsuType.ILLUSION,
+                (StatusEffectType.FEAR, StatusEffectType.ROOT),
+            ),
+            primary_affinity=Affinity.WIND,
+            role="disruptor",
+            skinned_move_names=_kit(
+                attack="Shadow Nail Burst",
+                defense="Moonlit Counter Seal",
+                escape="Phantom Lantern Exit",
+                summon="Tempest Lynx Pact",
+                link="Tempest Hook",
+            ),
+            ultimate_skin_name="Tempest Throne Collapse",
         ),
     ]
 
 
 def _seed_villain_behavior_rules() -> Dict[str, Dict[VillainStance, str]]:
-    return {
+    behavior_rules: Dict[str, Dict[VillainStance, str]] = {
         "Kage Renda": {
             VillainStance.AGGRESSIVE: "Rushes with relentless sword pressure and trap counters.",
             VillainStance.BALANCED: "Alternates measured strikes with defensive feints.",
@@ -1631,6 +2452,24 @@ def _seed_villain_behavior_rules() -> Dict[str, Dict[VillainStance, str]]:
             VillainStance.PASSIVE: "Seeks negotiation windows while guarding key positions.",
         },
     }
+    for villain in _seed_villains():
+        if villain.name in behavior_rules:
+            continue
+        behavior_rules[villain.name] = {
+            VillainStance.AGGRESSIVE: (
+                f"{villain.name} chains {villain.skinned_move_names.get('attack_skin', 'attack')} "
+                f"into {villain.signature_power.name} with relentless pressure."
+            ),
+            VillainStance.BALANCED: (
+                f"{villain.name} rotates {villain.skinned_move_names.get('defense_skin', 'defense')} "
+                f"and {villain.skinned_move_names.get('link_skin', 'link')} before committing."
+            ),
+            VillainStance.PASSIVE: (
+                f"{villain.name} repositions with {villain.skinned_move_names.get('escape_skin', 'escape')} "
+                "and waits for negotiation openings."
+            ),
+        }
+    return behavior_rules
 
 
 def _seed_trophy_catalog() -> Dict[str, Trophy]:
@@ -1761,7 +2600,7 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
 
     for move_set, moves in _seed_moves(affinity).items():
         for move in moves:
-            player.moves_by_set[move_set].append(move)
+            player.add_move(move, allow_cross_affinity=True)
 
     world = NinjaWorld(
         regions=_seed_regions(),

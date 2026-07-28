@@ -96,6 +96,10 @@ CHARM_TROPHY_BASE_THRESHOLD = 3
 CHARM_TROPHY_ADVANCED_THRESHOLD = 5
 EVASION_TROPHY_THRESHOLD = 3
 PACIFIST_TROPHY_ACTIONS_THRESHOLD = 5
+STEALTH_TROPHY_MASTER_THRESHOLD = 8
+CHARM_TROPHY_MASTER_THRESHOLD = 8
+EVASION_TROPHY_MASTER_THRESHOLD = 5
+NONLETHAL_STYLE_BALANCE_THRESHOLD = 2
 TROPHY_FIRST_STRIKE = "first_strike"
 TROPHY_GHOST_STEP = "ghost_step"
 TROPHY_SILVER_TONGUE = "silver_tongue"
@@ -103,6 +107,11 @@ TROPHY_WINDWALK_SURVIVOR = "windwalk_survivor"
 TROPHY_VEIL_MASTER = "veil_master"
 TROPHY_DIPLOMAT_SUPREME = "diplomat_supreme"
 TROPHY_PACIFIST_SHADOW = "pacifist_shadow"
+TROPHY_SILENT_LEGEND = "silent_legend"
+TROPHY_PHANTOM_VEIL = "phantom_veil"
+TROPHY_HARMONY_VOICE = "harmony_voice"
+TROPHY_UNTOUCHABLE_GHOST = "untouchable_ghost"
+TROPHY_TRINITY_OPERATOR = "trinity_operator"
 TROPHY_ORIGIN_AWAKENED = "origin_awakened"
 TROPHY_FIRST_BLOODLINE_VICTORY = "first_bloodline_victory"
 TROPHY_WORLD_WALKER = "world_walker"
@@ -362,12 +371,14 @@ class PlayerProfile:
         self.encounter_outcomes[outcome] += 1
 
     def is_nonlethal_path_active(self) -> bool:
-        nonlethal_actions = (
+        return self.encounter_outcomes["kill"] == 0 and self.nonlethal_action_count() > 0
+
+    def nonlethal_action_count(self) -> int:
+        return (
             self.encounter_outcomes["charm"]
             + self.encounter_outcomes["stealth"]
             + self.encounter_outcomes["evasion"]
         )
-        return self.encounter_outcomes["kill"] == 0 and nonlethal_actions > 0
 
     def current_reputation_tier(self) -> ReputationTier:
         return _reputation_tier_for(self.reputation)
@@ -1003,12 +1014,19 @@ class NinjaWorld:
             _award(TROPHY_VEIL_MASTER)
         if player.encounter_outcomes["charm"] >= CHARM_TROPHY_ADVANCED_THRESHOLD:
             _award(TROPHY_DIPLOMAT_SUPREME)
-        if player.is_nonlethal_path_active() and (
-            player.encounter_outcomes["charm"]
-            + player.encounter_outcomes["stealth"]
-            + player.encounter_outcomes["evasion"]
-        ) >= PACIFIST_TROPHY_ACTIONS_THRESHOLD:
+        if player.is_nonlethal_path_active() and player.nonlethal_action_count() >= PACIFIST_TROPHY_ACTIONS_THRESHOLD:
             _award(TROPHY_PACIFIST_SHADOW)
+        if player.encounter_outcomes["stealth"] >= STEALTH_TROPHY_MASTER_THRESHOLD:
+            _award(TROPHY_PHANTOM_VEIL)
+        if player.encounter_outcomes["charm"] >= CHARM_TROPHY_MASTER_THRESHOLD:
+            _award(TROPHY_HARMONY_VOICE)
+        if player.encounter_outcomes["evasion"] >= EVASION_TROPHY_MASTER_THRESHOLD:
+            _award(TROPHY_UNTOUCHABLE_GHOST)
+        if player.is_nonlethal_path_active() and all(
+            player.encounter_outcomes[action] >= NONLETHAL_STYLE_BALANCE_THRESHOLD
+            for action in ("charm", "stealth", "evasion")
+        ):
+            _award(TROPHY_TRINITY_OPERATOR)
         if player.selected_backstory:
             _award(TROPHY_ORIGIN_AWAKENED)
         cleared_regions = sum(1 for region in self.regions if region.cleared)
@@ -1016,6 +1034,8 @@ class NinjaWorld:
             _award(TROPHY_FIRST_BLOODLINE_VICTORY)
         if cleared_regions >= len(self.regions):
             _award(TROPHY_WORLD_WALKER)
+        if player.is_nonlethal_path_active() and cleared_regions >= len(self.regions):
+            _award(TROPHY_SILENT_LEGEND)
         if player.reputation <= ROGUE_THRESHOLD_MIN:
             _award(TROPHY_ROGUE_ASCENDANT)
         if player.reputation >= HEROIC_THRESHOLD_MIN:
@@ -1089,14 +1109,15 @@ class NinjaWorld:
             TROPHY_DIPLOMAT_SUPREME: ("charm", CHARM_TROPHY_ADVANCED_THRESHOLD),
             TROPHY_WINDWALK_SURVIVOR: ("evasion", EVASION_TROPHY_THRESHOLD),
             TROPHY_PACIFIST_SHADOW: ("nonlethal_actions", PACIFIST_TROPHY_ACTIONS_THRESHOLD),
+            TROPHY_PHANTOM_VEIL: ("stealth", STEALTH_TROPHY_MASTER_THRESHOLD),
+            TROPHY_HARMONY_VOICE: ("charm", CHARM_TROPHY_MASTER_THRESHOLD),
+            TROPHY_UNTOUCHABLE_GHOST: ("evasion", EVASION_TROPHY_MASTER_THRESHOLD),
+            TROPHY_TRINITY_OPERATOR: ("balanced_nonlethal", NONLETHAL_STYLE_BALANCE_THRESHOLD),
             TROPHY_FIRST_BLOODLINE_VICTORY: ("regions_cleared", 1),
             TROPHY_WORLD_WALKER: ("regions_cleared", len(self.regions)),
+            TROPHY_SILENT_LEGEND: ("regions_cleared", len(self.regions)),
         }
-        nonlethal_actions = (
-            player.encounter_outcomes["charm"]
-            + player.encounter_outcomes["stealth"]
-            + player.encounter_outcomes["evasion"]
-        )
+        nonlethal_actions = player.nonlethal_action_count()
         for trophy_key, trophy in self.trophy_catalog.items():
             tracked = trophy_targets.get(trophy_key)
             if tracked is None:
@@ -1106,9 +1127,13 @@ class NinjaWorld:
                 current_value = cleared_regions
             elif metric_key == "nonlethal_actions":
                 current_value = nonlethal_actions
+            elif metric_key == "balanced_nonlethal":
+                current_value = min(player.encounter_outcomes[action] for action in ("charm", "stealth", "evasion"))
             else:
                 current_value = player.encounter_outcomes.get(metric_key, 0)
             remaining = max(target - current_value, 0)
+            if trophy.key == TROPHY_SILENT_LEGEND and player.encounter_outcomes["kill"] > 0:
+                remaining = target
             progress.append(
                 {
                     "key": trophy.key,
@@ -2584,6 +2609,36 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             TROPHY_PACIFIST_SHADOW,
             "Pacifist Shadow",
             "Maintain a kill-free run while using charm, stealth, and evasion tactics.",
+            TrophyCategory.ALIGNMENT,
+        ),
+        Trophy(
+            TROPHY_SILENT_LEGEND,
+            "Silent Legend",
+            "Clear every seeded region in a kill-free run.",
+            TrophyCategory.ALIGNMENT,
+        ),
+        Trophy(
+            TROPHY_PHANTOM_VEIL,
+            "Phantom Veil",
+            "Complete eight encounters through stealth.",
+            TrophyCategory.STEALTH,
+        ),
+        Trophy(
+            TROPHY_HARMONY_VOICE,
+            "Harmony Voice",
+            "Resolve eight encounters through charm.",
+            TrophyCategory.SOCIAL,
+        ),
+        Trophy(
+            TROPHY_UNTOUCHABLE_GHOST,
+            "Untouchable Ghost",
+            "Escape danger through evasion five times.",
+            TrophyCategory.STEALTH,
+        ),
+        Trophy(
+            TROPHY_TRINITY_OPERATOR,
+            "Trinity Operator",
+            "Use charm, stealth, and evasion at least twice each without any kills.",
             TrophyCategory.ALIGNMENT,
         ),
         Trophy(

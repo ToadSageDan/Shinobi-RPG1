@@ -9,7 +9,7 @@ Build a lightweight MVP foundation for a ninja-inspired open-world RPG with prog
 - One affinity is assigned from: Fire, Water, Earth, Wind.
 
 ## Combat Move Rules
-- Move sets: Escape, Attack, Defense, Ultimate.
+- Move sets: Escape, Attack, Defense, Summon, Ultimate.
 - Non-ultimate moves must use a single affinity.
 - Ultimate moves may combine multiple affinities.
 
@@ -49,7 +49,7 @@ Build a lightweight MVP foundation for a ninja-inspired open-world RPG with prog
 
 ## Build-Ready MVP Acceptance Criteria
 1. A new player can be created and assigned one affinity via mini-game input.
-2. All four move set categories exist and affinity rules are enforced.
+2. All five move set categories exist and affinity rules are enforced.
 3. At least one full region clear + boss reward flow works.
 4. Reputation changes can unlock Rogue Ninja path and Black Market.
 5. Weapon, clothing, and move rewards can all be granted.

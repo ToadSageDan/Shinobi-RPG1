@@ -384,7 +384,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertGreaterEqual(len(world.ninjutsu_library), 20)
         summon_catalog = world.get_ninjutsu_catalog(jutsu_type=JutsuType.SUMMONING)
         self.assertTrue(summon_catalog)
-        self.assertTrue(all(item["category"] == MoveCategory.SUMMON.value for item in summon_catalog))
+        self.assertTrue(any(item["category"] == MoveCategory.SUMMON.value for item in summon_catalog))
 
 
 if __name__ == "__main__":

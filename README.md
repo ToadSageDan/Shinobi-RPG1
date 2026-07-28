@@ -5,7 +5,7 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 ## Included MVP systems
 
 - Affinity mini-game and assignment (Fire/Water/Earth/Wind)
-- Four move sets: Escape, Attack, Defense, Ultimate
+- Five move sets: Escape, Attack, Defense, Summon, Ultimate
 - Rule enforcement: non-ultimates are single-affinity; ultimates can mix affinities
 - Stats and leveling progression
 - Reputation system with Rogue Ninja path and Black Market unlock

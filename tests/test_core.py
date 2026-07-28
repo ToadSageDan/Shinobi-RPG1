@@ -258,6 +258,14 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(aggressive_role_villain.stance, VillainStance.BALANCED)
         self.assertEqual(passive_role_villain.stance, VillainStance.PASSIVE)
 
+    def test_stealth_decisions_shift_aggression_score_by_role(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "stealth")
+        aggressive_role_villain = next(v for v in world.villains if v.name == "Mist Widow")
+        passive_role_villain = next(v for v in world.villains if v.name == "Admiral Neris")
+        self.assertGreater(aggressive_role_villain.aggression_score, 0)
+        self.assertLess(passive_role_villain.aggression_score, 0)
+
     def test_nonlethal_path_and_trophy_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for decision in ["stealth", "stealth", "stealth", "charm", "evasion"]:

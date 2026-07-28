@@ -269,9 +269,9 @@ class VillainProfile:
         if normalized in {"kill", "aggressive", "betray"}:
             stance_delta = 2
         elif normalized in {"stealth", "evasion"}:
-            stance_delta = max(0, 1 + role_bias)
+            stance_delta = 1 + (2 * role_bias)
         elif normalized in {"charm", "mercy", "diplomacy"}:
-            stance_delta = min(-1, -2 + role_bias)
+            stance_delta = -2 + role_bias
         self.aggression_score += stance_delta * intensity
 
         if self.aggression_score >= 4:

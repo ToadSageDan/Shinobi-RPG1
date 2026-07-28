@@ -47,11 +47,11 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(affinity, Affinity.FIRE)
 
     def test_assign_affinity_from_choices_rejects_empty_input(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "Mini-game choices cannot be empty."):
             assign_affinity_from_choices([])
 
     def test_assign_affinity_from_choices_rejects_unknown_choice(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, 'Unknown affinity choice "lightning".'):
             assign_affinity_from_choices(["lightning"])
 
     def test_rogue_reputation_unlocks_black_market(self):

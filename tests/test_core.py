@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from shinobi_rpg.core import (
     Affinity,
     Backstory,
+    DEFAULT_ALLY_MIN_COUNT,
     JutsuType,
     Move,
     MoveCategory,
@@ -163,8 +164,10 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_world_seed_meets_mvp_size(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
-        self.assertGreaterEqual(len(world.allies), 10)
-        self.assertFalse(any(name.startswith("AutoNinja-") for name in world.allies[:10]))
+        self.assertGreaterEqual(len(world.allies), DEFAULT_ALLY_MIN_COUNT)
+        self.assertFalse(
+            any(name.startswith("AutoNinja-") for name in world.allies[:DEFAULT_ALLY_MIN_COUNT])
+        )
 
     def test_region_clear_reward_unlocks_fast_travel(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])

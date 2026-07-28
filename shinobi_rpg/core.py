@@ -92,6 +92,7 @@ ROGUE_THRESHOLD_MIN = -50
 HEROIC_THRESHOLD_MIN = 50
 # Base XP requirement per level in the level-based progression curve.
 BASE_XP_PER_LEVEL = 100
+DEFAULT_ALLY_MIN_COUNT = 10
 QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
@@ -2362,10 +2363,11 @@ def _seed_quests() -> List[Quest]:
     ]
 
 
-def _seed_allies(min_count: int = 10) -> List[str]:
+def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:
     """Return ally names with seeded characters plus curated fillers.
 
-    Guarantees at least ``min_count`` allies for early world population.
+    Guarantees at least ``min_count`` allies for early world population and
+    keeps the five core seeded allies even when ``min_count`` is lower.
     ``AutoNinja-*`` placeholders are only used if counts exceed the curated
     name pool.
     """

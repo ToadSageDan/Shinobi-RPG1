@@ -6,6 +6,7 @@ from shinobi_rpg.core import (
     Move,
     MoveCategory,
     PlayerProfile,
+    TrophyCategory,
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
@@ -190,6 +191,41 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(archive["backstory"], world.player_backstories[0].key)
         self.assertEqual(archive["nonlethal_path"], True)
         self.assertIsInstance(archive["trophies"], list)
+
+    def test_quest_branching_uses_selected_backstory(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        monk = next(backstory for backstory in world.player_backstories if backstory.key == "wandering_monk")
+        player.choose_backstory(monk)
+        result = world.resolve_quest_branch(player, "Q3")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("without a killing blow", result["outcome"])
+
+    def test_region_boss_behavior_uses_villain_specific_rules(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        behavior = world.get_region_boss_behavior("Verdant Gate", player)
+        self.assertEqual(behavior["boss"], "Kage Renda")
+        self.assertEqual(behavior["stance"], VillainStance.BALANCED.value)
+        self.assertIn("measured strikes", behavior["behavior"])
+
+    def test_trophy_catalog_uses_categories_and_progression_unlocks(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.clear_region(player, "Verdant Gate", "weapon")
+        self.assertIn("first_bloodline_victory", player.trophies)
+        self.assertEqual(
+            world.trophy_catalog["first_bloodline_victory"].category,
+            TrophyCategory.PROGRESSION,
+        )
+
+    def test_generate_playthrough_summary_reports_core_state(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])
+        world.apply_player_decision(player, "stealth")
+        summary = world.generate_playthrough_summary(player)
+        self.assertEqual(summary["player_name"], "TestPlayer")
+        self.assertEqual(summary["backstory"], world.player_backstories[0].title)
+        self.assertIn("encounter_outcomes", summary)
+        self.assertIn("villain_stances", summary)
+        self.assertIn("trophies", summary)
 
 
 if __name__ == "__main__":

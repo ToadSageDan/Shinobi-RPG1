@@ -32,6 +32,14 @@ class VillainStance(str, Enum):
     PASSIVE = "passive"
 
 
+class TrophyCategory(str, Enum):
+    COMBAT = "combat"
+    STEALTH = "stealth"
+    SOCIAL = "social"
+    PROGRESSION = "progression"
+    ALIGNMENT = "alignment"
+
+
 class ReputationTier(str, Enum):
     HEROIC = "heroic"
     NEUTRAL = "neutral"
@@ -123,6 +131,7 @@ class Trophy:
     key: str
     name: str
     description: str
+    category: TrophyCategory
 
 
 @dataclass
@@ -132,6 +141,7 @@ class Quest:
     objective: str
     stealth_required: bool
     reward_xp: int
+    branch_outcomes: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -217,6 +227,13 @@ class PlayerProfile:
         )
         return self.encounter_outcomes["kill"] == 0 and nonlethal_actions > 0
 
+    def current_reputation_tier(self) -> ReputationTier:
+        if self.reputation <= ROGUE_THRESHOLD_MIN:
+            return ReputationTier.ROGUE
+        if self.reputation >= HEROIC_THRESHOLD_MIN:
+            return ReputationTier.HEROIC
+        return ReputationTier.NEUTRAL
+
     def add_move(self, move: Move) -> None:
         move.validate()
         if move.category != MoveCategory.ULTIMATE and (
@@ -289,6 +306,7 @@ class NinjaWorld:
     weapons: List[Weapon]
     skins: List[Skin]
     villains: List[VillainProfile]
+    villain_behavior_rules: Dict[str, Dict[VillainStance, str]]
     player_backstories: List[Backstory]
     trophy_catalog: Dict[str, Trophy]
     vault_historic_ninjas: List[dict] = field(default_factory=list)
@@ -318,6 +336,7 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         player.unlock_fast_travel(region.name)
+        self.evaluate_trophies(player)
         return reward_name
 
     def archive_historic_ninja(self, player: PlayerProfile) -> None:
@@ -341,6 +360,64 @@ class NinjaWorld:
             player.record_encounter_outcome(normalized)
         self.evaluate_trophies(player)
 
+    def _find_villain(self, name: str) -> VillainProfile:
+        villain = next((v for v in self.villains if v.name == name), None)
+        if not villain:
+            raise ValueError(f'Villain "{name}" not found.')
+        return villain
+
+    def _find_region(self, region_name: str) -> Region:
+        region = next((r for r in self.regions if r.name == region_name), None)
+        if not region:
+            raise ValueError(f'Region "{region_name}" not found.')
+        return region
+
+    def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, str]:
+        quest = next((q for q in self.quests if q.quest_id == quest_id), None)
+        if not quest:
+            raise ValueError(f'Quest "{quest_id}" not found.')
+
+        if not quest.branch_outcomes:
+            return {
+                "quest_id": quest.quest_id,
+                "title": quest.title,
+                "branch_key": "default",
+                "outcome": quest.objective,
+            }
+
+        branch_key = "default"
+        if player.selected_backstory and player.selected_backstory.key in quest.branch_outcomes:
+            branch_key = player.selected_backstory.key
+        else:
+            for tag in sorted(player.narrative_tags):
+                if tag in quest.branch_outcomes:
+                    branch_key = tag
+                    break
+
+        outcome = quest.branch_outcomes.get(branch_key) or quest.branch_outcomes.get(
+            "default", quest.objective
+        )
+        return {
+            "quest_id": quest.quest_id,
+            "title": quest.title,
+            "branch_key": branch_key,
+            "outcome": outcome,
+        }
+
+    def get_region_boss_behavior(self, region_name: str, player: PlayerProfile) -> Dict[str, str]:
+        region = self._find_region(region_name)
+        villain = self._find_villain(region.boss)
+        behavior_by_stance = self.villain_behavior_rules.get(villain.name, {})
+        behavior = behavior_by_stance.get(villain.stance, "Unpredictable tactics.")
+        if player.selected_backstory and "pacifism" in player.narrative_tags:
+            behavior = f"{behavior} This boss shows small restraint toward pacifist choices."
+        return {
+            "region": region.name,
+            "boss": villain.name,
+            "stance": villain.stance.value,
+            "behavior": behavior,
+        }
+
     def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
         newly_awarded: Set[str] = set()
 
@@ -355,18 +432,57 @@ class NinjaWorld:
             _award("ghost_step")
         if player.encounter_outcomes["charm"] >= 3:
             _award("silver_tongue")
+        if player.encounter_outcomes["evasion"] >= 3:
+            _award("windwalk_survivor")
+        if player.encounter_outcomes["stealth"] >= 5:
+            _award("veil_master")
+        if player.encounter_outcomes["charm"] >= 5:
+            _award("diplomat_supreme")
         if player.is_nonlethal_path_active() and (
             player.encounter_outcomes["charm"]
             + player.encounter_outcomes["stealth"]
             + player.encounter_outcomes["evasion"]
         ) >= 5:
             _award("pacifist_shadow")
+        if player.selected_backstory:
+            _award("origin_awakened")
+        cleared_regions = sum(1 for region in self.regions if region.cleared)
+        if cleared_regions >= 1:
+            _award("first_bloodline_victory")
+        if cleared_regions >= len(self.regions):
+            _award("world_walker")
         if player.reputation <= ROGUE_THRESHOLD_MIN:
             _award("rogue_ascendant")
         if player.reputation >= HEROIC_THRESHOLD_MIN:
             _award("heroic_crest")
+        if player.current_reputation_tier() == ReputationTier.HEROIC and player.encounter_outcomes["charm"] >= 3:
+            _award("peacekeeper_emblem")
 
         return newly_awarded
+
+    def generate_playthrough_summary(self, player: PlayerProfile) -> Dict[str, Any]:
+        trophy_details = [
+            {
+                "key": key,
+                "name": self.trophy_catalog[key].name,
+                "category": self.trophy_catalog[key].category.value,
+            }
+            for key in sorted(player.trophies)
+            if key in self.trophy_catalog
+        ]
+        villain_states = {villain.name: villain.stance.value for villain in self.villains}
+        return {
+            "player_name": player.name,
+            "affinity": player.affinity.value,
+            "backstory": player.selected_backstory.title if player.selected_backstory else None,
+            "reputation": player.reputation,
+            "reputation_tier": player.current_reputation_tier().value,
+            "nonlethal_path": player.is_nonlethal_path_active(),
+            "encounter_outcomes": dict(player.encounter_outcomes),
+            "cleared_regions": [region.name for region in self.regions if region.cleared],
+            "villain_stances": villain_states,
+            "trophies": trophy_details,
+        }
 
 
 def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
@@ -500,6 +616,11 @@ def _seed_quests() -> List[Quest]:
             objective="Infiltrate the watchpost unseen and recover clan records.",
             stealth_required=True,
             reward_xp=120,
+            branch_outcomes={
+                "street_ghost": "Your underworld contacts open a tunnel route into the watchpost.",
+                "infiltration": "You bypass the front line by scaling hidden cliff routes.",
+                "default": "You infiltrate through the drainage channel under moonlight.",
+            },
         ),
         Quest(
             quest_id="Q2",
@@ -507,6 +628,11 @@ def _seed_quests() -> List[Quest]:
             objective="Escort Dan through the forest and repel ambushes.",
             stealth_required=False,
             reward_xp=140,
+            branch_outcomes={
+                "exiled_heir": "Old clan loyalists reveal a safe path and reinforce your escort line.",
+                "honor_bound": "You challenge the ambushers openly, earning their retreat.",
+                "default": "You hold the line and protect Dan until dawn.",
+            },
         ),
         Quest(
             quest_id="Q3",
@@ -514,6 +640,11 @@ def _seed_quests() -> List[Quest]:
             objective="Defeat Kage Renda and secure Verdant Gate.",
             stealth_required=False,
             reward_xp=220,
+            branch_outcomes={
+                "wandering_monk": "Through restraint and focus, you disarm Kage Renda without a killing blow.",
+                "pacifism": "You force a surrender and secure the gate through discipline.",
+                "default": "You overpower Kage Renda in a direct final clash.",
+            },
         ),
     ]
 
@@ -572,18 +703,106 @@ def _seed_villains() -> List[VillainProfile]:
     ]
 
 
+def _seed_villain_behavior_rules() -> Dict[str, Dict[VillainStance, str]]:
+    return {
+        "Kage Renda": {
+            VillainStance.AGGRESSIVE: "Rushes with relentless sword pressure and trap counters.",
+            VillainStance.BALANCED: "Alternates measured strikes with defensive feints.",
+            VillainStance.PASSIVE: "Maintains distance and probes for diplomatic openings.",
+        },
+        "General Voln": {
+            VillainStance.AGGRESSIVE: "Calls reinforcements and overwhelms lanes with heavy assaults.",
+            VillainStance.BALANCED: "Controls space and rotates formations around choke points.",
+            VillainStance.PASSIVE: "Commits to shield walls, preferring containment over eliminations.",
+        },
+        "Admiral Neris": {
+            VillainStance.AGGRESSIVE: "Presses tide-form attacks in rapid, high-risk sequences.",
+            VillainStance.BALANCED: "Keeps tempo steady with spacing and terrain control.",
+            VillainStance.PASSIVE: "Seeks negotiation windows while guarding key positions.",
+        },
+    }
+
+
 def _seed_trophy_catalog() -> Dict[str, Trophy]:
     trophies = [
-        Trophy("first_strike", "First Strike", "Defeat an enemy lethally for the first time."),
-        Trophy("ghost_step", "Ghost Step", "Complete three encounters through stealth."),
-        Trophy("silver_tongue", "Silver Tongue", "Resolve three encounters through charm."),
+        Trophy(
+            "first_strike",
+            "First Strike",
+            "Defeat an enemy lethally for the first time.",
+            TrophyCategory.COMBAT,
+        ),
+        Trophy(
+            "ghost_step",
+            "Ghost Step",
+            "Complete three encounters through stealth.",
+            TrophyCategory.STEALTH,
+        ),
+        Trophy(
+            "silver_tongue",
+            "Silver Tongue",
+            "Resolve three encounters through charm.",
+            TrophyCategory.SOCIAL,
+        ),
+        Trophy(
+            "windwalk_survivor",
+            "Windwalk Survivor",
+            "Escape danger through evasion three times.",
+            TrophyCategory.STEALTH,
+        ),
+        Trophy(
+            "veil_master",
+            "Veil Master",
+            "Complete five encounters through stealth.",
+            TrophyCategory.STEALTH,
+        ),
+        Trophy(
+            "diplomat_supreme",
+            "Diplomat Supreme",
+            "Resolve five encounters through charm.",
+            TrophyCategory.SOCIAL,
+        ),
         Trophy(
             "pacifist_shadow",
             "Pacifist Shadow",
             "Maintain a kill-free run while using charm, stealth, and evasion tactics.",
+            TrophyCategory.ALIGNMENT,
         ),
-        Trophy("rogue_ascendant", "Rogue Ascendant", "Reach Rogue reputation tier."),
-        Trophy("heroic_crest", "Heroic Crest", "Reach Heroic reputation tier."),
+        Trophy(
+            "origin_awakened",
+            "Origin Awakened",
+            "Choose a protagonist backstory and set your narrative path.",
+            TrophyCategory.PROGRESSION,
+        ),
+        Trophy(
+            "first_bloodline_victory",
+            "First Bloodline Victory",
+            "Clear your first region and claim a boss reward.",
+            TrophyCategory.PROGRESSION,
+        ),
+        Trophy(
+            "world_walker",
+            "World Walker",
+            "Clear every seeded region in the current world.",
+            TrophyCategory.PROGRESSION,
+        ),
+        Trophy(
+            "rogue_ascendant",
+            "Rogue Ascendant",
+            "Reach Rogue reputation tier.",
+            TrophyCategory.ALIGNMENT,
+        ),
+        Trophy(
+            "heroic_crest",
+            "Heroic Crest",
+            "Reach Heroic reputation tier.",
+            TrophyCategory.ALIGNMENT,
+        ),
+        Trophy(
+            "peacekeeper_emblem",
+            "Peacekeeper Emblem",
+            "Reach Heroic status while resolving at least three encounters through charm.",
+            TrophyCategory.ALIGNMENT,
+        ),
     ]
     return {trophy.key: trophy for trophy in trophies}
 
@@ -612,6 +831,7 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
             Skin("Rogue Nightwear", {"agility": 3}),
         ],
         villains=_seed_villains(),
+        villain_behavior_rules=_seed_villain_behavior_rules(),
         player_backstories=_seed_player_backstories(),
         trophy_catalog=_seed_trophy_catalog(),
     )

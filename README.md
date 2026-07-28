@@ -18,8 +18,11 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Vault archive for historic ninja runs
 - Player backstory selection with narrative/reputation impact
 - Villain backstories with aggression/passivity shifts from player decisions
+- Backstory-driven quest branch outcomes
+- Region/boss-specific villain behavior rules by stance
 - Nonlethal progression tracking via charm, stealth, and evasion outcomes
-- Trophy catalog and automatic trophy unlock evaluation
+- Expanded trophy catalog with category-based unlock conditions
+- Playthrough summary report including backstory, trophies, reputation, and villain stances
 
 ## Run tests
 

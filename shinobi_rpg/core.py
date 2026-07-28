@@ -300,6 +300,40 @@ class PlayerProfile:
             return {"move": move.name, "category": move.category.value, "damage": damage}
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 
+    def resolve_block_parry(
+        self,
+        incoming_damage: int,
+        *,
+        base_guard_scale: float = 0.5,
+        parry_difficulty: int = 6,
+    ) -> Dict[str, Any]:
+        """Resolve defensive block/parry output with a no-defense fallback."""
+        if incoming_damage < 0:
+            raise ValueError("Incoming damage cannot be negative.")
+        if base_guard_scale <= 0:
+            raise ValueError("Base guard scale must be greater than zero.")
+        if parry_difficulty < 0:
+            raise ValueError("Parry difficulty cannot be negative.")
+
+        defense_moves = self.moves_by_set[MoveCategory.DEFENSE]
+        selected_move = max(defense_moves, key=lambda move: move.power_scale) if defense_moves else None
+        guard_scale = selected_move.power_scale if selected_move else base_guard_scale
+        guard = int(self.stats.defense * guard_scale)
+        parry_score = int(self.stats.agility * guard_scale)
+        blocked_damage = max(incoming_damage - guard, 0)
+        parried = parry_score >= parry_difficulty
+        damage_taken = 0 if parried else blocked_damage
+
+        return {
+            "category": MoveCategory.DEFENSE.value,
+            "move": selected_move.name if selected_move else None,
+            "guard": guard,
+            "parry_score": parry_score,
+            "parried": parried,
+            "blocked_damage": blocked_damage,
+            "damage_taken": damage_taken,
+        }
+
     def update_reputation(self, delta: int) -> ReputationTier:
         self.reputation += delta
         tier = _reputation_tier_for(self.reputation)

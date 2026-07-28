@@ -50,6 +50,26 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "defense")
         self.assertEqual(result["guard"], 8)
 
+    def test_resolve_block_parry_uses_best_defense_move(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.resolve_block_parry(15)
+        self.assertEqual(result["category"], "defense")
+        self.assertEqual(result["move"], "Guarding Veil")
+        self.assertEqual(result["guard"], 8)
+        self.assertEqual(result["blocked_damage"], 7)
+        self.assertTrue(result["parried"])
+        self.assertEqual(result["damage_taken"], 0)
+
+    def test_resolve_block_parry_falls_back_without_defense_move(self):
+        player = PlayerProfile(name="Tester", affinity=Affinity.WATER)
+        result = player.resolve_block_parry(15)
+        self.assertEqual(result["category"], "defense")
+        self.assertIsNone(result["move"])
+        self.assertEqual(result["guard"], 5)
+        self.assertEqual(result["blocked_damage"], 10)
+        self.assertFalse(result["parried"])
+        self.assertEqual(result["damage_taken"], 10)
+
     def test_execute_escape_move_returns_escape_status(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Smoke Step")

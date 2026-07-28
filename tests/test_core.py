@@ -6,6 +6,7 @@ from shinobi_rpg.core import (
     Move,
     MoveCategory,
     PlayerProfile,
+    ReputationTier,
     TrophyCategory,
     VillainStance,
     assign_affinity_from_choices,
@@ -98,7 +99,7 @@ class CoreSystemTests(unittest.TestCase):
     def test_rogue_reputation_unlocks_black_market(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
         tier = player.update_reputation(-60)
-        self.assertEqual(tier.value, "rogue")
+        self.assertEqual(tier.value, ReputationTier.ROGUE.value)
         self.assertIn("black_market", player.unlocked_zones)
 
     def test_world_seed_meets_mvp_size(self):

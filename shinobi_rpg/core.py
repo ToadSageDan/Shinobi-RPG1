@@ -124,7 +124,9 @@ class PlayerProfile:
 
     def add_move(self, move: Move) -> None:
         move.validate()
-        if move.category != MoveCategory.ULTIMATE and move.affinities[0] != self.affinity:
+        if move.category != MoveCategory.ULTIMATE and (
+            not move.affinities or move.affinities[0] != self.affinity
+        ):
             raise ValueError("Non-ultimate moves must match player affinity.")
         self.moves_by_set[move.category].append(move)
 
@@ -160,7 +162,7 @@ class NinjaWorld:
     ) -> str:
         region = next((r for r in self.regions if r.name == region_name), None)
         if not region:
-            raise ValueError("Region not found.")
+            raise ValueError(f'Region "{region_name}" not found.')
         if reward_choice not in region.boss_rewards:
             raise ValueError("Reward choice must be weapon, clothing, or move.")
 
@@ -180,6 +182,11 @@ class NinjaWorld:
 
 
 def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
+    """Resolve starting affinity from mini-game decisions.
+
+    Higher total score wins; ties resolve by enum order:
+    Fire, then Water, then Earth, then Wind.
+    """
     scores = {
         Affinity.FIRE: 0,
         Affinity.WATER: 0,

@@ -47,7 +47,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("Verdant Gate", player.unlocked_fast_travel_nodes)
 
     def test_leveling_progression_increases_stats(self):
-        world, player = build_mvp_world("Dan", [1, 1, 1, 1])
+        world, player = build_mvp_world("Dan", [1, 1, 1, 1, 1])
         before_level = player.stats.level
         before_power = player.stats.power
         player.stats.gain_xp(500)

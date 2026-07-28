@@ -229,7 +229,7 @@ def assign_affinity_from_choices(choices: Sequence[str]) -> Affinity:
         normalized = raw_choice.strip().lower()
         affinity = AFFINITY_MINIGAME_CHOICES.get(normalized)
         if not affinity:
-            raise ValueError(f'Unknown affinity choice "{raw_choice}".')
+            raise ValueError(f'Unknown affinity choice "{normalized}".')
         scores[affinity] += 1
 
     ranked = sorted(

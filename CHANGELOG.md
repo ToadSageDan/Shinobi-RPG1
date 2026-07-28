@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Quest Q6 "Legacy of the Fallen Shinobi": final epilogue quest at the Ashen Spire with full backstory, nonlethal, heroic, and rogue branch outcomes
+- Ten new trophies across combat, progression, social, and alignment categories:
+  - **Battle Hardened** (combat/early) — 5 lethal kills
+  - **War Veteran** (combat/mid) — 20 lethal kills
+  - **Rising Ninja** (progression/early) — reach level 5
+  - **Seasoned Ninja** (progression/mid) — reach level 10
+  - **Loyal Bonds** (social/mid) — build high loyalty with 3 or more allies
+  - **Villain Slayer** (progression/late) — defeat every red-bar villain
+  - **Questmaster** (progression/late) — complete every seeded quest
+  - **Shadow Heir** (progression/late) — clear every region as Exiled Heir
+  - **Ghost Sovereign** (progression/late) — clear every region as Street Ghost
+  - **Monk Ascendant** (progression/late) — clear every region as Wandering Monk
+- Threshold constants for kill milestones, level milestones, and ally loyalty evaluation
+- 20 new tests covering Q6 branching and all new trophy unlock conditions
+
+---
+
 ## [0.1.0] – 2026-07-28
 
 ### Added

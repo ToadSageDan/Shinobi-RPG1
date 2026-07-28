@@ -643,6 +643,182 @@ class CoreSystemTests(unittest.TestCase):
             TrophyTier.EARLY,
         )
 
+    # ------------------------------------------------------------------
+    # Q6 quest branching tests
+    # ------------------------------------------------------------------
+
+    def test_q6_exists_in_seeded_world(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        quest_ids = [q.quest_id for q in world.quests]
+        self.assertIn("Q6", quest_ids)
+
+    def test_q6_branching_uses_exiled_heir_backstory(self):
+        world, player = build_mvp_world("Heir", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])  # exiled_heir
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "exiled_heir")
+        self.assertIn("bloodline covenant", result["outcome"])
+
+    def test_q6_branching_uses_street_ghost_backstory(self):
+        world, player = build_mvp_world("Ghost", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "street_ghost")
+        self.assertIn("stolen council sigils", result["outcome"])
+
+    def test_q6_branching_uses_wandering_monk_backstory(self):
+        world, player = build_mvp_world("Monk", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[2])  # wandering_monk
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("unarmed", result["outcome"])
+
+    def test_q6_branching_uses_nonlethal_path(self):
+        world, player = build_mvp_world("Pacifist", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+
+    def test_q6_branching_uses_rogue_path(self):
+        world, player = build_mvp_world("Rogue", [3, 1, 2, 4])
+        player.update_reputation(-60)
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "rogue_path")
+
+    def test_q6_branching_uses_heroic_path(self):
+        world, player = build_mvp_world("Hero", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "heroic_path")
+
+    def test_q6_default_branch_fires_with_no_special_conditions(self):
+        world, player = build_mvp_world("Blank", [3, 1, 2, 4])
+        result = world.resolve_quest_branch(player, "Q6")
+        self.assertEqual(result["branch_key"], "default")
+
+    # ------------------------------------------------------------------
+    # New trophy evaluation tests
+    # ------------------------------------------------------------------
+
+    def test_battle_hardened_trophy_awarded_at_five_kills(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(5):
+            world.apply_player_decision(player, "kill")
+        self.assertIn("battle_hardened", player.trophies)
+        self.assertNotIn("war_veteran", player.trophies)
+
+    def test_war_veteran_trophy_awarded_at_twenty_kills(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(20):
+            world.apply_player_decision(player, "kill")
+        self.assertIn("war_veteran", player.trophies)
+
+    def test_rising_ninja_trophy_awarded_at_level_5(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        # Levels 1→2: 100, 2→3: 200, 3→4: 300, 4→5: 400 = 1000 XP total
+        player.stats.gain_xp(1000)
+        world.evaluate_trophies(player)
+        self.assertIn("rising_ninja", player.trophies)
+
+    def test_seasoned_ninja_trophy_awarded_at_level_10(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        # 100+200+300+400+500+600+700+800+900 = 4500 XP to reach level 10
+        player.stats.gain_xp(4500)
+        world.evaluate_trophies(player)
+        self.assertIn("seasoned_ninja", player.trophies)
+
+    def test_loyal_bonds_trophy_awarded_with_three_high_loyalty_allies(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for ally in ["Dan", "Moon", "Sleep"]:
+            for _ in range(5):
+                player.adjust_ally_loyalty(ally, 1)
+        world.evaluate_trophies(player)
+        self.assertIn("loyal_bonds", player.trophies)
+
+    def test_loyal_bonds_not_awarded_with_only_two_high_loyalty_allies(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for ally in ["Dan", "Moon"]:
+            for _ in range(5):
+                player.adjust_ally_loyalty(ally, 1)
+        world.evaluate_trophies(player)
+        self.assertNotIn("loyal_bonds", player.trophies)
+
+    def test_villain_slayer_trophy_awarded_when_all_villains_defeated(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for villain in world.villains:
+            villain.defeated = True
+        world.evaluate_trophies(player)
+        self.assertIn("villain_slayer", player.trophies)
+
+    def test_questmaster_trophy_awarded_on_all_quest_completion(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.initialize_quest_log([q.quest_id for q in world.quests])
+        for quest in world.quests:
+            player.set_quest_status(quest.quest_id, QuestStatus.COMPLETED)
+        world.evaluate_trophies(player)
+        self.assertIn("questmaster", player.trophies)
+
+    def test_shadow_heir_trophy_awarded_for_exiled_heir_world_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])  # exiled_heir
+        for region in world.regions:
+            region.cleared = True
+        world.evaluate_trophies(player)
+        self.assertIn("shadow_heir", player.trophies)
+        self.assertNotIn("ghost_sovereign", player.trophies)
+        self.assertNotIn("monk_ascendant", player.trophies)
+
+    def test_ghost_sovereign_trophy_awarded_for_street_ghost_world_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        for region in world.regions:
+            region.cleared = True
+        world.evaluate_trophies(player)
+        self.assertIn("ghost_sovereign", player.trophies)
+        self.assertNotIn("shadow_heir", player.trophies)
+
+    def test_monk_ascendant_trophy_awarded_for_wandering_monk_world_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[2])  # wandering_monk
+        for region in world.regions:
+            region.cleared = True
+        world.evaluate_trophies(player)
+        self.assertIn("monk_ascendant", player.trophies)
+
+    def test_backstory_world_clear_trophies_not_awarded_without_world_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])  # exiled_heir, no regions cleared
+        world.evaluate_trophies(player)
+        self.assertNotIn("shadow_heir", player.trophies)
+
+    def test_new_trophy_keys_registered_in_catalog(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        expected_keys = {
+            "battle_hardened",
+            "war_veteran",
+            "rising_ninja",
+            "seasoned_ninja",
+            "loyal_bonds",
+            "villain_slayer",
+            "questmaster",
+            "shadow_heir",
+            "ghost_sovereign",
+            "monk_ascendant",
+        }
+        for key in expected_keys:
+            self.assertIn(key, world.trophy_catalog, f"Trophy '{key}' missing from catalog")
+
+    def test_new_trophy_tiers_are_correct(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        self.assertEqual(world.trophy_catalog["battle_hardened"].tier, TrophyTier.EARLY)
+        self.assertEqual(world.trophy_catalog["war_veteran"].tier, TrophyTier.MID)
+        self.assertEqual(world.trophy_catalog["rising_ninja"].tier, TrophyTier.EARLY)
+        self.assertEqual(world.trophy_catalog["seasoned_ninja"].tier, TrophyTier.MID)
+        self.assertEqual(world.trophy_catalog["villain_slayer"].tier, TrophyTier.LATE)
+        self.assertEqual(world.trophy_catalog["questmaster"].tier, TrophyTier.LATE)
+        self.assertEqual(world.trophy_catalog["shadow_heir"].tier, TrophyTier.LATE)
+
 
 if __name__ == "__main__":
     unittest.main()

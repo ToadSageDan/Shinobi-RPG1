@@ -120,6 +120,12 @@ STEALTH_TROPHY_MASTER_THRESHOLD = 8
 CHARM_TROPHY_MASTER_THRESHOLD = 8
 EVASION_TROPHY_MASTER_THRESHOLD = 5
 NONLETHAL_STYLE_BALANCE_THRESHOLD = 2
+KILL_TROPHY_BASE_THRESHOLD = 5
+KILL_TROPHY_ADVANCED_THRESHOLD = 20
+LEVEL_TROPHY_BASE_THRESHOLD = 5
+LEVEL_TROPHY_ADVANCED_THRESHOLD = 10
+ALLY_LOYALTY_TROPHY_THRESHOLD = 5
+ALLY_LOYALTY_TROPHY_COUNT = 3
 TROPHY_FIRST_STRIKE = "first_strike"
 TROPHY_GHOST_STEP = "ghost_step"
 TROPHY_SILVER_TONGUE = "silver_tongue"
@@ -139,6 +145,16 @@ TROPHY_ROGUE_ASCENDANT = "rogue_ascendant"
 TROPHY_HEROIC_CREST = "heroic_crest"
 TROPHY_PEACEKEEPER_EMBLEM = "peacekeeper_emblem"
 TROPHY_MERCY_CROWN = "mercy_crown"
+TROPHY_BATTLE_HARDENED = "battle_hardened"
+TROPHY_WAR_VETERAN = "war_veteran"
+TROPHY_RISING_NINJA = "rising_ninja"
+TROPHY_SEASONED_NINJA = "seasoned_ninja"
+TROPHY_LOYAL_BONDS = "loyal_bonds"
+TROPHY_VILLAIN_SLAYER = "villain_slayer"
+TROPHY_QUESTMASTER = "questmaster"
+TROPHY_SHADOW_HEIR = "shadow_heir"
+TROPHY_GHOST_SOVEREIGN = "ghost_sovereign"
+TROPHY_MONK_ASCENDANT = "monk_ascendant"
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -1256,6 +1272,46 @@ class NinjaWorld:
             player.quest_log.get(quest.quest_id) == QuestStatus.COMPLETED for quest in self.quests
         ):
             _award(TROPHY_MERCY_CROWN)
+
+        # Combat milestone trophies
+        if player.encounter_outcomes["kill"] >= KILL_TROPHY_BASE_THRESHOLD:
+            _award(TROPHY_BATTLE_HARDENED)
+        if player.encounter_outcomes["kill"] >= KILL_TROPHY_ADVANCED_THRESHOLD:
+            _award(TROPHY_WAR_VETERAN)
+
+        # Level progression trophies
+        if player.stats.level >= LEVEL_TROPHY_BASE_THRESHOLD:
+            _award(TROPHY_RISING_NINJA)
+        if player.stats.level >= LEVEL_TROPHY_ADVANCED_THRESHOLD:
+            _award(TROPHY_SEASONED_NINJA)
+
+        # Ally loyalty trophy
+        high_loyalty_count = sum(
+            1
+            for loyalty in player.ally_loyalty.values()
+            if loyalty >= ALLY_LOYALTY_TROPHY_THRESHOLD
+        )
+        if high_loyalty_count >= ALLY_LOYALTY_TROPHY_COUNT:
+            _award(TROPHY_LOYAL_BONDS)
+
+        # Villain slayer: all red-bar villains defeated
+        if self.villains and all(villain.defeated for villain in self.villains):
+            _award(TROPHY_VILLAIN_SLAYER)
+
+        # Quest master: complete all quests (any run style)
+        if self.quests and all(
+            player.quest_log.get(quest.quest_id) == QuestStatus.COMPLETED for quest in self.quests
+        ):
+            _award(TROPHY_QUESTMASTER)
+
+        # Backstory world-clear trophies
+        if cleared_regions >= len(self.regions) and player.selected_backstory:
+            if player.selected_backstory.key == "exiled_heir":
+                _award(TROPHY_SHADOW_HEIR)
+            elif player.selected_backstory.key == "street_ghost":
+                _award(TROPHY_GHOST_SOVEREIGN)
+            elif player.selected_backstory.key == "wandering_monk":
+                _award(TROPHY_MONK_ASCENDANT)
 
         return newly_awarded
 
@@ -2406,6 +2462,43 @@ def _seed_quests() -> List[Quest]:
                 "default": "You break the command ring in a decisive final confrontation.",
             },
         ),
+        Quest(
+            quest_id="Q6",
+            title="Legacy of the Fallen Shinobi",
+            objective="Reach the summit of the Ashen Spire and forge your legacy against the final warlord council.",
+            stealth_required=False,
+            reward_xp=420,
+            branch_outcomes={
+                "exiled_heir": (
+                    "You invoke your bloodline covenant at the summit gate. The council recognizes the ancient seal "
+                    "and grants passage — but demands a duel of honor before the final reckoning."
+                ),
+                "street_ghost": (
+                    "You slip past the summit sentries using stolen council sigils and trigger a blackout across "
+                    "their communications before they can coordinate a defense."
+                ),
+                "wandering_monk": (
+                    "You climb in silence and meet the council unarmed. Your willingness to lay down arms forces "
+                    "the council into a peace deliberation they cannot publicly refuse."
+                ),
+                "nonlethal_path": (
+                    "Every warlord falls to charm, stealth, and evasion in turn. The final council session "
+                    "ends in total surrender — no blood, only shadow."
+                ),
+                "heroic_path": (
+                    "Your heroic reputation precedes you to the summit. Council defectors open a hidden passage "
+                    "and stand behind you as witnesses to the reckoning."
+                ),
+                "rogue_path": (
+                    "Rogue guild allies surround the spire before dawn. The council capitulates under the threat "
+                    "of coordinated shadow strikes from every side."
+                ),
+                "default": (
+                    "You storm the summit in a direct assault, overpower the warlord council, and carve your "
+                    "legend into the walls of the Ashen Spire."
+                ),
+            },
+        ),
     ]
 
 
@@ -2981,6 +3074,76 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             "Mercy Crown",
             "Complete every seeded quest in a kill-free run.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_BATTLE_HARDENED,
+            "Battle Hardened",
+            "Defeat five enemies in lethal combat.",
+            TrophyCategory.COMBAT,
+            TrophyTier.EARLY,
+        ),
+        Trophy(
+            TROPHY_WAR_VETERAN,
+            "War Veteran",
+            "Defeat twenty enemies in lethal combat.",
+            TrophyCategory.COMBAT,
+            TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_RISING_NINJA,
+            "Rising Ninja",
+            "Reach level 5.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.EARLY,
+        ),
+        Trophy(
+            TROPHY_SEASONED_NINJA,
+            "Seasoned Ninja",
+            "Reach level 10.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_LOYAL_BONDS,
+            "Loyal Bonds",
+            "Build high loyalty with three or more allies.",
+            TrophyCategory.SOCIAL,
+            TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_VILLAIN_SLAYER,
+            "Villain Slayer",
+            "Defeat every red-bar villain in the world.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_QUESTMASTER,
+            "Questmaster",
+            "Complete every seeded quest.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_SHADOW_HEIR,
+            "Shadow Heir",
+            "Clear every region as the Exiled Heir.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_GHOST_SOVEREIGN,
+            "Ghost Sovereign",
+            "Clear every region as the Street Ghost.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_MONK_ASCENDANT,
+            "Monk Ascendant",
+            "Clear every region as the Wandering Monk.",
+            TrophyCategory.PROGRESSION,
             TrophyTier.LATE,
         ),
     ]

@@ -2083,7 +2083,9 @@ def _seed_quests() -> List[Quest]:
             stealth_required=True,
             reward_xp=120,
             branch_outcomes={
+                "exiled_heir": "A hidden oath marker grants passage, and old sentries stand down at your approach.",
                 "street_ghost": "Your underworld contacts open a tunnel route into the watchpost.",
+                "wandering_monk": "You walk the patrol rhythm and slip through blind spots without raising alarm.",
                 "infiltration": "You bypass the front line by scaling hidden cliff routes.",
                 "default": "You infiltrate through the drainage channel under moonlight.",
             },
@@ -2096,6 +2098,8 @@ def _seed_quests() -> List[Quest]:
             reward_xp=140,
             branch_outcomes={
                 "exiled_heir": "Old clan loyalists reveal a safe path and reinforce your escort line.",
+                "street_ghost": "You reroute the caravan through smuggler trails and avoid the heaviest trap lines.",
+                "wandering_monk": "Your calm mediation de-escalates the ambush, turning a standoff into safe passage.",
                 "honor_bound": "You challenge the ambushers openly, earning their retreat.",
                 "default": "You hold the line and protect Dan until dawn.",
             },
@@ -2107,6 +2111,8 @@ def _seed_quests() -> List[Quest]:
             stealth_required=False,
             reward_xp=220,
             branch_outcomes={
+                "exiled_heir": "You invoke a legacy challenge and force Kage Renda into a formal duel for the gate.",
+                "street_ghost": "You cut supply lines and spring a precision trap before Renda can form a full defense.",
                 "wandering_monk": "Through restraint and focus, you disarm Kage Renda without a killing blow.",
                 "pacifism": "You force a surrender and secure the gate through discipline.",
                 "default": "You overpower Kage Renda in a direct final clash.",

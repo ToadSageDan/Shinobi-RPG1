@@ -671,9 +671,13 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         if reward_choice == "move":
-            boss_move = _boss_exclusive_move_for(region.boss, reward_name)
-            if boss_move.name not in player.unlocked_move_names:
-                player.add_move(boss_move, allow_cross_affinity=True)
+            boss_move = _boss_exclusive_move_for(region.boss)
+            if reward_name != boss_move.name:
+                raise ValueError(
+                    f'Boss move reward mismatch for "{region.boss}": '
+                    f'expected "{boss_move.name}", got "{reward_name}".'
+                )
+            player.add_move(boss_move, allow_cross_affinity=True)
         player.unlock_fast_travel(region.name)
         self.defeat_red_bar_ninja(player, region.boss)
         for ally in region.allies:
@@ -2014,7 +2018,7 @@ def _seed_regions() -> List[Region]:
     ]
 
 
-def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
+def _boss_exclusive_move_for(villain_name: str) -> Move:
     """Build the boss-only move reward configured for a region boss."""
     reward_move_specs = {
         "Kage Renda": {
@@ -2045,11 +2049,6 @@ def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
     spec = reward_move_specs.get(villain_name)
     if not spec:
         raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
-    if reward_name != spec["name"]:
-        raise ValueError(
-            f'Boss move reward mismatch for "{villain_name}": '
-            f'expected "{spec["name"]}", got "{reward_name}".'
-        )
     return _make_move(
         spec["name"],
         spec["category"],

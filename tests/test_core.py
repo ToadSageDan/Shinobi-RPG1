@@ -22,6 +22,9 @@ from shinobi_rpg.core import (
 
 
 class CoreSystemTests(unittest.TestCase):
+    def _get_unlocked_move_names(self, player: PlayerProfile) -> set[str]:
+        return {move.name for moves in player.moves_by_set.values() for move in moves}
+
     def test_non_ultimate_move_cannot_mix_affinities(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.FIRE)
         move = Move("Invalid Strike", MoveCategory.ATTACK, (Affinity.FIRE, Affinity.WIND))
@@ -165,12 +168,12 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
-        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        unlocked_names = self._get_unlocked_move_names(player)
         self.assertNotIn(reward_move_name, unlocked_names)
         reward = world.clear_region(player, "Verdant Gate", "move")
         self.assertEqual(reward, reward_move_name)
         self.assertIn(reward_move_name, player.reward_inventory["move"])
-        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        unlocked_names = self._get_unlocked_move_names(player)
         self.assertIn(reward_move_name, unlocked_names)
 
     def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
@@ -178,7 +181,7 @@ class CoreSystemTests(unittest.TestCase):
         verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
         world.clear_region(player, "Verdant Gate", "weapon")
-        unlocked_names = {move.name for moves in player.moves_by_set.values() for move in moves}
+        unlocked_names = self._get_unlocked_move_names(player)
         self.assertNotIn(reward_move_name, unlocked_names)
 
     def test_region_clear_requires_previous_region(self):

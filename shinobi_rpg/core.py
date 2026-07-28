@@ -134,6 +134,29 @@ COMBO_BONUSES: Dict[Tuple[StatusEffectType, Affinity], Dict[str, Any]] = {
     (StatusEffectType.CRACK_ARMOR, Affinity.FIRE): {"damage_bonus": 0.25, "label": "armor_melt"},
     (StatusEffectType.BLIND, Affinity.WIND): {"damage_bonus": 0.1, "label": "ambush_followup"},
 }
+BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
+    "Kage Renda": {
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.28,
+        "jutsu_type": JutsuType.WEAPON_STYLE,
+        "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
+    },
+    "General Voln": {
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.FIRE,),
+        "power_scale": 1.3,
+        "jutsu_type": JutsuType.ELEMENTAL,
+        "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
+    },
+    "Admiral Neris": {
+        "category": MoveCategory.DEFENSE,
+        "affinities": (Affinity.WATER,),
+        "power_scale": 1.08,
+        "jutsu_type": JutsuType.BARRIER,
+        "status_effects": (StatusEffectType.DRENCH, StatusEffectType.CHILL),
+    },
+}
 
 
 def _empty_affinity_scores() -> Dict[Affinity, int]:
@@ -671,12 +694,7 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         if reward_choice == "move":
-            boss_move = _boss_exclusive_move_for(region.boss)
-            if reward_name != boss_move.name:
-                raise ValueError(
-                    f'Boss move reward mismatch for "{region.boss}": '
-                    f'expected "{boss_move.name}", got "{reward_name}".'
-                )
+            boss_move = _boss_exclusive_move_for(region.boss, reward_name)
             player.add_move(boss_move, allow_cross_affinity=True)
         player.unlock_fast_travel(region.name)
         self.defeat_red_bar_ninja(player, region.boss)
@@ -2018,39 +2036,13 @@ def _seed_regions() -> List[Region]:
     ]
 
 
-def _boss_exclusive_move_for(villain_name: str) -> Move:
+def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
     """Build the boss-only move reward configured for a region boss."""
-    reward_move_specs = {
-        "Kage Renda": {
-            "name": "Razorwind Spiral",
-            "category": MoveCategory.ATTACK,
-            "affinities": (Affinity.WIND,),
-            "power_scale": 1.28,
-            "jutsu_type": JutsuType.WEAPON_STYLE,
-            "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
-        },
-        "General Voln": {
-            "name": "Inferno Vortex",
-            "category": MoveCategory.ATTACK,
-            "affinities": (Affinity.FIRE,),
-            "power_scale": 1.3,
-            "jutsu_type": JutsuType.ELEMENTAL,
-            "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
-        },
-        "Admiral Neris": {
-            "name": "Maelstrom Guard",
-            "category": MoveCategory.DEFENSE,
-            "affinities": (Affinity.WATER,),
-            "power_scale": 1.08,
-            "jutsu_type": JutsuType.BARRIER,
-            "status_effects": (StatusEffectType.DRENCH, StatusEffectType.CHILL),
-        },
-    }
-    spec = reward_move_specs.get(villain_name)
+    spec = BOSS_EXCLUSIVE_MOVE_SPECS.get(villain_name)
     if not spec:
         raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
     return _make_move(
-        spec["name"],
+        reward_name,
         spec["category"],
         spec["affinities"],
         spec["power_scale"],

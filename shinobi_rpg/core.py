@@ -311,8 +311,9 @@ class PlayerProfile:
         """Resolve defensive block/parry output with a no-defense fallback.
 
         If multiple defense moves are unlocked, the highest ``power_scale`` move is
-        selected to represent the strongest available defensive technique. The same
-        defense scale is applied to both guarding and parry timing in this MVP model.
+        selected to represent the strongest available defensive technique (ties break
+        alphabetically by move name). The same defense scale is applied to both guard
+        reduction and agility-based parry timing in this MVP model.
         """
         if incoming_damage < 0:
             raise ValueError("Incoming damage cannot be negative.")
@@ -322,7 +323,11 @@ class PlayerProfile:
             raise ValueError("Parry difficulty cannot be negative.")
 
         defense_moves = self.moves_by_set[MoveCategory.DEFENSE]
-        selected_move = max(defense_moves, key=lambda move: move.power_scale) if defense_moves else None
+        selected_move = (
+            max(defense_moves, key=lambda move: (move.power_scale, move.name))
+            if defense_moves
+            else None
+        )
         defense_scale = selected_move.power_scale if selected_move else base_guard_scale
         guard = int(self.stats.defense * defense_scale)
         parry_score = int(self.stats.agility * defense_scale)

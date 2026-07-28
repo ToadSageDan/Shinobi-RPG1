@@ -90,6 +90,19 @@ QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
+ROLE_STANCE_BIAS = {
+    "assassin": 1,
+    "attrition": 1,
+    "breaker": 1,
+    "disruptor": 1,
+    "sniper": 1,
+    "warlord": 1,
+    "zone_control": 1,
+    "controller": -1,
+    "counter": -1,
+    "support_denial": -1,
+    "summoner": -1,
+}
 STEALTH_TROPHY_BASE_THRESHOLD = 3
 STEALTH_TROPHY_ADVANCED_THRESHOLD = 5
 CHARM_TROPHY_BASE_THRESHOLD = 3
@@ -251,12 +264,16 @@ class VillainProfile:
         """Update villain temperament from player decisions over time."""
         normalized = decision_tag.strip().lower()
         self.decision_memory[normalized] = self.decision_memory.get(normalized, 0) + intensity
+        role_bias = ROLE_STANCE_BIAS.get(self.role, 0)
+        stance_delta = 0
         if normalized in {"kill", "aggressive", "betray"}:
-            self.aggression_score += 2 * intensity
+            stance_delta = 2
         elif normalized in {"stealth", "evasion"}:
-            self.aggression_score += intensity
+            stance_delta = 1 + max(0, role_bias)
         elif normalized in {"charm", "mercy", "diplomacy"}:
-            self.aggression_score -= 2 * intensity
+            stance_delta = -2 + role_bias
+            stance_delta = min(-1, stance_delta)
+        self.aggression_score += stance_delta * intensity
 
         if self.aggression_score >= 4:
             self.stance = VillainStance.AGGRESSIVE

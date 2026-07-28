@@ -250,6 +250,14 @@ class CoreSystemTests(unittest.TestCase):
             world.apply_player_decision(player, "kill")
         self.assertTrue(all(v.stance == VillainStance.AGGRESSIVE for v in world.villains))
 
+    def test_charm_decisions_shift_villain_stance_by_role(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "charm")
+        aggressive_role_villain = next(v for v in world.villains if v.name == "Mist Widow")
+        passive_role_villain = next(v for v in world.villains if v.name == "Admiral Neris")
+        self.assertEqual(aggressive_role_villain.stance, VillainStance.BALANCED)
+        self.assertEqual(passive_role_villain.stance, VillainStance.PASSIVE)
+
     def test_nonlethal_path_and_trophy_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for decision in ["stealth", "stealth", "stealth", "charm", "evasion"]:

@@ -136,6 +136,7 @@ COMBO_BONUSES: Dict[Tuple[StatusEffectType, Affinity], Dict[str, Any]] = {
 }
 BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
     "Kage Renda": {
+        "name": "Razorwind Spiral",
         "category": MoveCategory.ATTACK,
         "affinities": (Affinity.WIND,),
         "power_scale": 1.28,
@@ -143,6 +144,7 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
     },
     "General Voln": {
+        "name": "Inferno Vortex",
         "category": MoveCategory.ATTACK,
         "affinities": (Affinity.FIRE,),
         "power_scale": 1.3,
@@ -150,6 +152,7 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
     },
     "Admiral Neris": {
+        "name": "Maelstrom Guard",
         "category": MoveCategory.DEFENSE,
         "affinities": (Affinity.WATER,),
         "power_scale": 1.08,
@@ -694,7 +697,7 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         if reward_choice == "move":
-            boss_move = _boss_exclusive_move_for(region.boss, reward_name)
+            boss_move = _boss_exclusive_move_for(region.boss)
             player.add_move(boss_move, allow_cross_affinity=True)
         player.unlock_fast_travel(region.name)
         self.defeat_red_bar_ninja(player, region.boss)
@@ -2036,19 +2039,36 @@ def _seed_regions() -> List[Region]:
     ]
 
 
-def _boss_exclusive_move_for(villain_name: str, reward_name: str) -> Move:
+def _boss_exclusive_move_for(villain_name: str) -> Move:
     """Build the boss-only move reward configured for a region boss."""
     spec = BOSS_EXCLUSIVE_MOVE_SPECS.get(villain_name)
     if not spec:
         raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
     return _make_move(
-        reward_name,
+        spec["name"],
         spec["category"],
         spec["affinities"],
         spec["power_scale"],
         spec["jutsu_type"],
         spec["status_effects"],
     )
+
+
+def _validate_boss_move_reward_config(regions: Sequence[Region]) -> None:
+    for region in regions:
+        move_reward_name = region.boss_rewards.get("move")
+        if not move_reward_name:
+            raise ValueError(f'Region "{region.name}" is missing a boss move reward.')
+        spec = BOSS_EXCLUSIVE_MOVE_SPECS.get(region.boss)
+        if not spec:
+            raise ValueError(
+                f'Boss-exclusive move specification is not defined for villain "{region.boss}".'
+            )
+        if move_reward_name != spec["name"]:
+            raise ValueError(
+                f'Boss move reward mismatch for "{region.boss}": '
+                f'expected "{spec["name"]}", got "{move_reward_name}".'
+            )
 
 
 def _seed_quests() -> List[Quest]:
@@ -2638,13 +2658,15 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
     """
     affinity = resolve_affinity_minigame(affinity_decisions)
     player = PlayerProfile(name=player_name, affinity=affinity)
+    regions = _seed_regions()
+    _validate_boss_move_reward_config(regions)
 
     for move_set, moves in _seed_moves(affinity).items():
         for move in moves:
             player.add_move(move, allow_cross_affinity=True)
 
     world = NinjaWorld(
-        regions=_seed_regions(),
+        regions=regions,
         quests=_seed_quests(),
         allies=_seed_allies(),
         weapons=_seed_weapons(),

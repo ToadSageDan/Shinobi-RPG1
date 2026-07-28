@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 
 class Affinity(str, Enum):
@@ -155,7 +155,7 @@ class PlayerProfile:
                     return move
         raise ValueError(f'Move "{move_name}" is not unlocked for this player.')
 
-    def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, object]:
+    def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, Any]:
         move = self.get_move(move_name)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
@@ -172,8 +172,10 @@ class PlayerProfile:
                 "escape_score": escape_score,
                 "escaped": escaped,
             }
-        damage = int((self.stats.power + self.stats.focus) * move.power_scale)
-        return {"move": move.name, "category": move.category.value, "damage": damage}
+        if move.category == MoveCategory.ULTIMATE:
+            damage = int((self.stats.power + self.stats.focus) * move.power_scale)
+            return {"move": move.name, "category": move.category.value, "damage": damage}
+        raise ValueError(f'Unsupported move category "{move.category.value}".')
 
     def update_reputation(self, delta: int) -> ReputationTier:
         self.reputation += delta

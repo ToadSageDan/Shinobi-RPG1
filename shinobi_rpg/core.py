@@ -51,6 +51,13 @@ ROGUE_THRESHOLD_MIN = -50
 HEROIC_THRESHOLD_MIN = 50
 # Base XP requirement per level in the level-based progression curve.
 BASE_XP_PER_LEVEL = 100
+DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
+STEALTH_TROPHY_BASE_THRESHOLD = 3
+STEALTH_TROPHY_ADVANCED_THRESHOLD = 5
+CHARM_TROPHY_BASE_THRESHOLD = 3
+CHARM_TROPHY_ADVANCED_THRESHOLD = 5
+EVASION_TROPHY_THRESHOLD = 3
+PACIFIST_TROPHY_ACTIONS_THRESHOLD = 5
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -62,6 +69,14 @@ AFFINITY_MINIGAME_CHOICES = {
 
 def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
+
+
+def _reputation_tier_for(reputation: int) -> ReputationTier:
+    if reputation <= ROGUE_THRESHOLD_MIN:
+        return ReputationTier.ROGUE
+    if reputation >= HEROIC_THRESHOLD_MIN:
+        return ReputationTier.HEROIC
+    return ReputationTier.NEUTRAL
 
 
 @dataclass(frozen=True)
@@ -215,7 +230,7 @@ class PlayerProfile:
     def record_encounter_outcome(
         self, outcome: Literal["kill", "charm", "stealth", "evasion"]
     ) -> None:
-        if outcome not in self.encounter_outcomes:
+        if outcome not in DECISION_OUTCOMES:
             raise ValueError("Outcome must be kill, charm, stealth, or evasion.")
         self.encounter_outcomes[outcome] += 1
 
@@ -228,11 +243,7 @@ class PlayerProfile:
         return self.encounter_outcomes["kill"] == 0 and nonlethal_actions > 0
 
     def current_reputation_tier(self) -> ReputationTier:
-        if self.reputation <= ROGUE_THRESHOLD_MIN:
-            return ReputationTier.ROGUE
-        if self.reputation >= HEROIC_THRESHOLD_MIN:
-            return ReputationTier.HEROIC
-        return ReputationTier.NEUTRAL
+        return _reputation_tier_for(self.reputation)
 
     def add_move(self, move: Move) -> None:
         move.validate()
@@ -278,13 +289,11 @@ class PlayerProfile:
 
     def update_reputation(self, delta: int) -> ReputationTier:
         self.reputation += delta
-        if self.reputation <= ROGUE_THRESHOLD_MIN:
+        tier = _reputation_tier_for(self.reputation)
+        if tier == ReputationTier.ROGUE:
             if "black_market" not in self.unlocked_zones:
                 self.unlocked_zones.append("black_market")
-            return ReputationTier.ROGUE
-        if self.reputation >= HEROIC_THRESHOLD_MIN:
-            return ReputationTier.HEROIC
-        return ReputationTier.NEUTRAL
+        return tier
 
     def unlock_fast_travel(self, node_name: str) -> None:
         if node_name not in self.unlocked_fast_travel_nodes:
@@ -356,7 +365,7 @@ class NinjaWorld:
         normalized = decision_tag.strip().lower()
         for villain in self.villains:
             villain.apply_decision(normalized, intensity=intensity)
-        if normalized in {"kill", "charm", "stealth", "evasion"}:
+        if normalized in DECISION_OUTCOMES:
             player.record_encounter_outcome(normalized)
         self.evaluate_trophies(player)
 
@@ -409,7 +418,7 @@ class NinjaWorld:
         villain = self._find_villain(region.boss)
         behavior_by_stance = self.villain_behavior_rules.get(villain.name, {})
         behavior = behavior_by_stance.get(villain.stance, "Unpredictable tactics.")
-        if player.selected_backstory and "pacifism" in player.narrative_tags:
+        if "pacifism" in player.narrative_tags:
             behavior = f"{behavior} This boss shows small restraint toward pacifist choices."
         return {
             "region": region.name,
@@ -428,21 +437,21 @@ class NinjaWorld:
 
         if player.encounter_outcomes["kill"] > 0:
             _award("first_strike")
-        if player.encounter_outcomes["stealth"] >= 3:
+        if player.encounter_outcomes["stealth"] >= STEALTH_TROPHY_BASE_THRESHOLD:
             _award("ghost_step")
-        if player.encounter_outcomes["charm"] >= 3:
+        if player.encounter_outcomes["charm"] >= CHARM_TROPHY_BASE_THRESHOLD:
             _award("silver_tongue")
-        if player.encounter_outcomes["evasion"] >= 3:
+        if player.encounter_outcomes["evasion"] >= EVASION_TROPHY_THRESHOLD:
             _award("windwalk_survivor")
-        if player.encounter_outcomes["stealth"] >= 5:
+        if player.encounter_outcomes["stealth"] >= STEALTH_TROPHY_ADVANCED_THRESHOLD:
             _award("veil_master")
-        if player.encounter_outcomes["charm"] >= 5:
+        if player.encounter_outcomes["charm"] >= CHARM_TROPHY_ADVANCED_THRESHOLD:
             _award("diplomat_supreme")
         if player.is_nonlethal_path_active() and (
             player.encounter_outcomes["charm"]
             + player.encounter_outcomes["stealth"]
             + player.encounter_outcomes["evasion"]
-        ) >= 5:
+        ) >= PACIFIST_TROPHY_ACTIONS_THRESHOLD:
             _award("pacifist_shadow")
         if player.selected_backstory:
             _award("origin_awakened")
@@ -455,7 +464,10 @@ class NinjaWorld:
             _award("rogue_ascendant")
         if player.reputation >= HEROIC_THRESHOLD_MIN:
             _award("heroic_crest")
-        if player.current_reputation_tier() == ReputationTier.HEROIC and player.encounter_outcomes["charm"] >= 3:
+        if (
+            player.current_reputation_tier() == ReputationTier.HEROIC
+            and player.encounter_outcomes["charm"] >= CHARM_TROPHY_BASE_THRESHOLD
+        ):
             _award("peacekeeper_emblem")
 
         return newly_awarded

@@ -21,19 +21,23 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Fast travel unlocks from progression
 - Vault archive for historic ninja runs
 - Vault replay analytics for run history, trophy frequency, and top run summary
+- Replay hub report combining active-run summary and archive analytics
 - Player backstory selection with narrative/reputation impact
 - Villain backstories with aggression/passivity shifts from player decisions
 - Villain-specific decision memory in behavior and summary reporting
 - Backstory-driven quest branch outcomes
+- Dynamic quest branching that can react to nonlethal and reputation paths
 - Region/boss-specific villain behavior rules by stance
 - Expanded balanced shared move pool (12 per category) for reusable combat design
 - Villain kit design with one signature move plus skinned shared move loadouts
 - Status effects on weapons/jutsu/summons with capped duration and stack bands
+- Combat physics output for moves (impact/knockback/stagger window) with blood intensity tracking
 - Combo resolution helper with status-affinity synergy bonuses
 - Affinity animation preview metadata for move startup/travel/hit/recovery beats
 - Nonlethal progression tracking via charm, stealth, and evasion outcomes
 - Reputation-aware shop inventory and Black Market purchasing
 - Expanded trophy catalog with category-based unlock conditions
+- Trophy tiers (early/mid/late) exposed in summary and progress views
 - Trophy progress tracking with near-miss hints
 - Playthrough summary report including backstory, trophies, reputation, and villain stances
 

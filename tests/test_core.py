@@ -12,6 +12,7 @@ from shinobi_rpg.core import (
     ReputationTier,
     StatusEffectType,
     TrophyCategory,
+    TrophyTier,
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
@@ -57,6 +58,8 @@ class CoreSystemTests(unittest.TestCase):
         result = player.execute_move("Edge Current")
         self.assertEqual(result["category"], "attack")
         self.assertEqual(result["damage"], 10)
+        self.assertIn("combat_physics", result)
+        self.assertEqual(result["combat_physics"]["blood_intensity"], "none")
 
     def test_execute_defense_move_scales_with_defense(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -180,6 +183,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn(reward_move_name, player.reward_inventory["move"])
         unlocked_names = self._get_unlocked_move_names(player)
         self.assertIn(reward_move_name, unlocked_names)
+        move_result = player.execute_move(reward_move_name)
+        self.assertNotEqual(move_result["combat_physics"]["blood_intensity"], "none")
 
     def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
@@ -269,6 +274,17 @@ class CoreSystemTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Player name cannot be empty."):
             world.get_player_vault_history("   ")
 
+    def test_replay_hub_report_combines_active_and_archive_state(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.apply_player_decision(player, "stealth")
+        world.archive_historic_ninja(player)
+        report = world.generate_replay_hub_report(player)
+        self.assertIn("active_run", report)
+        self.assertIn("vault_overview", report)
+        self.assertIn("player_archive_history", report)
+        self.assertEqual(report["vault_overview"]["total_runs"], 1)
+        self.assertEqual(len(report["player_archive_history"]), 1)
+
     def test_player_backstory_updates_tags_and_reputation(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
         backstory = Backstory(
@@ -346,6 +362,23 @@ class CoreSystemTests(unittest.TestCase):
         result = world.resolve_quest_branch(player, "Q1")
         self.assertEqual(result["branch_key"], "street_ghost")
         self.assertIn("underworld contacts", result["outcome"])
+
+    def test_q4_branching_uses_nonlethal_and_reputation_paths(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        nonlethal = world.resolve_quest_branch(player, "Q4")
+        self.assertEqual(nonlethal["branch_key"], "nonlethal_path")
+
+        rogue_world, rogue_player = build_mvp_world("Rogue", [3, 1, 2, 4])
+        rogue_player.update_reputation(-60)
+        rogue = rogue_world.resolve_quest_branch(rogue_player, "Q4")
+        self.assertEqual(rogue["branch_key"], "rogue_path")
+
+        heroic_world, heroic_player = build_mvp_world("Hero", [3, 1, 2, 4])
+        heroic_player.update_reputation(60)
+        heroic = heroic_world.resolve_quest_branch(heroic_player, "Q4")
+        self.assertEqual(heroic["branch_key"], "heroic_path")
 
     def test_region_boss_behavior_uses_villain_specific_rules(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -444,6 +477,10 @@ class CoreSystemTests(unittest.TestCase):
         public_inventory = {item["key"] for item in world.get_shop_inventory(player)}
         self.assertIn("market_smoke_bomb", public_inventory)
         self.assertNotIn("black_market_kunai", public_inventory)
+        self.assertNotIn("pacifist_thread_charm", public_inventory)
+        world.apply_player_decision(player, "stealth")
+        nonlethal_inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertIn("pacifist_thread_charm", nonlethal_inventory)
         player.update_reputation(-60)
         rogue_inventory = {item["key"] for item in world.get_shop_inventory(player)}
         self.assertIn("black_market_kunai", rogue_inventory)
@@ -523,6 +560,27 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("ally_loyalty", summary)
         self.assertIn("credits", summary)
         self.assertIn("trophy_progress", summary)
+        self.assertIn("villain_evolution", summary)
+
+    def test_villain_evolution_checkpoints_escalate_with_pressure(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(8):
+            world.apply_player_decision(player, "kill")
+        checkpoints = world.get_villain_evolution_checkpoints()
+        renda = next(item for item in checkpoints if item["villain"] == "Kage Renda")
+        self.assertEqual(renda["phase"], "apex")
+        self.assertGreaterEqual(renda["pressure_index"], 8)
+
+    def test_trophy_progress_and_summary_include_tiers(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "stealth")
+        summary = world.generate_playthrough_summary(player)
+        ghost = next(item for item in summary["trophies"] if item["key"] == "ghost_step")
+        self.assertEqual(ghost["tier"], TrophyTier.EARLY.value)
+        progress = world.get_trophy_progress(player)
+        ghost_progress = next(item for item in progress if item["key"] == "ghost_step")
+        self.assertEqual(ghost_progress["tier"], TrophyTier.EARLY.value)
 
     def test_ninjutsu_catalog_offers_diverse_affinity_and_summon_paths(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -567,6 +625,19 @@ class CoreSystemTests(unittest.TestCase):
         summary = world.generate_playthrough_summary(player)
         self.assertIn("villain_kits", summary)
         self.assertGreaterEqual(len(summary["villain_kits"]), 15)
+        self.assertIn("skill_physics", preview)
+
+    def test_snapshot_load_supports_legacy_trophies_without_tier(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        snapshot = world.to_snapshot(player)
+        for trophy in snapshot["world"]["trophy_catalog"].values():
+            trophy.pop("tier", None)
+        restored_world, restored_player = world.from_snapshot(snapshot)
+        self.assertEqual(restored_player.name, player.name)
+        self.assertEqual(
+            restored_world.trophy_catalog["ghost_step"].tier,
+            TrophyTier.EARLY,
+        )
 
 
 if __name__ == "__main__":

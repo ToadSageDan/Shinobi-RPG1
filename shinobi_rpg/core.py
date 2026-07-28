@@ -69,6 +69,12 @@ class TrophyCategory(str, Enum):
     ALIGNMENT = "alignment"
 
 
+class TrophyTier(str, Enum):
+    EARLY = "early"
+    MID = "mid"
+    LATE = "late"
+
+
 class ReputationTier(str, Enum):
     HEROIC = "heroic"
     NEUTRAL = "neutral"
@@ -155,6 +161,12 @@ COMBO_BONUSES: Dict[Tuple[StatusEffectType, Affinity], Dict[str, Any]] = {
     (StatusEffectType.CHILL, Affinity.EARTH): {"damage_bonus": 0.15, "label": "shatter_window"},
     (StatusEffectType.CRACK_ARMOR, Affinity.FIRE): {"damage_bonus": 0.25, "label": "armor_melt"},
     (StatusEffectType.BLIND, Affinity.WIND): {"damage_bonus": 0.1, "label": "ambush_followup"},
+}
+BLOOD_INTENSITY_BY_BLEED_STACK = {
+    0: "none",
+    1: "low",
+    2: "medium",
+    3: "high",
 }
 BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
     "Kage Renda": {
@@ -289,6 +301,7 @@ class Trophy:
     name: str
     description: str
     category: TrophyCategory
+    tier: TrophyTier = TrophyTier.EARLY
 
 
 @dataclass
@@ -472,6 +485,7 @@ class PlayerProfile:
         move = self.get_move(move_name)
         if move.status_effects:
             self.apply_status_effects(move.status_effects)
+        combat_physics = self._build_combat_physics(move)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
             return {
@@ -479,6 +493,7 @@ class PlayerProfile:
                 "category": move.category.value,
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
+                "combat_physics": combat_physics,
             }
         if move.category == MoveCategory.DEFENSE:
             guard = int(self.stats.defense * move.power_scale)
@@ -487,6 +502,7 @@ class PlayerProfile:
                 "category": move.category.value,
                 "guard": guard,
                 "applied_statuses": [effect.value for effect in move.status_effects],
+                "combat_physics": combat_physics,
             }
         if move.category == MoveCategory.ESCAPE:
             escape_score = int(self.stats.agility * move.power_scale)
@@ -497,6 +513,7 @@ class PlayerProfile:
                 "escape_score": escape_score,
                 "escaped": escaped,
                 "applied_statuses": [effect.value for effect in move.status_effects],
+                "combat_physics": combat_physics,
             }
         if move.category == MoveCategory.ULTIMATE:
             damage = int((self.stats.power + self.stats.focus) * move.power_scale)
@@ -505,6 +522,7 @@ class PlayerProfile:
                 "category": move.category.value,
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
+                "combat_physics": combat_physics,
             }
         if move.category == MoveCategory.SUMMON:
             summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
@@ -514,8 +532,29 @@ class PlayerProfile:
                 "summon_power": summon_power,
                 "summon_type": move.jutsu_type.value,
                 "applied_statuses": [effect.value for effect in move.status_effects],
+                "combat_physics": combat_physics,
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
+
+    def _build_combat_physics(self, move: Move) -> Dict[str, Any]:
+        impact_force = int((self.stats.power + self.stats.agility) * move.power_scale)
+        bleed_stacks = self.active_status_effects.get(StatusEffectType.BLEED.value, {}).get("stacks", 0)
+        blood_intensity = BLOOD_INTENSITY_BY_BLEED_STACK.get(
+            min(max(int(bleed_stacks), 0), 3), BLOOD_INTENSITY_BY_BLEED_STACK[3]
+        )
+        stagger_window = max(1, int(round(move.power_scale * 2)))
+        knockback = max(
+            0,
+            int(round((self.stats.power * move.power_scale) / 8))
+            + (1 if StatusEffectType.STAGGER in move.status_effects else 0),
+        )
+        return {
+            "impact_force": impact_force,
+            "knockback": knockback,
+            "stagger_window": stagger_window,
+            "blood_intensity": blood_intensity,
+            "blooded": blood_intensity != "none",
+        }
 
     def resolve_block_parry(
         self,
@@ -835,6 +874,27 @@ class NinjaWorld:
             "most_collected_trophies": most_collected_trophies,
         }
 
+    def get_villain_evolution_checkpoints(self) -> List[Dict[str, Any]]:
+        checkpoints: List[Dict[str, Any]] = []
+        for villain in self.villains:
+            pressure = sum(villain.decision_memory.values())
+            if pressure >= 8:
+                phase = "apex"
+            elif pressure >= 4:
+                phase = "escalation"
+            else:
+                phase = "opening"
+            checkpoints.append(
+                {
+                    "villain": villain.name,
+                    "phase": phase,
+                    "pressure_index": pressure,
+                    "stance": villain.stance.value,
+                    "encounter_variant": self.villain_behavior_rules.get(villain.name, {}).get(villain.stance, ""),
+                }
+            )
+        return checkpoints
+
     def apply_player_decision(self, player: PlayerProfile, decision_tag: str, intensity: int = 1) -> None:
         normalized = decision_tag.strip().lower()
         for villain in self.villains:
@@ -891,6 +951,7 @@ class NinjaWorld:
             "move": move.name,
             "affinities": [affinity.value for affinity in move.affinities],
             "animation_profile": dict(move.animation_profile),
+            "skill_physics": self._build_skill_physics(move),
         }
 
     def preview_affinity_combo_animation(
@@ -911,9 +972,24 @@ class NinjaWorld:
                     "travel": move.animation_profile.get("travel", ""),
                     "hit": move.animation_profile.get("hit", ""),
                     "recovery": move.animation_profile.get("recovery", ""),
+                    "physics": self._build_skill_physics(move),
                 }
             )
         return {"combo_path": staged}
+
+    def _build_skill_physics(self, move: Move) -> Dict[str, Any]:
+        blood_scale = 0
+        if StatusEffectType.BLEED in move.status_effects:
+            blood_scale = 2
+        elif StatusEffectType.BURN in move.status_effects:
+            blood_scale = 1
+        intensity = BLOOD_INTENSITY_BY_BLEED_STACK.get(blood_scale, "none")
+        return {
+            "impact_class": "heavy" if move.power_scale >= 1.2 else "medium" if move.power_scale >= 1.0 else "light",
+            "launch_force": int(round(move.power_scale * 10)),
+            "recovery_frames": max(6, int(round(12 * move.power_scale))),
+            "blood_intensity": intensity,
+        }
 
     def defeat_red_bar_ninja(self, player: PlayerProfile, villain_name: str) -> Dict[str, Any]:
         villain = self._find_villain(villain_name)
@@ -1020,6 +1096,12 @@ class NinjaWorld:
         """
         if player.selected_backstory and player.selected_backstory.key in branch_outcomes:
             return player.selected_backstory.key
+        if player.is_nonlethal_path_active() and "nonlethal_path" in branch_outcomes:
+            return "nonlethal_path"
+        if player.current_reputation_tier() == ReputationTier.HEROIC and "heroic_path" in branch_outcomes:
+            return "heroic_path"
+        if player.current_reputation_tier() == ReputationTier.ROGUE and "rogue_path" in branch_outcomes:
+            return "rogue_path"
         for tag in sorted(player.narrative_tags):
             if tag in branch_outcomes:
                 return tag
@@ -1074,6 +1156,8 @@ class NinjaWorld:
                 and item.get("requires_black_market")
             ):
                 price = max(1, int(round(price * (100 - ROGUE_SHOP_DISCOUNT_PERCENT) / 100)))
+            if item.get("requires_nonlethal") and not player.is_nonlethal_path_active():
+                continue
             visible_items.append(
                 {
                     "key": item_key,
@@ -1158,6 +1242,7 @@ class NinjaWorld:
                 "key": key,
                 "name": self.trophy_catalog[key].name,
                 "category": self.trophy_catalog[key].category.value,
+                "tier": self.trophy_catalog[key].tier.value,
             }
             for key in sorted(player.trophies)
             if key in self.trophy_catalog
@@ -1201,6 +1286,14 @@ class NinjaWorld:
             "credits": player.credits,
             "trophies": trophy_details,
             "trophy_progress": self.get_trophy_progress(player),
+            "villain_evolution": self.get_villain_evolution_checkpoints(),
+        }
+
+    def generate_replay_hub_report(self, player: PlayerProfile) -> Dict[str, Any]:
+        return {
+            "active_run": self.generate_playthrough_summary(player),
+            "vault_overview": self.get_vault_replay_summary(),
+            "player_archive_history": self.get_player_vault_history(player.name),
         }
 
     def get_trophy_progress(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -1242,6 +1335,7 @@ class NinjaWorld:
                 {
                     "key": trophy.key,
                     "name": trophy.name,
+                    "tier": trophy.tier.value,
                     "current": current_value,
                     "target": target,
                     "remaining": remaining,
@@ -1337,6 +1431,7 @@ class NinjaWorld:
                         "name": trophy.name,
                         "description": trophy.description,
                         "category": trophy.category.value,
+                        "tier": trophy.tier.value,
                     }
                     for trophy_key, trophy in self.trophy_catalog.items()
                 },
@@ -1459,6 +1554,7 @@ class NinjaWorld:
                 name=item["name"],
                 description=item["description"],
                 category=TrophyCategory(item["category"]),
+                tier=TrophyTier(item.get("tier", TrophyTier.EARLY.value)),
             )
             for trophy_key, item in world_snapshot["trophy_catalog"].items()
         }
@@ -2247,6 +2343,22 @@ def _seed_quests() -> List[Quest]:
                 "default": "You overpower Kage Renda in a direct final clash.",
             },
         ),
+        Quest(
+            quest_id="Q4",
+            title="Siege of Ember Court",
+            objective="Stabilize Ashen Cradle by choosing between alliance, sabotage, or silent containment.",
+            stealth_required=False,
+            reward_xp=260,
+            branch_outcomes={
+                "exiled_heir": "You invoke treaty lineage and secure a formal truce with Ember captains.",
+                "street_ghost": "You collapse black-market routes and starve the siege from the shadows.",
+                "wandering_monk": "You broker a ceasefire and evacuate civilians before hostilities reignite.",
+                "nonlethal_path": "You disable siege weapons without casualties and force both sides to stand down.",
+                "heroic_path": "Your heroic standing rallies defenders into a disciplined counter-push.",
+                "rogue_path": "Rogue operatives accept your contract and burn enemy supply caches overnight.",
+                "default": "You seize command of the frontline and end the siege through direct pressure.",
+            },
+        ),
     ]
 
 
@@ -2678,108 +2790,126 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             "First Strike",
             "Defeat an enemy lethally for the first time.",
             TrophyCategory.COMBAT,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_GHOST_STEP,
             "Ghost Step",
             "Complete three encounters through stealth.",
             TrophyCategory.STEALTH,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_SILVER_TONGUE,
             "Silver Tongue",
             "Resolve three encounters through charm.",
             TrophyCategory.SOCIAL,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_WINDWALK_SURVIVOR,
             "Windwalk Survivor",
             "Escape danger through evasion three times.",
             TrophyCategory.STEALTH,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_VEIL_MASTER,
             "Veil Master",
             "Complete five encounters through stealth.",
             TrophyCategory.STEALTH,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_DIPLOMAT_SUPREME,
             "Diplomat Supreme",
             "Resolve five encounters through charm.",
             TrophyCategory.SOCIAL,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_PACIFIST_SHADOW,
             "Pacifist Shadow",
             "Maintain a kill-free run while using charm, stealth, and evasion tactics.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_SILENT_LEGEND,
             "Silent Legend",
             "Clear every seeded region in a kill-free run.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_PHANTOM_VEIL,
             "Phantom Veil",
             "Complete eight encounters through stealth.",
             TrophyCategory.STEALTH,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_HARMONY_VOICE,
             "Harmony Voice",
             "Resolve eight encounters through charm.",
             TrophyCategory.SOCIAL,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_UNTOUCHABLE_GHOST,
             "Untouchable Ghost",
             "Escape danger through evasion five times.",
             TrophyCategory.STEALTH,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_TRINITY_OPERATOR,
             "Trinity Operator",
             "Use charm, stealth, and evasion at least twice each without any kills.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_ORIGIN_AWAKENED,
             "Origin Awakened",
             "Choose a protagonist backstory and set your narrative path.",
             TrophyCategory.PROGRESSION,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_FIRST_BLOODLINE_VICTORY,
             "First Bloodline Victory",
             "Clear your first region and claim a boss reward.",
             TrophyCategory.PROGRESSION,
+            TrophyTier.EARLY,
         ),
         Trophy(
             TROPHY_WORLD_WALKER,
             "World Walker",
             "Clear every seeded region in the current world.",
             TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
         ),
         Trophy(
             TROPHY_ROGUE_ASCENDANT,
             "Rogue Ascendant",
             "Reach Rogue reputation tier.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_HEROIC_CREST,
             "Heroic Crest",
             "Reach Heroic reputation tier.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.MID,
         ),
         Trophy(
             TROPHY_PEACEKEEPER_EMBLEM,
             "Peacekeeper Emblem",
             "Reach Heroic status while resolving at least three encounters through charm.",
             TrophyCategory.ALIGNMENT,
+            TrophyTier.LATE,
         ),
     ]
     return {trophy.key: trophy for trophy in trophies}
@@ -2813,6 +2943,16 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "min_reputation": -1000,
             "max_reputation": 1000,
             "requires_black_market": True,
+        },
+        "pacifist_thread_charm": {
+            "name": "Pacifist Thread Charm",
+            "reward_type": "move",
+            "reward_name": "Mercy Knot",
+            "price": 75,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": False,
+            "requires_nonlethal": True,
         },
     }
 

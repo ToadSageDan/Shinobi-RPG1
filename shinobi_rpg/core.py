@@ -31,6 +31,9 @@ class ReputationTier(str, Enum):
     NEUTRAL = "neutral"
     ROGUE = "rogue"
 
+ROGUE_REPUTATION_THRESHOLD = -50
+HEROIC_REPUTATION_THRESHOLD = 50
+
 
 @dataclass(frozen=True)
 class Move:
@@ -132,11 +135,11 @@ class PlayerProfile:
 
     def update_reputation(self, delta: int) -> ReputationTier:
         self.reputation += delta
-        if self.reputation <= -50:
+        if self.reputation <= ROGUE_REPUTATION_THRESHOLD:
             if "black_market" not in self.unlocked_zones:
                 self.unlocked_zones.append("black_market")
             return ReputationTier.ROGUE
-        if self.reputation >= 50:
+        if self.reputation >= HEROIC_REPUTATION_THRESHOLD:
             return ReputationTier.HEROIC
         return ReputationTier.NEUTRAL
 

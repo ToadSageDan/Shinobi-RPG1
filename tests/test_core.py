@@ -33,6 +33,10 @@ class CoreSystemTests(unittest.TestCase):
         affinity = resolve_affinity_minigame([5, 1, 1, 1, 2])
         self.assertEqual(affinity, Affinity.FIRE)
 
+    def test_affinity_minigame_tie_breaker_prefers_fire_then_order(self):
+        affinity = resolve_affinity_minigame([5, 5, 1, 1, 0])
+        self.assertEqual(affinity, Affinity.FIRE)
+
     def test_rogue_reputation_unlocks_black_market(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
         tier = player.update_reputation(-60)
@@ -50,9 +54,15 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("Dan", [1, 1, 1, 1, 1])
         before_level = player.stats.level
         before_power = player.stats.power
+        before_defense = player.stats.defense
+        before_agility = player.stats.agility
+        before_focus = player.stats.focus
         player.stats.gain_xp(500)
-        self.assertGreater(player.stats.level, before_level)
-        self.assertGreater(player.stats.power, before_power)
+        self.assertEqual(player.stats.level, before_level + 2)
+        self.assertEqual(player.stats.power, before_power + 4)
+        self.assertEqual(player.stats.defense, before_defense + 4)
+        self.assertEqual(player.stats.agility, before_agility + 4)
+        self.assertEqual(player.stats.focus, before_focus + 4)
 
     def test_vault_archives_historic_ninja(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])

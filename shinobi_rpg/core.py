@@ -37,12 +37,17 @@ ROGUE_THRESHOLD_MIN = -50
 HEROIC_THRESHOLD_MIN = 50
 # XP multiplier used by the level-based progression curve.
 XP_PER_LEVEL_MULTIPLIER = 100
+AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
     "water": Affinity.WATER,
     "earth": Affinity.EARTH,
     "wind": Affinity.WIND,
 }
+
+
+def _empty_affinity_scores() -> Dict[Affinity, int]:
+    return {affinity: 0 for affinity in AFFINITY_ORDER}
 
 
 @dataclass(frozen=True)
@@ -200,34 +205,26 @@ def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
     Higher total score wins; ties resolve by enum order:
     Fire, then Water, then Earth, then Wind.
     """
-    scores = {
-        Affinity.FIRE: 0,
-        Affinity.WATER: 0,
-        Affinity.EARTH: 0,
-        Affinity.WIND: 0,
-    }
-    order = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
+    scores = _empty_affinity_scores()
     for idx, value in enumerate(decisions):
-        scores[order[idx % len(order)]] += value
+        scores[AFFINITY_ORDER[idx % len(AFFINITY_ORDER)]] += value
     ranked = sorted(
         scores.items(),
-        key=lambda item: (-item[1], order.index(item[0])),
+        key=lambda item: (-item[1], AFFINITY_ORDER.index(item[0])),
     )
     return ranked[0][0]
 
 
 def assign_affinity_from_choices(choices: Sequence[str]) -> Affinity:
-    """Resolve starting affinity from explicit mini-game choice answers."""
+    """Resolve starting affinity from explicit mini-game choice answers.
+
+    The affinity with the highest answer count wins; ties resolve by
+    Fire, then Water, then Earth, then Wind.
+    """
     if not choices:
         raise ValueError("Mini-game choices cannot be empty.")
 
-    scores = {
-        Affinity.FIRE: 0,
-        Affinity.WATER: 0,
-        Affinity.EARTH: 0,
-        Affinity.WIND: 0,
-    }
-    order = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
+    scores = _empty_affinity_scores()
     for raw_choice in choices:
         normalized = raw_choice.strip().lower()
         affinity = AFFINITY_MINIGAME_CHOICES.get(normalized)
@@ -237,7 +234,7 @@ def assign_affinity_from_choices(choices: Sequence[str]) -> Affinity:
 
     ranked = sorted(
         scores.items(),
-        key=lambda item: (-item[1], order.index(item[0])),
+        key=lambda item: (-item[1], AFFINITY_ORDER.index(item[0])),
     )
     return ranked[0][0]
 

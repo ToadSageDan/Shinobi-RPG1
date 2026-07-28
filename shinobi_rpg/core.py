@@ -221,13 +221,13 @@ class NinjaWorld:
         region_name: str,
         reward_choice: str,
     ) -> str:
-        region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), None)
-        region = self.regions[region_index] if region_index is not None else None
-        if not region:
+        region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), -1)
+        if region_index == -1:
             raise ValueError(f'Region "{region_name}" not found.')
+        region = self.regions[region_index]
         if region.cleared:
             raise ValueError(f'Region "{region_name}" has already been cleared.')
-        if region_index and not self.regions[region_index - 1].cleared:
+        if region_index > 0 and not self.regions[region_index - 1].cleared:
             raise ValueError("Previous region must be cleared first.")
         if reward_choice not in region.boss_rewards:
             raise ValueError("Reward choice must be weapon, clothing, or move.")

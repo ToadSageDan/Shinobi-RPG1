@@ -156,6 +156,11 @@ class PlayerProfile:
         raise ValueError(f'Move "{move_name}" is not unlocked for this player.')
 
     def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, Any]:
+        """Execute an unlocked move and return deterministic MVP combat output.
+
+        ``escape_difficulty`` is only used for Escape moves and ignored for
+        Attack, Defense, and Ultimate categories.
+        """
         move = self.get_move(move_name)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)

@@ -1,5 +1,7 @@
 """Lightweight foundation systems for Shinobi RPG MVP."""
 
+__version__ = "0.1.0"
+
 from .core import (
     Affinity,
     Backstory,
@@ -29,6 +31,7 @@ from .core import (
 )
 
 __all__ = [
+    "__version__",
     "Affinity",
     "Backstory",
     "JutsuType",

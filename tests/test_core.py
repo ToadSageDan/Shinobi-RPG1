@@ -31,36 +31,36 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(player.moves_by_set[MoveCategory.ULTIMATE][-1].name, "Elemental Surge")
 
     def test_seeded_player_has_all_move_categories(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         self.assertTrue(all(player.moves_by_set[category] for category in MoveCategory))
 
     def test_execute_attack_move_scales_with_power(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Edge Current")
         self.assertEqual(result["category"], "attack")
         self.assertEqual(result["damage"], 10)
 
     def test_execute_defense_move_scales_with_defense(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Guarding Veil")
         self.assertEqual(result["category"], "defense")
         self.assertEqual(result["guard"], 8)
 
     def test_execute_escape_move_returns_escape_status(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Smoke Step")
         self.assertEqual(result["category"], "escape")
         self.assertEqual(result["escape_score"], 6)
         self.assertTrue(result["escaped"])
 
     def test_execute_ultimate_move_uses_power_plus_focus(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Twin Dragon Convergence")
         self.assertEqual(result["category"], "ultimate")
         self.assertEqual(result["damage"], 50)
 
     def test_execute_move_rejects_unknown_move(self):
-        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         with self.assertRaisesRegex(ValueError, 'Move "Nope" is not unlocked for this player.'):
             player.execute_move("Nope")
 
@@ -99,29 +99,35 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("black_market", player.unlocked_zones)
 
     def test_world_seed_meets_mvp_size(self):
-        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         self.assertGreaterEqual(len(world.allies), 10)
 
     def test_region_clear_reward_unlocks_fast_travel(self):
-        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         reward = world.clear_region(player, "Verdant Gate", "weapon")
         self.assertEqual(reward, "Renda Fang Blade")
         self.assertIn("Renda Fang Blade", player.reward_inventory["weapon"])
         self.assertIn("Verdant Gate", player.unlocked_fast_travel_nodes)
 
     def test_region_clear_requires_previous_region(self):
-        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         with self.assertRaisesRegex(ValueError, "Previous region must be cleared first."):
             world.clear_region(player, "Ashen Cradle", "move")
 
     def test_region_cannot_be_cleared_twice(self):
-        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         world.clear_region(player, "Verdant Gate", "weapon")
         with self.assertRaisesRegex(ValueError, 'Region "Verdant Gate" has already been cleared.'):
             world.clear_region(player, "Verdant Gate", "clothing")
 
+    def test_duplicate_reward_grant_is_rejected(self):
+        world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        world.clear_region(player, "Verdant Gate", "weapon")
+        with self.assertRaisesRegex(ValueError, '"Renda Fang Blade" has already been granted for weapon.'):
+            player.grant_boss_reward("weapon", "Renda Fang Blade")
+
     def test_leveling_progression_increases_stats(self):
-        world, player = build_mvp_world("Dan", [1, 1, 1, 1, 1])
+        world, player = build_mvp_world("TestPlayer", [1, 1, 1, 1, 1])
         before_level = player.stats.level
         before_power = player.stats.power
         before_defense = player.stats.defense

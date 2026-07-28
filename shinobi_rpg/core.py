@@ -202,8 +202,9 @@ class PlayerProfile:
     def grant_boss_reward(self, reward_type: str, reward_name: str) -> None:
         if reward_type not in self.reward_inventory:
             raise ValueError("Reward choice must be weapon, clothing, or move.")
-        if reward_name not in self.reward_inventory[reward_type]:
-            self.reward_inventory[reward_type].append(reward_name)
+        if reward_name in self.reward_inventory[reward_type]:
+            raise ValueError(f'"{reward_name}" has already been granted for {reward_type}.')
+        self.reward_inventory[reward_type].append(reward_name)
 
 
 @dataclass
@@ -230,7 +231,11 @@ class NinjaWorld:
         if region_index > 0 and not self.regions[region_index - 1].cleared:
             raise ValueError("Previous region must be cleared first.")
         if reward_choice not in region.boss_rewards:
-            raise ValueError("Reward choice must be weapon, clothing, or move.")
+            valid_choices = ", ".join(region.boss_rewards.keys())
+            raise ValueError(
+                f'Invalid reward choice "{reward_choice}" for region "{region_name}". '
+                f"Valid choices: {valid_choices}."
+            )
 
         region.cleared = True
         reward_name = region.boss_rewards[reward_choice]

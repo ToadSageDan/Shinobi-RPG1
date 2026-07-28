@@ -4,7 +4,7 @@ Thanks for contributing.
 
 ## Development setup
 
-1. Use Python 3.12+.
+1. Use Python 3.11+.
 2. Install project dependencies if needed.
 3. Run tests:
 

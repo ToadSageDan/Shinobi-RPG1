@@ -40,6 +40,13 @@ Build a lightweight MVP foundation for a ninja-inspired open-world RPG with prog
 ## Replay and Persistence
 - Include a vault archive that stores historic ninja runs for replay/history tracking.
 
+## Narrative and Meta Backlog
+- Add main-character backstories that branch story outcomes.
+- Add villain backstories that influence behavior over time.
+- Villain aggression/passivity should react to in-game decisions.
+- Support a highly unlikely but possible full nonlethal completion path using charm, stealth, and ninja evasion.
+- Start compiling a player trophy list to accumulate over playthroughs; define final trophy set in a later design pass.
+
 ## Build-Ready MVP Acceptance Criteria
 1. A new player can be created and assigned one affinity via mini-game input.
 2. All four move set categories exist and affinity rules are enforced.

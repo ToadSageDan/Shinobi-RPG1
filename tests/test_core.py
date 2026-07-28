@@ -106,7 +106,19 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
         reward = world.clear_region(player, "Verdant Gate", "weapon")
         self.assertEqual(reward, "Renda Fang Blade")
+        self.assertIn("Renda Fang Blade", player.reward_inventory["weapon"])
         self.assertIn("Verdant Gate", player.unlocked_fast_travel_nodes)
+
+    def test_region_clear_requires_previous_region(self):
+        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        with self.assertRaisesRegex(ValueError, "Previous region must be cleared first."):
+            world.clear_region(player, "Ashen Cradle", "move")
+
+    def test_region_cannot_be_cleared_twice(self):
+        world, player = build_mvp_world("Dan", [2, 4, 1, 3, 5])
+        world.clear_region(player, "Verdant Gate", "weapon")
+        with self.assertRaisesRegex(ValueError, 'Region "Verdant Gate" has already been cleared.'):
+            world.clear_region(player, "Verdant Gate", "clothing")
 
     def test_leveling_progression_increases_stats(self):
         world, player = build_mvp_world("Dan", [1, 1, 1, 1, 1])

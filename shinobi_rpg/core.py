@@ -131,6 +131,9 @@ class PlayerProfile:
     unlocked_fast_travel_nodes: List[str] = field(default_factory=lambda: ["village_hub"])
     unlocked_skins: List[Skin] = field(default_factory=list)
     weapons: List[Weapon] = field(default_factory=list)
+    reward_inventory: Dict[str, List[str]] = field(
+        default_factory=lambda: {"weapon": [], "clothing": [], "move": []}
+    )
     moves_by_set: Dict[MoveCategory, List[Move]] = field(
         default_factory=lambda: {
             MoveCategory.ESCAPE: [],
@@ -196,6 +199,12 @@ class PlayerProfile:
         if node_name not in self.unlocked_fast_travel_nodes:
             self.unlocked_fast_travel_nodes.append(node_name)
 
+    def grant_boss_reward(self, reward_type: str, reward_name: str) -> None:
+        if reward_type not in self.reward_inventory:
+            raise ValueError("Reward choice must be weapon, clothing, or move.")
+        if reward_name not in self.reward_inventory[reward_type]:
+            self.reward_inventory[reward_type].append(reward_name)
+
 
 @dataclass
 class NinjaWorld:
@@ -212,15 +221,22 @@ class NinjaWorld:
         region_name: str,
         reward_choice: str,
     ) -> str:
-        region = next((r for r in self.regions if r.name == region_name), None)
+        region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), None)
+        region = self.regions[region_index] if region_index is not None else None
         if not region:
             raise ValueError(f'Region "{region_name}" not found.')
+        if region.cleared:
+            raise ValueError(f'Region "{region_name}" has already been cleared.')
+        if region_index and not self.regions[region_index - 1].cleared:
+            raise ValueError("Previous region must be cleared first.")
         if reward_choice not in region.boss_rewards:
             raise ValueError("Reward choice must be weapon, clothing, or move.")
 
         region.cleared = True
+        reward_name = region.boss_rewards[reward_choice]
+        player.grant_boss_reward(reward_choice, reward_name)
         player.unlock_fast_travel(region.name)
-        return region.boss_rewards[reward_choice]
+        return reward_name
 
     def archive_historic_ninja(self, player: PlayerProfile) -> None:
         self.vault_historic_ninjas.append(

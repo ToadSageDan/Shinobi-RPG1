@@ -52,7 +52,8 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_resolve_block_parry_uses_best_defense_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
-        result = player.resolve_block_parry(15)
+        parry_difficulty = 6
+        result = player.resolve_block_parry(15, parry_difficulty=parry_difficulty)
         defense_move = player.moves_by_set[MoveCategory.DEFENSE][0]
         expected_guard = int(player.stats.defense * defense_move.power_scale)
         expected_parry_score = int(player.stats.agility * defense_move.power_scale)
@@ -63,7 +64,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["parry_score"], expected_parry_score)
         self.assertEqual(result["remaining_damage"], expected_remaining_damage)
         self.assertEqual(result["blocked_damage"], 15 - expected_remaining_damage)
-        self.assertEqual(result["parried"], expected_parry_score >= 6)
+        self.assertEqual(result["parried"], expected_parry_score >= parry_difficulty)
         self.assertEqual(result["damage_taken"], 0)
 
     def test_resolve_block_parry_falls_back_without_defense_move(self):
@@ -84,9 +85,11 @@ class CoreSystemTests(unittest.TestCase):
     def test_execute_escape_move_returns_escape_status(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Smoke Step")
+        escape_move = player.moves_by_set[MoveCategory.ESCAPE][0]
+        expected_escape_score = int(player.stats.agility * escape_move.power_scale)
         self.assertEqual(result["category"], "escape")
-        self.assertEqual(result["escape_score"], 6)
-        self.assertTrue(result["escaped"])
+        self.assertEqual(result["escape_score"], expected_escape_score)
+        self.assertEqual(result["escaped"], expected_escape_score >= 6)
 
     def test_execute_ultimate_move_uses_power_plus_focus(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])

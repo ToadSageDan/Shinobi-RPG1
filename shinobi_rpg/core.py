@@ -323,6 +323,7 @@ class PlayerProfile:
             raise ValueError("Parry difficulty cannot be negative.")
 
         defense_moves = self.moves_by_set[MoveCategory.DEFENSE]
+        # Secondary move-name ordering makes equal-scale defensive choice deterministic.
         selected_move = (
             max(defense_moves, key=lambda move: (move.power_scale, move.name))
             if defense_moves

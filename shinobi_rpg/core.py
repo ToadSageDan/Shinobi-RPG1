@@ -180,6 +180,7 @@ class Region:
     allies: List[str]
     boss: str
     boss_rewards: Dict[str, str]
+    tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
     cleared: bool = False
 
 
@@ -467,7 +468,7 @@ class NinjaWorld:
                 return tag
         return "default"
 
-    def get_region_boss_behavior(self, region_name: str, player: PlayerProfile) -> Dict[str, str]:
+    def get_region_boss_behavior(self, region_name: str, player: PlayerProfile) -> Dict[str, Any]:
         region = self._find_region(region_name)
         villain = self._find_villain(region.boss)
         behavior_by_stance = self.villain_behavior_rules.get(villain.name, {})
@@ -479,6 +480,7 @@ class NinjaWorld:
             "boss": villain.name,
             "stance": villain.stance.value,
             "behavior": behavior,
+            "tutorial_mechanics": list(region.tutorial_mechanics),
         }
 
     def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
@@ -647,6 +649,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Shadow Mantle",
                 "move": "Rending Spiral",
             },
+            tutorial_mechanics=("blocking", "substitution"),
         ),
         Region(
             name="Ashen Cradle",
@@ -659,6 +662,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Molten Gi",
                 "move": "Ember Cyclone",
             },
+            tutorial_mechanics=("aoe_attacks",),
         ),
         Region(
             name="Tideglass Basin",

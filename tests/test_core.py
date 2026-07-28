@@ -56,7 +56,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "defense")
         self.assertEqual(result["move"], "Guarding Veil")
         self.assertEqual(result["guard"], 8)
-        self.assertEqual(result["blocked_damage"], 7)
+        self.assertEqual(result["blocked_damage"], 8)
+        self.assertEqual(result["remaining_damage"], 7)
         self.assertTrue(result["parried"])
         self.assertEqual(result["damage_taken"], 0)
 
@@ -66,7 +67,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "defense")
         self.assertIsNone(result["move"])
         self.assertEqual(result["guard"], 5)
-        self.assertEqual(result["blocked_damage"], 10)
+        self.assertEqual(result["blocked_damage"], 5)
+        self.assertEqual(result["remaining_damage"], 10)
         self.assertFalse(result["parried"])
         self.assertEqual(result["damage_taken"], 10)
 
@@ -227,6 +229,14 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(behavior["boss"], "Kage Renda")
         self.assertEqual(behavior["stance"], VillainStance.BALANCED.value)
         self.assertIn("measured strikes", behavior["behavior"])
+
+    def test_first_bosses_include_tutorial_mechanics(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        first_behavior = world.get_region_boss_behavior("Verdant Gate", player)
+        second_behavior = world.get_region_boss_behavior("Ashen Cradle", player)
+        self.assertIn("blocking", first_behavior["tutorial_mechanics"])
+        self.assertIn("substitution", first_behavior["tutorial_mechanics"])
+        self.assertIn("aoe_attacks", second_behavior["tutorial_mechanics"])
 
     def test_trophy_catalog_uses_categories_and_progression_unlocks(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

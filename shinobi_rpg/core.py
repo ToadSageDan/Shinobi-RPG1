@@ -18,7 +18,21 @@ class MoveCategory(str, Enum):
     ESCAPE = "escape"
     ATTACK = "attack"
     DEFENSE = "defense"
+    SUMMON = "summon"
     ULTIMATE = "ultimate"
+
+
+class JutsuType(str, Enum):
+    ELEMENTAL = "elemental"
+    BARRIER = "barrier"
+    MOBILITY = "mobility"
+    SUMMONING = "summoning"
+    CLONE = "clone"
+    SUPPORT = "support"
+    SENSORY = "sensory"
+    SEALING = "sealing"
+    WEAPON_STYLE = "weapon_style"
+    ILLUSION = "illusion"
 
 
 class WeaponType(str, Enum):
@@ -109,6 +123,7 @@ class Move:
     category: MoveCategory
     affinities: Tuple[Affinity, ...]
     power_scale: float = 1.0
+    jutsu_type: JutsuType = JutsuType.ELEMENTAL
 
     def validate(self) -> None:
         if self.category != MoveCategory.ULTIMATE and len(self.affinities) != 1:
@@ -143,9 +158,12 @@ class Backstory:
 class VillainProfile:
     name: str
     backstory: str
+    signature_power: Move
     aggression_score: int = 0
     stance: VillainStance = VillainStance.BALANCED
     decision_memory: Dict[str, int] = field(default_factory=dict)
+    health_bar_color: str = "red"
+    defeated: bool = False
 
     def apply_decision(self, decision_tag: str, intensity: int = 1) -> VillainStance:
         """Update villain temperament from player decisions over time."""
@@ -234,11 +252,13 @@ class PlayerProfile:
     reward_inventory: Dict[str, List[str]] = field(
         default_factory=lambda: {"weapon": [], "clothing": [], "move": []}
     )
+    red_bar_power_claims: Dict[str, str] = field(default_factory=dict)
     moves_by_set: Dict[MoveCategory, List[Move]] = field(
         default_factory=lambda: {
             MoveCategory.ESCAPE: [],
             MoveCategory.ATTACK: [],
             MoveCategory.DEFENSE: [],
+            MoveCategory.SUMMON: [],
             MoveCategory.ULTIMATE: [],
         }
     )
@@ -277,9 +297,9 @@ class PlayerProfile:
     def current_reputation_tier(self) -> ReputationTier:
         return _reputation_tier_for(self.reputation)
 
-    def add_move(self, move: Move) -> None:
+    def add_move(self, move: Move, *, allow_cross_affinity: bool = False) -> None:
         move.validate()
-        if move.category != MoveCategory.ULTIMATE and (
+        if not allow_cross_affinity and move.category != MoveCategory.ULTIMATE and (
             not move.affinities or move.affinities[0] != self.affinity
         ):
             raise ValueError("Non-ultimate moves must match player affinity.")
@@ -317,6 +337,14 @@ class PlayerProfile:
         if move.category == MoveCategory.ULTIMATE:
             damage = int((self.stats.power + self.stats.focus) * move.power_scale)
             return {"move": move.name, "category": move.category.value, "damage": damage}
+        if move.category == MoveCategory.SUMMON:
+            summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
+            return {
+                "move": move.name,
+                "category": move.category.value,
+                "summon_power": summon_power,
+                "summon_type": move.jutsu_type.value,
+            }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 
     def resolve_block_parry(
@@ -426,6 +454,13 @@ class PlayerProfile:
             raise ValueError(f'"{reward_name}" has already been granted for {reward_type}.')
         self.reward_inventory[reward_type].append(reward_name)
 
+    def claim_red_bar_power(self, villain_name: str, move: Move) -> None:
+        if villain_name in self.red_bar_power_claims:
+            return
+        self.red_bar_power_claims[villain_name] = move.name
+        if not any(unlocked.name == move.name for move_set in self.moves_by_set.values() for unlocked in move_set):
+            self.add_move(move, allow_cross_affinity=True)
+
     def to_snapshot(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -444,6 +479,7 @@ class PlayerProfile:
             "unlocked_skins": [skin.name for skin in self.unlocked_skins],
             "weapons": [weapon.name for weapon in self.weapons],
             "reward_inventory": {key: list(values) for key, values in self.reward_inventory.items()},
+            "red_bar_power_claims": dict(self.red_bar_power_claims),
             "moves_by_set": {
                 category.value: [
                     {
@@ -451,6 +487,7 @@ class PlayerProfile:
                         "category": move.category.value,
                         "affinities": [affinity.value for affinity in move.affinities],
                         "power_scale": move.power_scale,
+                        "jutsu_type": move.jutsu_type.value,
                     }
                     for move in moves
                 ]
@@ -478,6 +515,7 @@ class NinjaWorld:
     villain_behavior_rules: Dict[str, Dict[VillainStance, str]]
     player_backstories: List[Backstory]
     trophy_catalog: Dict[str, Trophy]
+    ninjutsu_library: List[Move] = field(default_factory=list)
     shop_inventory: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     vault_historic_ninjas: List[dict] = field(default_factory=list)
 
@@ -506,6 +544,7 @@ class NinjaWorld:
         reward_name = region.boss_rewards[reward_choice]
         player.grant_boss_reward(reward_choice, reward_name)
         player.unlock_fast_travel(region.name)
+        self.defeat_red_bar_ninja(player, region.boss)
         for ally in region.allies:
             player.adjust_ally_loyalty(ally, 1)
         self.evaluate_trophies(player)
@@ -552,6 +591,37 @@ class NinjaWorld:
         if not region:
             raise ValueError(f'Region "{region_name}" not found.')
         return region
+
+    def get_ninjutsu_catalog(
+        self, *, affinity: Affinity | None = None, jutsu_type: JutsuType | None = None
+    ) -> List[Dict[str, Any]]:
+        moves = self.ninjutsu_library
+        if affinity is not None:
+            moves = [move for move in moves if affinity in move.affinities]
+        if jutsu_type is not None:
+            moves = [move for move in moves if move.jutsu_type == jutsu_type]
+        return [
+            {
+                "name": move.name,
+                "category": move.category.value,
+                "affinities": [affinity.value for affinity in move.affinities],
+                "jutsu_type": move.jutsu_type.value,
+            }
+            for move in moves
+        ]
+
+    def defeat_red_bar_ninja(self, player: PlayerProfile, villain_name: str) -> Dict[str, Any]:
+        villain = self._find_villain(villain_name)
+        if villain.health_bar_color.lower() != "red":
+            raise ValueError(f'Villain "{villain_name}" is not a red-bar target.')
+        already_defeated = villain.defeated
+        villain.defeated = True
+        player.claim_red_bar_power(villain.name, villain.signature_power)
+        return {
+            "villain": villain.name,
+            "claimed_power": villain.signature_power.name,
+            "already_defeated": already_defeated,
+        }
 
     def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, str]:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
@@ -780,6 +850,14 @@ class NinjaWorld:
         ]
         villain_states = {villain.name: villain.stance.value for villain in self.villains}
         villain_memories = {villain.name: dict(villain.decision_memory) for villain in self.villains}
+        red_bar_progress = {
+            villain.name: {
+                "defeated": villain.defeated,
+                "signature_power": villain.signature_power.name,
+            }
+            for villain in self.villains
+            if villain.health_bar_color.lower() == "red"
+        }
         return {
             "player_name": player.name,
             "affinity": player.affinity.value,
@@ -791,6 +869,8 @@ class NinjaWorld:
             "cleared_regions": [region.name for region in self.regions if region.cleared],
             "villain_stances": villain_states,
             "villain_decision_memory": villain_memories,
+            "red_bar_power_claims": dict(player.red_bar_power_claims),
+            "red_bar_progress": red_bar_progress,
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
             "ally_loyalty": dict(player.ally_loyalty),
             "credits": player.credits,
@@ -886,9 +966,18 @@ class NinjaWorld:
                     {
                         "name": villain.name,
                         "backstory": villain.backstory,
+                        "signature_power": {
+                            "name": villain.signature_power.name,
+                            "category": villain.signature_power.category.value,
+                            "affinities": [affinity.value for affinity in villain.signature_power.affinities],
+                            "power_scale": villain.signature_power.power_scale,
+                            "jutsu_type": villain.signature_power.jutsu_type.value,
+                        },
                         "aggression_score": villain.aggression_score,
                         "stance": villain.stance.value,
                         "decision_memory": dict(villain.decision_memory),
+                        "health_bar_color": villain.health_bar_color,
+                        "defeated": villain.defeated,
                     }
                     for villain in self.villains
                 ],
@@ -914,6 +1003,16 @@ class NinjaWorld:
                     }
                     for trophy_key, trophy in self.trophy_catalog.items()
                 },
+                "ninjutsu_library": [
+                    {
+                        "name": move.name,
+                        "category": move.category.value,
+                        "affinities": [affinity.value for affinity in move.affinities],
+                        "power_scale": move.power_scale,
+                        "jutsu_type": move.jutsu_type.value,
+                    }
+                    for move in self.ninjutsu_library
+                ],
                 "shop_inventory": {key: dict(value) for key, value in self.shop_inventory.items()},
                 "vault_historic_ninjas": list(self.vault_historic_ninjas),
             },
@@ -964,9 +1063,25 @@ class NinjaWorld:
             VillainProfile(
                 name=item["name"],
                 backstory=item["backstory"],
+                signature_power=Move(
+                    name=item.get("signature_power", {}).get("name", f'{item["name"]} Signature Art'),
+                    category=MoveCategory(
+                        item.get("signature_power", {}).get("category", MoveCategory.ATTACK.value)
+                    ),
+                    affinities=tuple(
+                        Affinity(affinity)
+                        for affinity in item.get("signature_power", {}).get("affinities", [Affinity.FIRE.value])
+                    ),
+                    power_scale=item.get("signature_power", {}).get("power_scale", 1.0),
+                    jutsu_type=JutsuType(
+                        item.get("signature_power", {}).get("jutsu_type", JutsuType.ELEMENTAL.value)
+                    ),
+                ),
                 aggression_score=item.get("aggression_score", 0),
                 stance=VillainStance(item.get("stance", VillainStance.BALANCED.value)),
                 decision_memory=dict(item.get("decision_memory", {})),
+                health_bar_color=item.get("health_bar_color", "red"),
+                defeated=bool(item.get("defeated", False)),
             )
             for item in world_snapshot["villains"]
         ]
@@ -994,6 +1109,16 @@ class NinjaWorld:
             )
             for trophy_key, item in world_snapshot["trophy_catalog"].items()
         }
+        ninjutsu_library = [
+            Move(
+                name=move["name"],
+                category=MoveCategory(move["category"]),
+                affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
+                power_scale=move.get("power_scale", 1.0),
+                jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
+            )
+            for move in world_snapshot.get("ninjutsu_library", [])
+        ]
 
         world = cls(
             regions=regions,
@@ -1005,6 +1130,7 @@ class NinjaWorld:
             villain_behavior_rules=behavior_rules,
             player_backstories=backstories,
             trophy_catalog=trophy_catalog,
+            ninjutsu_library=ninjutsu_library,
             shop_inventory={key: dict(value) for key, value in world_snapshot.get("shop_inventory", {}).items()},
             vault_historic_ninjas=list(world_snapshot.get("vault_historic_ninjas", [])),
         )
@@ -1037,6 +1163,10 @@ class NinjaWorld:
                     "reward_inventory", {"weapon": [], "clothing": [], "move": []}
                 ).items()
             },
+            red_bar_power_claims={
+                villain_name: move_name
+                for villain_name, move_name in player_snapshot.get("red_bar_power_claims", {}).items()
+            },
             selected_backstory=backstory_by_key.get(player_snapshot.get("selected_backstory")),
             narrative_tags=set(player_snapshot.get("narrative_tags", [])),
             encounter_outcomes=dict(
@@ -1068,6 +1198,7 @@ class NinjaWorld:
                     category=MoveCategory(move["category"]),
                     affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
                     power_scale=move.get("power_scale", 1.0),
+                    jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
                 )
                 for move in moves
             ]
@@ -1147,6 +1278,15 @@ def _paired_affinity_for_ultimate(primary: Affinity) -> Affinity:
     return Affinity.WIND
 
 
+def _summon_names_for_affinity(primary: Affinity) -> Tuple[str, str]:
+    return {
+        Affinity.FIRE: ("Blazehound Pact", "Cinder Mantis Pact"),
+        Affinity.WATER: ("Undertow Serpent Pact", "Mist Heron Pact"),
+        Affinity.EARTH: ("Stone Ram Pact", "Granite Tortoise Pact"),
+        Affinity.WIND: ("Sky Hawk Pact", "Tempest Lynx Pact"),
+    }[primary]
+
+
 def _seed_weapons() -> List[Weapon]:
     return [
         Weapon("Dawn Cutter", WeaponType.SWORD, "balanced duelist", 18),
@@ -1157,15 +1297,92 @@ def _seed_weapons() -> List[Weapon]:
 
 
 def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
+    summon_one, summon_two = _summon_names_for_affinity(player_affinity)
     return {
         MoveCategory.ESCAPE: [
-            Move("Smoke Step", MoveCategory.ESCAPE, (player_affinity,), power_scale=0.6)
+            Move(
+                "Smoke Step",
+                MoveCategory.ESCAPE,
+                (player_affinity,),
+                power_scale=0.6,
+                jutsu_type=JutsuType.MOBILITY,
+            ),
+            Move(
+                "Afterimage Drift",
+                MoveCategory.ESCAPE,
+                (player_affinity,),
+                power_scale=0.7,
+                jutsu_type=JutsuType.CLONE,
+            ),
+            Move(
+                "Silent Reed Slip",
+                MoveCategory.ESCAPE,
+                (player_affinity,),
+                power_scale=0.75,
+                jutsu_type=JutsuType.SENSORY,
+            ),
         ],
         MoveCategory.ATTACK: [
-            Move("Edge Current", MoveCategory.ATTACK, (player_affinity,), power_scale=1.0)
+            Move(
+                "Edge Current",
+                MoveCategory.ATTACK,
+                (player_affinity,),
+                power_scale=1.0,
+                jutsu_type=JutsuType.ELEMENTAL,
+            ),
+            Move(
+                "Threadline Volley",
+                MoveCategory.ATTACK,
+                (player_affinity,),
+                power_scale=1.05,
+                jutsu_type=JutsuType.WEAPON_STYLE,
+            ),
+            Move(
+                "Pressure Knot Strike",
+                MoveCategory.ATTACK,
+                (player_affinity,),
+                power_scale=1.1,
+                jutsu_type=JutsuType.SUPPORT,
+            ),
         ],
         MoveCategory.DEFENSE: [
-            Move("Guarding Veil", MoveCategory.DEFENSE, (player_affinity,), power_scale=0.8)
+            Move(
+                "Guarding Veil",
+                MoveCategory.DEFENSE,
+                (player_affinity,),
+                power_scale=0.8,
+                jutsu_type=JutsuType.BARRIER,
+            ),
+            Move(
+                "Lattice Ward",
+                MoveCategory.DEFENSE,
+                (player_affinity,),
+                power_scale=0.85,
+                jutsu_type=JutsuType.SEALING,
+            ),
+            Move(
+                "Flowback Mantle",
+                MoveCategory.DEFENSE,
+                (player_affinity,),
+                power_scale=0.9,
+                jutsu_type=JutsuType.SUPPORT,
+            ),
+        ],
+        MoveCategory.SUMMON: [
+            Move(
+                summon_one,
+                MoveCategory.SUMMON,
+                (player_affinity,),
+                power_scale=1.0,
+                jutsu_type=JutsuType.SUMMONING,
+            ),
+            Move(
+                summon_two,
+                MoveCategory.SUMMON,
+                (player_affinity,),
+                power_scale=1.1,
+                jutsu_type=JutsuType.SUMMONING,
+            ),
         ],
         MoveCategory.ULTIMATE: [
             Move(
@@ -1173,9 +1390,63 @@ def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (player_affinity, _paired_affinity_for_ultimate(player_affinity)),
                 power_scale=2.5,
+                jutsu_type=JutsuType.ELEMENTAL,
+            ),
+            Move(
+                "Covenant Horizon Break",
+                MoveCategory.ULTIMATE,
+                (player_affinity, _paired_affinity_for_ultimate(player_affinity)),
+                power_scale=2.2,
+                jutsu_type=JutsuType.SUMMONING,
             )
         ],
     }
+
+
+def _seed_ninjutsu_library() -> List[Move]:
+    return [
+        Move("Kindle Lance", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, JutsuType.ELEMENTAL),
+        Move("Cinder Vault", MoveCategory.ESCAPE, (Affinity.FIRE,), 0.7, JutsuType.MOBILITY),
+        Move("Ash Aegis", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.85, JutsuType.BARRIER),
+        Move("Blazehound Pact", MoveCategory.SUMMON, (Affinity.FIRE,), 1.0, JutsuType.SUMMONING),
+        Move("Cinder Mantis Pact", MoveCategory.SUMMON, (Affinity.FIRE,), 1.1, JutsuType.SUMMONING),
+        Move("Boiling Torrent", MoveCategory.ATTACK, (Affinity.WATER,), 1.0, JutsuType.ELEMENTAL),
+        Move("Mist Veil Shift", MoveCategory.ESCAPE, (Affinity.WATER,), 0.72, JutsuType.ILLUSION),
+        Move("Current Shell", MoveCategory.DEFENSE, (Affinity.WATER,), 0.9, JutsuType.BARRIER),
+        Move("Undertow Serpent Pact", MoveCategory.SUMMON, (Affinity.WATER,), 1.0, JutsuType.SUMMONING),
+        Move("Mist Heron Pact", MoveCategory.SUMMON, (Affinity.WATER,), 1.08, JutsuType.SUMMONING),
+        Move("Faultline Burst", MoveCategory.ATTACK, (Affinity.EARTH,), 1.0, JutsuType.ELEMENTAL),
+        Move("Stone Anchor Dash", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.68, JutsuType.MOBILITY),
+        Move("Granite Net Seal", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.95, JutsuType.SEALING),
+        Move("Stone Ram Pact", MoveCategory.SUMMON, (Affinity.EARTH,), 1.0, JutsuType.SUMMONING),
+        Move("Granite Tortoise Pact", MoveCategory.SUMMON, (Affinity.EARTH,), 1.1, JutsuType.SUMMONING),
+        Move("Razor Gale Arc", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, JutsuType.ELEMENTAL),
+        Move("Crosswind Mirage", MoveCategory.ESCAPE, (Affinity.WIND,), 0.75, JutsuType.CLONE),
+        Move("Pressure Dome", MoveCategory.DEFENSE, (Affinity.WIND,), 0.84, JutsuType.BARRIER),
+        Move("Sky Hawk Pact", MoveCategory.SUMMON, (Affinity.WIND,), 1.0, JutsuType.SUMMONING),
+        Move("Tempest Lynx Pact", MoveCategory.SUMMON, (Affinity.WIND,), 1.1, JutsuType.SUMMONING),
+        Move(
+            "Concord Nova",
+            MoveCategory.ULTIMATE,
+            (Affinity.FIRE, Affinity.WIND),
+            2.4,
+            JutsuType.ELEMENTAL,
+        ),
+        Move(
+            "Tidal Monolith Break",
+            MoveCategory.ULTIMATE,
+            (Affinity.WATER, Affinity.EARTH),
+            2.35,
+            JutsuType.SUPPORT,
+        ),
+        Move(
+            "Skyline Covenant",
+            MoveCategory.ULTIMATE,
+            (Affinity.WIND, Affinity.WATER),
+            2.3,
+            JutsuType.SUMMONING,
+        ),
+    ]
 
 
 def _seed_regions() -> List[Region]:
@@ -1307,16 +1578,37 @@ def _seed_villains() -> List[VillainProfile]:
     return [
         VillainProfile(
             name="Kage Renda",
-            backstory="A fallen bodyguard who distrusts direct violence and respects subtlety.",
+            backstory="A fallen bodyguard who channels wind edges through precision bladework.",
+            signature_power=Move(
+                "Rending Spiral",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                power_scale=1.2,
+                jutsu_type=JutsuType.WEAPON_STYLE,
+            ),
         ),
         VillainProfile(
             name="General Voln",
-            backstory="A warlord strategist who escalates force when the player leaves survivors.",
+            backstory="A warlord strategist using fire-forged pressure fields to break formations.",
+            signature_power=Move(
+                "Ember Cyclone",
+                MoveCategory.ATTACK,
+                (Affinity.FIRE,),
+                power_scale=1.25,
+                jutsu_type=JutsuType.ELEMENTAL,
+            ),
             aggression_score=1,
         ),
         VillainProfile(
             name="Admiral Neris",
-            backstory="A former naval hero who can be swayed by diplomacy and mercy.",
+            backstory="A former naval hero who bends water currents into defensive tides.",
+            signature_power=Move(
+                "Abyss Arc",
+                MoveCategory.DEFENSE,
+                (Affinity.WATER,),
+                power_scale=1.0,
+                jutsu_type=JutsuType.BARRIER,
+            ),
         ),
     ]
 
@@ -1484,6 +1776,7 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
         villain_behavior_rules=_seed_villain_behavior_rules(),
         player_backstories=_seed_player_backstories(),
         trophy_catalog=_seed_trophy_catalog(),
+        ninjutsu_library=_seed_ninjutsu_library(),
         shop_inventory=_seed_shop_inventory(),
     )
     player.weapons.extend(world.weapons)

@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from shinobi_rpg.core import (
     Affinity,
     Backstory,
+    JutsuType,
     Move,
     MoveCategory,
     PlayerProfile,
@@ -100,6 +101,14 @@ class CoreSystemTests(unittest.TestCase):
         result = player.execute_move("Twin Dragon Convergence")
         self.assertEqual(result["category"], "ultimate")
         self.assertEqual(result["damage"], 50)
+
+    def test_execute_summon_move_uses_focus_and_defense(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        summon_name = player.moves_by_set[MoveCategory.SUMMON][0].name
+        result = player.execute_move(summon_name)
+        self.assertEqual(result["category"], "summon")
+        self.assertEqual(result["summon_type"], JutsuType.SUMMONING.value)
+        self.assertEqual(result["summon_power"], 20)
 
     def test_execute_move_rejects_unknown_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -246,6 +255,14 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(behavior["stance"], VillainStance.BALANCED.value)
         self.assertIn("measured strikes", behavior["behavior"])
 
+    def test_clear_region_claims_red_bar_signature_power(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.clear_region(player, "Verdant Gate", "weapon")
+        self.assertEqual(player.red_bar_power_claims["Kage Renda"], "Rending Spiral")
+        self.assertTrue(any(move.name == "Rending Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+        villain = next(v for v in world.villains if v.name == "Kage Renda")
+        self.assertTrue(villain.defeated)
+
     def test_first_bosses_include_tutorial_mechanics(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         first_behavior = world.get_region_boss_behavior("Verdant Gate", player)
@@ -288,6 +305,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertTrue(restored_world.regions[0].cleared)
         self.assertEqual(restored_player.quest_log["Q1"], QuestStatus.COMPLETED)
         self.assertEqual(restored_world.villains[0].decision_memory.get("kill"), 1)
+        self.assertEqual(restored_player.red_bar_power_claims.get("Kage Renda"), "Rending Spiral")
 
     def test_quest_log_initializes_with_first_quest_active(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -354,10 +372,19 @@ class CoreSystemTests(unittest.TestCase):
         world.apply_player_decision(player, "charm")
         summary = world.generate_playthrough_summary(player)
         self.assertIn("villain_decision_memory", summary)
+        self.assertIn("red_bar_power_claims", summary)
+        self.assertIn("red_bar_progress", summary)
         self.assertIn("quest_log", summary)
         self.assertIn("ally_loyalty", summary)
         self.assertIn("credits", summary)
         self.assertIn("trophy_progress", summary)
+
+    def test_ninjutsu_catalog_offers_diverse_affinity_and_summon_paths(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        self.assertGreaterEqual(len(world.ninjutsu_library), 20)
+        summon_catalog = world.get_ninjutsu_catalog(jutsu_type=JutsuType.SUMMONING)
+        self.assertTrue(summon_catalog)
+        self.assertTrue(all(item["category"] == MoveCategory.SUMMON.value for item in summon_catalog))
 
 
 if __name__ == "__main__":

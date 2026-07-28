@@ -3,6 +3,7 @@
 from .core import (
     Affinity,
     Backstory,
+    JutsuType,
     Move,
     MoveCategory,
     NinjaWorld,
@@ -27,6 +28,7 @@ from .core import (
 __all__ = [
     "Affinity",
     "Backstory",
+    "JutsuType",
     "Move",
     "MoveCategory",
     "NinjaWorld",

@@ -19,6 +19,11 @@ python -m unittest discover -s tests -p "test_*.py"
 3. Make sure tests pass before opening a PR.
 4. Write clear PR descriptions that explain what changed and why.
 
+## Conduct reporting contact
+
+- Code of Conduct reports sent to `opensource@toadsagedan.dev` are monitored by project maintainers.
+- Reports are acknowledged within five business days.
+
 ## Code style
 
 - Prefer small, readable functions.

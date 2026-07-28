@@ -148,6 +148,33 @@ class PlayerProfile:
             raise ValueError("Non-ultimate moves must match player affinity.")
         self.moves_by_set[move.category].append(move)
 
+    def get_move(self, move_name: str) -> Move:
+        for move_set in self.moves_by_set.values():
+            for move in move_set:
+                if move.name == move_name:
+                    return move
+        raise ValueError(f'Move "{move_name}" is not unlocked for this player.')
+
+    def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, object]:
+        move = self.get_move(move_name)
+        if move.category == MoveCategory.ATTACK:
+            damage = int(self.stats.power * move.power_scale)
+            return {"move": move.name, "category": move.category.value, "damage": damage}
+        if move.category == MoveCategory.DEFENSE:
+            guard = int(self.stats.defense * move.power_scale)
+            return {"move": move.name, "category": move.category.value, "guard": guard}
+        if move.category == MoveCategory.ESCAPE:
+            escape_score = int(self.stats.agility * move.power_scale)
+            escaped = escape_score >= escape_difficulty
+            return {
+                "move": move.name,
+                "category": move.category.value,
+                "escape_score": escape_score,
+                "escaped": escaped,
+            }
+        damage = int((self.stats.power + self.stats.focus) * move.power_scale)
+        return {"move": move.name, "category": move.category.value, "damage": damage}
+
     def update_reputation(self, delta: int) -> ReputationTier:
         self.reputation += delta
         if self.reputation <= ROGUE_THRESHOLD_MIN:

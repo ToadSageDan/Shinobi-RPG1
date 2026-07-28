@@ -30,6 +30,40 @@ class CoreSystemTests(unittest.TestCase):
         player.add_move(move)
         self.assertEqual(player.moves_by_set[MoveCategory.ULTIMATE][-1].name, "Elemental Surge")
 
+    def test_seeded_player_has_all_move_categories(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        self.assertTrue(all(player.moves_by_set[category] for category in MoveCategory))
+
+    def test_execute_attack_move_scales_with_power(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        result = player.execute_move("Edge Current")
+        self.assertEqual(result["category"], "attack")
+        self.assertEqual(result["damage"], 10)
+
+    def test_execute_defense_move_scales_with_defense(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        result = player.execute_move("Guarding Veil")
+        self.assertEqual(result["category"], "defense")
+        self.assertEqual(result["guard"], 8)
+
+    def test_execute_escape_move_returns_escape_status(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        result = player.execute_move("Smoke Step")
+        self.assertEqual(result["category"], "escape")
+        self.assertEqual(result["escape_score"], 6)
+        self.assertTrue(result["escaped"])
+
+    def test_execute_ultimate_move_uses_power_plus_focus(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        result = player.execute_move("Twin Dragon Convergence")
+        self.assertEqual(result["category"], "ultimate")
+        self.assertEqual(result["damage"], 50)
+
+    def test_execute_move_rejects_unknown_move(self):
+        world, player = build_mvp_world("Dan", [5, 1, 1, 1])
+        with self.assertRaisesRegex(ValueError, 'Move "Nope" is not unlocked for this player.'):
+            player.execute_move("Nope")
+
     def test_affinity_minigame_resolves_top_score(self):
         affinity = resolve_affinity_minigame([5, 1, 1, 1, 2])
         self.assertEqual(affinity, Affinity.FIRE)

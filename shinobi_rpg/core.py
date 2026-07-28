@@ -2043,7 +2043,9 @@ def _boss_exclusive_move_for(villain_name: str) -> Move:
     """Build the boss-only move reward configured for a region boss."""
     spec = BOSS_EXCLUSIVE_MOVE_SPECS.get(villain_name)
     if not spec:
-        raise ValueError(f'Boss-exclusive reward move is not defined for villain "{villain_name}".')
+        raise ValueError(
+            f'Boss-exclusive move specification is not defined for villain "{villain_name}".'
+        )
     return _make_move(
         spec["name"],
         spec["category"],
@@ -2055,6 +2057,7 @@ def _boss_exclusive_move_for(villain_name: str) -> Move:
 
 
 def _validate_boss_move_reward_config(regions: Sequence[Region]) -> None:
+    """Validate seeded region bosses that grant move rewards in the current design."""
     for region in regions:
         move_reward_name = region.boss_rewards.get("move")
         if not move_reward_name:

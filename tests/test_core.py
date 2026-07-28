@@ -25,6 +25,11 @@ class CoreSystemTests(unittest.TestCase):
     def _get_unlocked_move_names(self, player: PlayerProfile) -> set[str]:
         return {move.name for moves in player.moves_by_set.values() for move in moves}
 
+    def _get_region(self, world, region_name: str):
+        region = next((item for item in world.regions if item.name == region_name), None)
+        self.assertIsNotNone(region, f"Expected region '{region_name}' to exist in seeded world.")
+        return region
+
     def test_non_ultimate_move_cannot_mix_affinities(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.FIRE)
         move = Move("Invalid Strike", MoveCategory.ATTACK, (Affinity.FIRE, Affinity.WIND))
@@ -166,7 +171,7 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_region_move_reward_unlocks_boss_exclusive_move(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
-        verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
+        verdant_gate = self._get_region(world, "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
         unlocked_names = self._get_unlocked_move_names(player)
         self.assertNotIn(reward_move_name, unlocked_names)
@@ -178,7 +183,7 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
-        verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
+        verdant_gate = self._get_region(world, "Verdant Gate")
         reward_move_name = verdant_gate.boss_rewards["move"]
         world.clear_region(player, "Verdant Gate", "weapon")
         unlocked_names = self._get_unlocked_move_names(player)

@@ -58,6 +58,19 @@ CHARM_TROPHY_BASE_THRESHOLD = 3
 CHARM_TROPHY_ADVANCED_THRESHOLD = 5
 EVASION_TROPHY_THRESHOLD = 3
 PACIFIST_TROPHY_ACTIONS_THRESHOLD = 5
+TROPHY_FIRST_STRIKE = "first_strike"
+TROPHY_GHOST_STEP = "ghost_step"
+TROPHY_SILVER_TONGUE = "silver_tongue"
+TROPHY_WINDWALK_SURVIVOR = "windwalk_survivor"
+TROPHY_VEIL_MASTER = "veil_master"
+TROPHY_DIPLOMAT_SUPREME = "diplomat_supreme"
+TROPHY_PACIFIST_SHADOW = "pacifist_shadow"
+TROPHY_ORIGIN_AWAKENED = "origin_awakened"
+TROPHY_FIRST_BLOODLINE_VICTORY = "first_bloodline_victory"
+TROPHY_WORLD_WALKER = "world_walker"
+TROPHY_ROGUE_ASCENDANT = "rogue_ascendant"
+TROPHY_HEROIC_CREST = "heroic_crest"
+TROPHY_PEACEKEEPER_EMBLEM = "peacekeeper_emblem"
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -394,14 +407,7 @@ class NinjaWorld:
                 "outcome": quest.objective,
             }
 
-        branch_key = "default"
-        if player.selected_backstory and player.selected_backstory.key in quest.branch_outcomes:
-            branch_key = player.selected_backstory.key
-        else:
-            for tag in sorted(player.narrative_tags):
-                if tag in quest.branch_outcomes:
-                    branch_key = tag
-                    break
+        branch_key = self._resolve_branch_key(player, quest.branch_outcomes)
 
         outcome = quest.branch_outcomes.get(branch_key) or quest.branch_outcomes.get(
             "default", quest.objective
@@ -412,6 +418,15 @@ class NinjaWorld:
             "branch_key": branch_key,
             "outcome": outcome,
         }
+
+    def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
+        """Resolve branch precedence: explicit backstory first, then narrative tags, then default."""
+        if player.selected_backstory and player.selected_backstory.key in branch_outcomes:
+            return player.selected_backstory.key
+        for tag in sorted(player.narrative_tags):
+            if tag in branch_outcomes:
+                return tag
+        return "default"
 
     def get_region_boss_behavior(self, region_name: str, player: PlayerProfile) -> Dict[str, str]:
         region = self._find_region(region_name)
@@ -436,39 +451,39 @@ class NinjaWorld:
                 newly_awarded.add(trophy_key)
 
         if player.encounter_outcomes["kill"] > 0:
-            _award("first_strike")
+            _award(TROPHY_FIRST_STRIKE)
         if player.encounter_outcomes["stealth"] >= STEALTH_TROPHY_BASE_THRESHOLD:
-            _award("ghost_step")
+            _award(TROPHY_GHOST_STEP)
         if player.encounter_outcomes["charm"] >= CHARM_TROPHY_BASE_THRESHOLD:
-            _award("silver_tongue")
+            _award(TROPHY_SILVER_TONGUE)
         if player.encounter_outcomes["evasion"] >= EVASION_TROPHY_THRESHOLD:
-            _award("windwalk_survivor")
+            _award(TROPHY_WINDWALK_SURVIVOR)
         if player.encounter_outcomes["stealth"] >= STEALTH_TROPHY_ADVANCED_THRESHOLD:
-            _award("veil_master")
+            _award(TROPHY_VEIL_MASTER)
         if player.encounter_outcomes["charm"] >= CHARM_TROPHY_ADVANCED_THRESHOLD:
-            _award("diplomat_supreme")
+            _award(TROPHY_DIPLOMAT_SUPREME)
         if player.is_nonlethal_path_active() and (
             player.encounter_outcomes["charm"]
             + player.encounter_outcomes["stealth"]
             + player.encounter_outcomes["evasion"]
         ) >= PACIFIST_TROPHY_ACTIONS_THRESHOLD:
-            _award("pacifist_shadow")
+            _award(TROPHY_PACIFIST_SHADOW)
         if player.selected_backstory:
-            _award("origin_awakened")
+            _award(TROPHY_ORIGIN_AWAKENED)
         cleared_regions = sum(1 for region in self.regions if region.cleared)
         if cleared_regions >= 1:
-            _award("first_bloodline_victory")
+            _award(TROPHY_FIRST_BLOODLINE_VICTORY)
         if cleared_regions >= len(self.regions):
-            _award("world_walker")
+            _award(TROPHY_WORLD_WALKER)
         if player.reputation <= ROGUE_THRESHOLD_MIN:
-            _award("rogue_ascendant")
+            _award(TROPHY_ROGUE_ASCENDANT)
         if player.reputation >= HEROIC_THRESHOLD_MIN:
-            _award("heroic_crest")
+            _award(TROPHY_HEROIC_CREST)
         if (
             player.current_reputation_tier() == ReputationTier.HEROIC
             and player.encounter_outcomes["charm"] >= CHARM_TROPHY_BASE_THRESHOLD
         ):
-            _award("peacekeeper_emblem")
+            _award(TROPHY_PEACEKEEPER_EMBLEM)
 
         return newly_awarded
 
@@ -738,79 +753,79 @@ def _seed_villain_behavior_rules() -> Dict[str, Dict[VillainStance, str]]:
 def _seed_trophy_catalog() -> Dict[str, Trophy]:
     trophies = [
         Trophy(
-            "first_strike",
+            TROPHY_FIRST_STRIKE,
             "First Strike",
             "Defeat an enemy lethally for the first time.",
             TrophyCategory.COMBAT,
         ),
         Trophy(
-            "ghost_step",
+            TROPHY_GHOST_STEP,
             "Ghost Step",
             "Complete three encounters through stealth.",
             TrophyCategory.STEALTH,
         ),
         Trophy(
-            "silver_tongue",
+            TROPHY_SILVER_TONGUE,
             "Silver Tongue",
             "Resolve three encounters through charm.",
             TrophyCategory.SOCIAL,
         ),
         Trophy(
-            "windwalk_survivor",
+            TROPHY_WINDWALK_SURVIVOR,
             "Windwalk Survivor",
             "Escape danger through evasion three times.",
             TrophyCategory.STEALTH,
         ),
         Trophy(
-            "veil_master",
+            TROPHY_VEIL_MASTER,
             "Veil Master",
             "Complete five encounters through stealth.",
             TrophyCategory.STEALTH,
         ),
         Trophy(
-            "diplomat_supreme",
+            TROPHY_DIPLOMAT_SUPREME,
             "Diplomat Supreme",
             "Resolve five encounters through charm.",
             TrophyCategory.SOCIAL,
         ),
         Trophy(
-            "pacifist_shadow",
+            TROPHY_PACIFIST_SHADOW,
             "Pacifist Shadow",
             "Maintain a kill-free run while using charm, stealth, and evasion tactics.",
             TrophyCategory.ALIGNMENT,
         ),
         Trophy(
-            "origin_awakened",
+            TROPHY_ORIGIN_AWAKENED,
             "Origin Awakened",
             "Choose a protagonist backstory and set your narrative path.",
             TrophyCategory.PROGRESSION,
         ),
         Trophy(
-            "first_bloodline_victory",
+            TROPHY_FIRST_BLOODLINE_VICTORY,
             "First Bloodline Victory",
             "Clear your first region and claim a boss reward.",
             TrophyCategory.PROGRESSION,
         ),
         Trophy(
-            "world_walker",
+            TROPHY_WORLD_WALKER,
             "World Walker",
             "Clear every seeded region in the current world.",
             TrophyCategory.PROGRESSION,
         ),
         Trophy(
-            "rogue_ascendant",
+            TROPHY_ROGUE_ASCENDANT,
             "Rogue Ascendant",
             "Reach Rogue reputation tier.",
             TrophyCategory.ALIGNMENT,
         ),
         Trophy(
-            "heroic_crest",
+            TROPHY_HEROIC_CREST,
             "Heroic Crest",
             "Reach Heroic reputation tier.",
             TrophyCategory.ALIGNMENT,
         ),
         Trophy(
-            "peacekeeper_emblem",
+            TROPHY_PEACEKEEPER_EMBLEM,
             "Peacekeeper Emblem",
             "Reach Heroic status while resolving at least three encounters through charm.",
             TrophyCategory.ALIGNMENT,

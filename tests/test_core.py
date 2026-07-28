@@ -412,6 +412,52 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(ghost_step["remaining"], 1)
         self.assertTrue(ghost_step["near_miss"])
 
+    def test_next_five_trophies_are_seeded(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for trophy_key in [
+            "silent_legend",
+            "phantom_veil",
+            "harmony_voice",
+            "untouchable_ghost",
+            "trinity_operator",
+        ]:
+            self.assertIn(trophy_key, world.trophy_catalog)
+
+    def test_high_mastery_nonlethal_trophies_unlock(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(8):
+            world.apply_player_decision(player, "stealth")
+            world.apply_player_decision(player, "charm")
+        for _ in range(5):
+            world.apply_player_decision(player, "evasion")
+        self.assertIn("phantom_veil", player.trophies)
+        self.assertIn("harmony_voice", player.trophies)
+        self.assertIn("untouchable_ghost", player.trophies)
+
+    def test_trinity_operator_requires_balanced_nonlethal_choices(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for decision in ["stealth", "stealth", "charm", "charm", "evasion", "evasion"]:
+            world.apply_player_decision(player, decision)
+        self.assertIn("trinity_operator", player.trophies)
+
+    def test_silent_legend_unlocks_on_full_nonlethal_world_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        world.clear_region(player, "Verdant Gate", "weapon")
+        world.clear_region(player, "Ashen Cradle", "weapon")
+        world.clear_region(player, "Tideglass Basin", "weapon")
+        self.assertIn("silent_legend", player.trophies)
+
+    def test_silent_legend_blocked_if_kill_occurs(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "kill")
+        world.apply_player_decision(player, "stealth")
+        world.clear_region(player, "Verdant Gate", "weapon")
+        world.clear_region(player, "Ashen Cradle", "weapon")
+        world.clear_region(player, "Tideglass Basin", "weapon")
+        self.assertNotIn("silent_legend", player.trophies)
+
     def test_playthrough_summary_includes_new_tracking_fields(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "charm")

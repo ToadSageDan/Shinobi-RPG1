@@ -11,17 +11,24 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Reputation system with Rogue Ninja path and Black Market unlock
 - Weapons: sword, kunai, bow staff, ninja stars
 - Region and boss progression with reward choices (weapon/clothing/move)
+- Save/load snapshots for full world + player progression state
+- Quest state flow (active/completed/failed) with sequential gating
 - Quest chain including stealth-required content
 - Seeded allies (Dan, Moon, Sleep, Dot, Porter) with auto-generation to 10+
+- Ally loyalty tracking influenced by decisions and quest outcomes
+- Region-specific encounter tables for replayable deterministic rotations
 - Unlockable skins with stat boosts
 - Fast travel unlocks from progression
 - Vault archive for historic ninja runs
 - Player backstory selection with narrative/reputation impact
 - Villain backstories with aggression/passivity shifts from player decisions
+- Villain-specific decision memory in behavior and summary reporting
 - Backstory-driven quest branch outcomes
 - Region/boss-specific villain behavior rules by stance
 - Nonlethal progression tracking via charm, stealth, and evasion outcomes
+- Reputation-aware shop inventory and Black Market purchasing
 - Expanded trophy catalog with category-based unlock conditions
+- Trophy progress tracking with near-miss hints
 - Playthrough summary report including backstory, trophies, reputation, and villain stances
 
 ## Run tests

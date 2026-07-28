@@ -38,6 +38,10 @@ class CoreSystemTests(unittest.TestCase):
         affinity = resolve_affinity_minigame([5, 5, 1, 1, 0])
         self.assertEqual(affinity, Affinity.FIRE)
 
+    def test_affinity_minigame_wraps_scoring_after_four_decisions(self):
+        affinity = resolve_affinity_minigame([1, 2, 3, 4, 10])
+        self.assertEqual(affinity, Affinity.FIRE)
+
     def test_assign_affinity_from_choices_counts_majority(self):
         affinity = assign_affinity_from_choices(["water", "fire", "water", "earth"])
         self.assertEqual(affinity, Affinity.WATER)

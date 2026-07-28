@@ -202,8 +202,9 @@ class NinjaWorld:
 def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
     """Resolve starting affinity from mini-game decisions.
 
-    Higher total score wins; ties resolve by enum order:
-    Fire, then Water, then Earth, then Wind.
+    Scores are applied in affinity order (Fire, Water, Earth, Wind) and
+    wrap cyclically when more than four decisions are provided.
+    Higher total score wins; ties resolve by the same affinity order.
     """
     scores = _empty_affinity_scores()
     for idx, value in enumerate(decisions):

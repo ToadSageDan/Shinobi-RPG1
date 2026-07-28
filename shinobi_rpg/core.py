@@ -320,9 +320,10 @@ class PlayerProfile:
         guard_scale = selected_move.power_scale if selected_move else base_guard_scale
         guard = int(self.stats.defense * guard_scale)
         parry_score = int(self.stats.agility * guard_scale)
-        blocked_damage = max(incoming_damage - guard, 0)
+        remaining_damage = max(incoming_damage - guard, 0)
+        blocked_damage = incoming_damage - remaining_damage
         parried = parry_score >= parry_difficulty
-        damage_taken = 0 if parried else blocked_damage
+        damage_taken = 0 if parried else remaining_damage
 
         return {
             "category": MoveCategory.DEFENSE.value,
@@ -331,6 +332,7 @@ class PlayerProfile:
             "parry_score": parry_score,
             "parried": parried,
             "blocked_damage": blocked_damage,
+            "remaining_damage": remaining_damage,
             "damage_taken": damage_taken,
         }
 

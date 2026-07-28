@@ -2,9 +2,11 @@ import unittest
 
 from shinobi_rpg.core import (
     Affinity,
+    Backstory,
     Move,
     MoveCategory,
     PlayerProfile,
+    VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
     resolve_affinity_minigame,
@@ -150,6 +152,44 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(archive["affinity"], player.affinity.value)
         self.assertEqual(archive["level"], player.stats.level)
         self.assertEqual(archive["reputation"], player.reputation)
+
+    def test_player_backstory_updates_tags_and_reputation(self):
+        player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
+        backstory = Backstory(
+            key="wandering_monk",
+            title="Wandering Monk",
+            narrative_tags=("pacifism", "discipline"),
+            reputation_bias=10,
+        )
+        player.choose_backstory(backstory)
+        self.assertEqual(player.selected_backstory.key, "wandering_monk")
+        self.assertIn("pacifism", player.narrative_tags)
+        self.assertEqual(player.reputation, 10)
+
+    def test_world_decisions_shift_villain_stance(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(2):
+            world.apply_player_decision(player, "kill")
+        self.assertTrue(all(v.stance == VillainStance.AGGRESSIVE for v in world.villains))
+
+    def test_nonlethal_path_and_trophy_unlock(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for decision in ["stealth", "stealth", "stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        self.assertTrue(player.is_nonlethal_path_active())
+        self.assertIn("ghost_step", player.trophies)
+        self.assertIn("pacifist_shadow", player.trophies)
+
+    def test_archive_includes_backstory_trophies_and_nonlethal_flag(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])
+        for decision in ["stealth", "charm"]:
+            world.apply_player_decision(player, decision)
+        world.archive_historic_ninja(player)
+        archive = world.vault_historic_ninjas[0]
+        self.assertEqual(archive["backstory"], world.player_backstories[0].key)
+        self.assertEqual(archive["nonlethal_path"], True)
+        self.assertIsInstance(archive["trophies"], list)
 
 
 if __name__ == "__main__":

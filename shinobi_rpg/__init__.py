@@ -2,6 +2,7 @@
 
 from .core import (
     Affinity,
+    Backstory,
     Move,
     MoveCategory,
     NinjaWorld,
@@ -9,6 +10,9 @@ from .core import (
     Quest,
     Region,
     ReputationTier,
+    Trophy,
+    VillainProfile,
+    VillainStance,
     Weapon,
     WeaponType,
     assign_affinity_from_choices,
@@ -18,6 +22,7 @@ from .core import (
 
 __all__ = [
     "Affinity",
+    "Backstory",
     "Move",
     "MoveCategory",
     "NinjaWorld",
@@ -25,6 +30,9 @@ __all__ = [
     "Quest",
     "Region",
     "ReputationTier",
+    "Trophy",
+    "VillainProfile",
+    "VillainStance",
     "Weapon",
     "WeaponType",
     "assign_affinity_from_choices",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Sequence, Set, Tuple
 
 
 class Affinity(str, Enum):
@@ -24,6 +24,12 @@ class WeaponType(str, Enum):
     KUNAI = "kunai"
     BOW_STAFF = "bow_staff"
     NINJA_STARS = "ninja_stars"
+
+
+class VillainStance(str, Enum):
+    AGGRESSIVE = "aggressive"
+    BALANCED = "balanced"
+    PASSIVE = "passive"
 
 
 class ReputationTier(str, Enum):
@@ -76,6 +82,47 @@ class Weapon:
 class Skin:
     name: str
     stat_boosts: Dict[str, int]
+
+
+@dataclass(frozen=True)
+class Backstory:
+    key: str
+    title: str
+    narrative_tags: Tuple[str, ...]
+    reputation_bias: int = 0
+
+
+@dataclass
+class VillainProfile:
+    name: str
+    backstory: str
+    aggression_score: int = 0
+    stance: VillainStance = VillainStance.BALANCED
+
+    def apply_decision(self, decision_tag: str, intensity: int = 1) -> VillainStance:
+        """Update villain temperament from player decisions over time."""
+        normalized = decision_tag.strip().lower()
+        if normalized in {"kill", "aggressive", "betray"}:
+            self.aggression_score += 2 * intensity
+        elif normalized in {"stealth", "evasion"}:
+            self.aggression_score += intensity
+        elif normalized in {"charm", "mercy", "diplomacy"}:
+            self.aggression_score -= 2 * intensity
+
+        if self.aggression_score >= 4:
+            self.stance = VillainStance.AGGRESSIVE
+        elif self.aggression_score <= -3:
+            self.stance = VillainStance.PASSIVE
+        else:
+            self.stance = VillainStance.BALANCED
+        return self.stance
+
+
+@dataclass(frozen=True)
+class Trophy:
+    key: str
+    name: str
+    description: str
 
 
 @dataclass
@@ -142,6 +189,33 @@ class PlayerProfile:
             MoveCategory.ULTIMATE: [],
         }
     )
+    selected_backstory: Backstory | None = None
+    narrative_tags: Set[str] = field(default_factory=set)
+    encounter_outcomes: Dict[str, int] = field(
+        default_factory=lambda: {"kill": 0, "charm": 0, "stealth": 0, "evasion": 0}
+    )
+    trophies: Set[str] = field(default_factory=set)
+
+    def choose_backstory(self, backstory: Backstory) -> None:
+        self.selected_backstory = backstory
+        self.narrative_tags.update(backstory.narrative_tags)
+        if backstory.reputation_bias:
+            self.update_reputation(backstory.reputation_bias)
+
+    def record_encounter_outcome(
+        self, outcome: Literal["kill", "charm", "stealth", "evasion"]
+    ) -> None:
+        if outcome not in self.encounter_outcomes:
+            raise ValueError("Outcome must be kill, charm, stealth, or evasion.")
+        self.encounter_outcomes[outcome] += 1
+
+    def is_nonlethal_path_active(self) -> bool:
+        nonlethal_actions = (
+            self.encounter_outcomes["charm"]
+            + self.encounter_outcomes["stealth"]
+            + self.encounter_outcomes["evasion"]
+        )
+        return self.encounter_outcomes["kill"] == 0 and nonlethal_actions > 0
 
     def add_move(self, move: Move) -> None:
         move.validate()
@@ -214,6 +288,9 @@ class NinjaWorld:
     allies: List[str]
     weapons: List[Weapon]
     skins: List[Skin]
+    villains: List[VillainProfile]
+    player_backstories: List[Backstory]
+    trophy_catalog: Dict[str, Trophy]
     vault_historic_ninjas: List[dict] = field(default_factory=list)
 
     def clear_region(
@@ -250,8 +327,46 @@ class NinjaWorld:
                 "affinity": player.affinity.value,
                 "level": player.stats.level,
                 "reputation": player.reputation,
+                "backstory": player.selected_backstory.key if player.selected_backstory else None,
+                "trophies": sorted(player.trophies),
+                "nonlethal_path": player.is_nonlethal_path_active(),
             }
         )
+
+    def apply_player_decision(self, player: PlayerProfile, decision_tag: str, intensity: int = 1) -> None:
+        normalized = decision_tag.strip().lower()
+        for villain in self.villains:
+            villain.apply_decision(normalized, intensity=intensity)
+        if normalized in {"kill", "charm", "stealth", "evasion"}:
+            player.record_encounter_outcome(normalized)
+        self.evaluate_trophies(player)
+
+    def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
+        newly_awarded: Set[str] = set()
+
+        def _award(trophy_key: str) -> None:
+            if trophy_key in self.trophy_catalog and trophy_key not in player.trophies:
+                player.trophies.add(trophy_key)
+                newly_awarded.add(trophy_key)
+
+        if player.encounter_outcomes["kill"] > 0:
+            _award("first_strike")
+        if player.encounter_outcomes["stealth"] >= 3:
+            _award("ghost_step")
+        if player.encounter_outcomes["charm"] >= 3:
+            _award("silver_tongue")
+        if player.is_nonlethal_path_active() and (
+            player.encounter_outcomes["charm"]
+            + player.encounter_outcomes["stealth"]
+            + player.encounter_outcomes["evasion"]
+        ) >= 5:
+            _award("pacifist_shadow")
+        if player.reputation <= ROGUE_THRESHOLD_MIN:
+            _award("rogue_ascendant")
+        if player.reputation >= HEROIC_THRESHOLD_MIN:
+            _award("heroic_crest")
+
+        return newly_awarded
 
 
 def resolve_affinity_minigame(decisions: Sequence[int]) -> Affinity:
@@ -416,6 +531,63 @@ def _seed_allies(min_count: int = 10) -> List[str]:
     return allies
 
 
+def _seed_player_backstories() -> List[Backstory]:
+    return [
+        Backstory(
+            key="exiled_heir",
+            title="Exiled Heir",
+            narrative_tags=("clan_politics", "honor_bound"),
+            reputation_bias=5,
+        ),
+        Backstory(
+            key="street_ghost",
+            title="Street Ghost",
+            narrative_tags=("underworld", "infiltration"),
+            reputation_bias=-5,
+        ),
+        Backstory(
+            key="wandering_monk",
+            title="Wandering Monk",
+            narrative_tags=("pacifism", "discipline"),
+            reputation_bias=10,
+        ),
+    ]
+
+
+def _seed_villains() -> List[VillainProfile]:
+    return [
+        VillainProfile(
+            name="Kage Renda",
+            backstory="A fallen bodyguard who distrusts direct violence and respects subtlety.",
+        ),
+        VillainProfile(
+            name="General Voln",
+            backstory="A warlord strategist who escalates force when the player leaves survivors.",
+            aggression_score=1,
+        ),
+        VillainProfile(
+            name="Admiral Neris",
+            backstory="A former naval hero who can be swayed by diplomacy and mercy.",
+        ),
+    ]
+
+
+def _seed_trophy_catalog() -> Dict[str, Trophy]:
+    trophies = [
+        Trophy("first_strike", "First Strike", "Defeat an enemy lethally for the first time."),
+        Trophy("ghost_step", "Ghost Step", "Complete three encounters through stealth."),
+        Trophy("silver_tongue", "Silver Tongue", "Resolve three encounters through charm."),
+        Trophy(
+            "pacifist_shadow",
+            "Pacifist Shadow",
+            "Maintain a kill-free run while using charm, stealth, and evasion tactics.",
+        ),
+        Trophy("rogue_ascendant", "Rogue Ascendant", "Reach Rogue reputation tier."),
+        Trophy("heroic_crest", "Heroic Crest", "Reach Heroic reputation tier."),
+    ]
+    return {trophy.key: trophy for trophy in trophies}
+
+
 def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tuple[NinjaWorld, PlayerProfile]:
     """Build the MVP world and player state.
 
@@ -439,6 +611,9 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
             Skin("Founder's Garb", {"power": 2, "focus": 1}),
             Skin("Rogue Nightwear", {"agility": 3}),
         ],
+        villains=_seed_villains(),
+        player_backstories=_seed_player_backstories(),
+        trophy_catalog=_seed_trophy_catalog(),
     )
     player.weapons.extend(world.weapons)
     player.unlocked_skins.append(world.skins[0])

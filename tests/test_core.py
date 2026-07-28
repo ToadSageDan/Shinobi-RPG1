@@ -163,16 +163,20 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_region_move_reward_unlocks_boss_exclusive_move(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
-        self.assertFalse(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+        verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
+        reward_move_name = verdant_gate.boss_rewards["move"]
+        self.assertFalse(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
         reward = world.clear_region(player, "Verdant Gate", "move")
-        self.assertEqual(reward, "Razorwind Spiral")
-        self.assertIn("Razorwind Spiral", player.reward_inventory["move"])
-        self.assertTrue(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+        self.assertEqual(reward, reward_move_name)
+        self.assertIn(reward_move_name, player.reward_inventory["move"])
+        self.assertTrue(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
 
     def test_boss_exclusive_move_not_unlocked_without_move_reward_choice(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        verdant_gate = next(region for region in world.regions if region.name == "Verdant Gate")
+        reward_move_name = verdant_gate.boss_rewards["move"]
         world.clear_region(player, "Verdant Gate", "weapon")
-        self.assertFalse(any(move.name == "Razorwind Spiral" for move in player.moves_by_set[MoveCategory.ATTACK]))
+        self.assertFalse(any(move.name == reward_move_name for move in player.moves_by_set[MoveCategory.ATTACK]))
 
     def test_region_clear_requires_previous_region(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])

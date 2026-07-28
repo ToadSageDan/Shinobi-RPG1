@@ -943,6 +943,10 @@ class NinjaWorld:
         if not uncleared_regions:
             self.dynamic_region_chain = []
             return []
+        if not self.world_event_history:
+            scheduled = [region.name for region in self.regions if not region.cleared]
+            self.dynamic_region_chain = scheduled
+            return scheduled
 
         base_signal = (
             player.reputation
@@ -958,8 +962,15 @@ class NinjaWorld:
             region_seed = sum(ord(ch) for ch in region.name)
             pseudo_random = (base_signal + region_seed + idx * 7) % 6
             availability_penalty = 0 if self.boss_availability.get(region.boss, True) else 10
-            progression_anchor = idx * 3
-            region_scores[region.name] = pressure * 3 - recovery + pseudo_random + progression_anchor - availability_penalty
+            original_index = next((index for index, item in enumerate(self.regions) if item.name == region.name), idx)
+            progression_anchor = -original_index * 3
+            region_scores[region.name] = (
+                pressure * 3
+                - recovery
+                + pseudo_random
+                + progression_anchor
+                - availability_penalty
+            )
 
         ordered = sorted(uncleared_regions, key=lambda region: (-region_scores[region.name], region.name))
         scheduled = [region.name for region in ordered]

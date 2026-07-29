@@ -783,6 +783,7 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("StealthMain", [3, 1, 2, 4])
         for _ in range(3):
             world.apply_player_decision(player, "stealth")
+        world.apply_player_decision(player, "kill")
         world.apply_player_decision(player, "charm")
         result = world.resolve_quest_branch(player, "Q20")
         self.assertEqual(result["branch_key"], "stealth_path")

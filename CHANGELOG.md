@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Quest Q6 "Legacy of the Fallen Shinobi": final epilogue quest at the Ashen Spire with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q7 "Shattered Moon Accord" and Q8 "Dawn of the Hidden Age" with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q9 "Ashes Beneath the Banner" and Q10 "Veil of the Eternal Watch" to continue seeded quest progression with full backstory, nonlethal, heroic, and rogue branch outcomes
+- Quest Q11 "Ashes of the Courier" through Q15 "Feast of Knives" now include handcrafted backstory, nonlethal, heroic, and rogue branch outcomes
 - Ten new trophies across combat, progression, social, and alignment categories:
   - **Battle Hardened** (combat/early) — 5 lethal kills
   - **War Veteran** (combat/mid) — 20 lethal kills

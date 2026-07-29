@@ -692,7 +692,7 @@ class CoreSystemTests(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # Q6-Q10 quest branching tests
+    # Q6-Q15 quest branching tests
     # ------------------------------------------------------------------
 
     def test_q6_exists_in_seeded_world(self):
@@ -778,6 +778,41 @@ class CoreSystemTests(unittest.TestCase):
         result = world.resolve_quest_branch(player, "Q10")
         self.assertEqual(result["branch_key"], "nonlethal_path")
         self.assertIn("without blood debt", result["outcome"].lower())
+
+    def test_q11_branching_uses_exiled_heir_backstory(self):
+        world, player = build_mvp_world("Heir", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[0])  # exiled_heir
+        result = world.resolve_quest_branch(player, "Q11")
+        self.assertEqual(result["branch_key"], "exiled_heir")
+        self.assertIn("bloodline", result["outcome"].lower())
+
+    def test_q12_branching_uses_street_ghost_backstory(self):
+        world, player = build_mvp_world("Ghost", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        result = world.resolve_quest_branch(player, "Q12")
+        self.assertEqual(result["branch_key"], "street_ghost")
+        self.assertIn("underworld", result["outcome"].lower())
+
+    def test_q13_branching_uses_wandering_monk_backstory(self):
+        world, player = build_mvp_world("Monk", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[2])  # wandering_monk
+        result = world.resolve_quest_branch(player, "Q13")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("restraint", result["outcome"].lower())
+
+    def test_q14_branching_uses_heroic_path(self):
+        world, player = build_mvp_world("Hero", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q14")
+        self.assertEqual(result["branch_key"], "heroic_path")
+        self.assertIn("trust", result["outcome"].lower())
+
+    def test_q15_branching_uses_rogue_path(self):
+        world, player = build_mvp_world("Rogue", [3, 1, 2, 4])
+        player.update_reputation(-60)
+        result = world.resolve_quest_branch(player, "Q15")
+        self.assertEqual(result["branch_key"], "rogue_path")
+        self.assertIn("leverage", result["outcome"].lower())
 
     def test_q20_branching_uses_stealth_path_when_dominant_outcome(self):
         world, player = build_mvp_world("StealthMain", [3, 1, 2, 4])

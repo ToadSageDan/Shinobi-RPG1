@@ -3590,6 +3590,29 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("rescue the courier", "forge replacement terms", "erase the treaty route"),
             "follow_up_hook": "Recovered message routes point to hidden supply ports.",
             "reward_theme": "diplomatic_intel",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You invoke dormant courier oaths tied to your bloodline and compel every checkpoint to clear a path."
+                ),
+                "street_ghost": (
+                    "You ghost through black-route couriers and swap the ceasefire packet before any faction spots the handoff."
+                ),
+                "wandering_monk": (
+                    "You disarm the escort without lethal strikes and escort the courier under temple neutrality terms."
+                ),
+                "nonlethal_path": (
+                    "You secure the ceasefire route through stealth, charm, and evasion, ending the crisis without executions."
+                ),
+                "heroic_path": (
+                    "Your standing rallies neutral sentries who escort the courier safely through hostile lines."
+                ),
+                "rogue_path": (
+                    "You seize both original and forged terms, then force the war councils to negotiate on your timetable."
+                ),
+                "default": (
+                    "You storm the interception site, recover the courier, and drag the ceasefire terms back by force."
+                ),
+            },
         },
         {
             "quest_id": "Q12",
@@ -3599,6 +3622,29 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("infiltrate the docks", "seize shipments", "negotiate with smugglers"),
             "follow_up_hook": "Smuggler ledgers name tribunal sponsors and hidden judges.",
             "reward_theme": "black_market_influence",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You invoke inherited port charters to seize the docks and place every shipment under clan audit."
+                ),
+                "street_ghost": (
+                    "You reroute smuggler lantern codes through your underworld handlers and own the harbor by dawn."
+                ),
+                "wandering_monk": (
+                    "You broker safe exits for coerced crews and convert the docks into monitored relief corridors."
+                ),
+                "nonlethal_path": (
+                    "You collapse the smuggling ring through silent interceptions and negotiated surrenders without bloodshed."
+                ),
+                "heroic_path": (
+                    "Public witness statements and your reputation force tribunal sponsors to admit the contraband network."
+                ),
+                "rogue_path": (
+                    "You spare the ring leaders in exchange for leverage, turning their route map into your covert economy."
+                ),
+                "default": (
+                    "You raid the docks head-on, burn the contraband caches, and break the masked jonin supply chain."
+                ),
+            },
         },
         {
             "quest_id": "Q13",
@@ -3608,6 +3654,29 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("defend the ally", "turn state witness", "expose forged evidence"),
             "follow_up_hook": "Court records reveal tunnels beneath the Hollow Tree shrine.",
             "reward_theme": "political_access",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You invoke ancestral legal seals and force the tribunal to reopen under old succession law."
+                ),
+                "street_ghost": (
+                    "You slip witness records through safehouse channels and expose who scripted the tribunal from the shadows."
+                ),
+                "wandering_monk": (
+                    "You halt the verdict with restraint doctrine, turning the hearing into mediated restitution."
+                ),
+                "nonlethal_path": (
+                    "You dismantle every coercion thread through stealth evidence work and calm testimony without executions."
+                ),
+                "heroic_path": (
+                    "Your heroic service record compels public trust, and the tribunal swings toward transparent judgment."
+                ),
+                "rogue_path": (
+                    "You weaponize hidden confessions to break the judges into rival blocs and claim the outcome."
+                ),
+                "default": (
+                    "You expose enough forged evidence to collapse the hearing and settle the dispute through hard pressure."
+                ),
+            },
         },
         {
             "quest_id": "Q14",
@@ -3617,6 +3686,29 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("disarm seals", "claim relic authority", "destroy the relic"),
             "follow_up_hook": "Relic inscriptions expose a banquet assassination schedule.",
             "reward_theme": "relic_mastery",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You read the relic's bloodline cipher and claim lawful custody before rival claimants can contest it."
+                ),
+                "street_ghost": (
+                    "You map forgotten escape roots and relocate the relic through tunnels no registry remembers."
+                ),
+                "wandering_monk": (
+                    "You seal the chamber under stewardship vows and prevent the relic from becoming another war trigger."
+                ),
+                "nonlethal_path": (
+                    "You bypass every trap with stealth and evasion, recovering the relic without leaving a body behind."
+                ),
+                "heroic_path": (
+                    "You publish the relic findings to neutral stewards, earning broad trust in your custody decision."
+                ),
+                "rogue_path": (
+                    "You hide the relic's true chamber and feed rivals decoy routes while consolidating secret control."
+                ),
+                "default": (
+                    "You break through the ward gauntlet, secure the relic, and silence opposition in the lower vaults."
+                ),
+            },
         },
         {
             "quest_id": "Q15",
@@ -3626,6 +3718,29 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("guard the target", "stage a decoy kill", "broker assassin truces"),
             "follow_up_hook": "Captured assassins trace orders to the Red Pass command.",
             "reward_theme": "court_influence",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You invoke banquet blood-right protections and force every blade-bearing envoy to stand down."
+                ),
+                "street_ghost": (
+                    "You rotate seating through coded safehouse signals and make every assassin strike an empty chair."
+                ),
+                "wandering_monk": (
+                    "You disarm the hall and broker truce vows between rivals before the first contract can fire."
+                ),
+                "nonlethal_path": (
+                    "You neutralize each contract network through stealth diversions and diplomacy, ending the feast without blood debt."
+                ),
+                "heroic_path": (
+                    "Your reputation turns wavering guards into defenders, shielding the true target in full public view."
+                ),
+                "rogue_path": (
+                    "You buy out the contract brokers and redirect every killing clause into political leverage."
+                ),
+                "default": (
+                    "You survive the ambush wave, identify the sponsor, and end the banquet with decisive force."
+                ),
+            },
         },
         {
             "quest_id": "Q16",
@@ -3961,7 +4076,7 @@ def _build_extended_quest_chain() -> List[Quest]:
         )
         if index > 40:
             arc_tag = "postwar_continuation"
-        branch_outcomes = _build_structured_branch_outcomes(spec)
+        branch_outcomes = dict(spec.get("branch_outcomes", {})) or _build_structured_branch_outcomes(spec)
         extended_quests.append(
             Quest(
                 quest_id=spec["quest_id"],

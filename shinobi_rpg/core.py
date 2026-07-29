@@ -563,6 +563,15 @@ class PlayerProfile:
             + self.encounter_outcomes["evasion"]
         )
 
+    def dominant_encounter_outcome(self) -> str | None:
+        ranked_outcomes = sorted(
+            self.encounter_outcomes.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+        if not ranked_outcomes or ranked_outcomes[0][1] <= 0:
+            return None
+        return ranked_outcomes[0][0]
+
     def current_reputation_tier(self) -> ReputationTier:
         return _reputation_tier_for(self.reputation)
 
@@ -1792,7 +1801,7 @@ class NinjaWorld:
         )
 
     def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
-        """Resolve branch precedence: explicit backstory first, then narrative tags, then default.
+        """Resolve branch precedence: backstory, path states, narrative tags, then default.
 
         Narrative tags are checked in alphabetical order to keep matching deterministic.
         """
@@ -1800,6 +1809,11 @@ class NinjaWorld:
             return player.selected_backstory.key
         if player.is_nonlethal_path_active() and "nonlethal_path" in branch_outcomes:
             return "nonlethal_path"
+        dominant_outcome = player.dominant_encounter_outcome()
+        if dominant_outcome:
+            tactical_path_key = f"{dominant_outcome}_path"
+            if tactical_path_key in branch_outcomes:
+                return tactical_path_key
         if player.current_reputation_tier() == ReputationTier.HEROIC and "heroic_path" in branch_outcomes:
             return "heroic_path"
         if player.current_reputation_tier() == ReputationTier.ROGUE and "rogue_path" in branch_outcomes:
@@ -3986,6 +4000,18 @@ def _build_structured_branch_outcomes(spec: Dict[str, Any]) -> Dict[str, str]:
         ),
         "nonlethal_path": (
             f"You complete {title} through stealth, charm, and evasion, proving the objective can be resolved without executions."
+        ),
+        "stealth_path": (
+            f"You center {title} on stealth-first tactics, removing key obstacles before open conflict can form."
+        ),
+        "charm_path": (
+            f"You resolve {title} by turning rivals into temporary allies and redirecting the conflict through diplomacy."
+        ),
+        "evasion_path": (
+            f"You complete {title} through evasive maneuvers, exhausting enemies while preserving your force."
+        ),
+        "kill_path": (
+            f"You drive {title} to a brutal conclusion, eliminating command targets to end resistance immediately."
         ),
         "heroic_path": (
             f"Your heroic standing unifies local support during {title}, turning public trust into operational momentum."

@@ -779,6 +779,31 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["branch_key"], "nonlethal_path")
         self.assertIn("without blood debt", result["outcome"].lower())
 
+    def test_q20_branching_uses_stealth_path_when_dominant_outcome(self):
+        world, player = build_mvp_world("StealthMain", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "stealth")
+        world.apply_player_decision(player, "charm")
+        result = world.resolve_quest_branch(player, "Q20")
+        self.assertEqual(result["branch_key"], "stealth_path")
+        self.assertIn("stealth-first tactics", result["outcome"])
+
+    def test_q20_branching_uses_kill_path_when_kill_is_dominant(self):
+        world, player = build_mvp_world("AggroMain", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        result = world.resolve_quest_branch(player, "Q20")
+        self.assertEqual(result["branch_key"], "kill_path")
+        self.assertIn("brutal conclusion", result["outcome"])
+
+    def test_backstory_branching_still_overrides_tactical_path(self):
+        world, player = build_mvp_world("GhostMain", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        for _ in range(3):
+            world.apply_player_decision(player, "stealth")
+        result = world.resolve_quest_branch(player, "Q20")
+        self.assertEqual(result["branch_key"], "street_ghost")
+
     def test_seeded_world_extends_quest_chain_to_q50(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         quest_ids = [q.quest_id for q in world.quests]

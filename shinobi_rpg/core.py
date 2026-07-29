@@ -97,6 +97,12 @@ QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
+OUTCOME_BRANCH_PATH_KEYS = {
+    "kill": "kill_path",
+    "charm": "charm_path",
+    "stealth": "stealth_path",
+    "evasion": "evasion_path",
+}
 ROLE_STANCE_BIAS = {
     "assassin": 1,
     "attrition": 1,
@@ -566,7 +572,7 @@ class PlayerProfile:
     def dominant_encounter_outcome(self) -> str | None:
         ranked_outcomes = sorted(
             self.encounter_outcomes.items(),
-            key=lambda item: (-item[1], item[0]),
+            key=lambda item: (-item[1], OUTCOME_BRANCH_PATH_KEYS[item[0]]),
         )
         if not ranked_outcomes or ranked_outcomes[0][1] <= 0:
             return None
@@ -1811,7 +1817,7 @@ class NinjaWorld:
             return "nonlethal_path"
         dominant_outcome = player.dominant_encounter_outcome()
         if dominant_outcome:
-            tactical_path_key = f"{dominant_outcome}_path"
+            tactical_path_key = OUTCOME_BRANCH_PATH_KEYS.get(dominant_outcome)
             if tactical_path_key in branch_outcomes:
                 return tactical_path_key
         if player.current_reputation_tier() == ReputationTier.HEROIC and "heroic_path" in branch_outcomes:

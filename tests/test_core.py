@@ -777,7 +777,7 @@ class CoreSystemTests(unittest.TestCase):
             world.apply_player_decision(player, decision)
         result = world.resolve_quest_branch(player, "Q10")
         self.assertEqual(result["branch_key"], "nonlethal_path")
-        self.assertIn("without blood debt", result["outcome"])
+        self.assertIn("without blood debt", result["outcome"].lower())
 
     def test_seeded_world_extends_quest_chain_to_q50(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

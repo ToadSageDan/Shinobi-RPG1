@@ -3457,6 +3457,66 @@ def _seed_quests() -> List[Quest]:
                 ),
             },
         ),
+        Quest(
+            quest_id="Q9",
+            title="Ashes Beneath the Banner",
+            objective="Investigate uprising cells in the reclaimed provinces and decide whether to absorb, expose, or silence them.",
+            stealth_required=False,
+            reward_xp=700,
+            branch_outcomes={
+                "exiled_heir": (
+                    "You call old province captains to your banner and fold the uprising into a sworn reconstruction guard."
+                ),
+                "street_ghost": (
+                    "You trace courier rings through abandoned safehouses and flip the uprising's network into your own shadow relay."
+                ),
+                "wandering_monk": (
+                    "You disarm the cell leaders and broker amnesty terms that trade vengeance for service to the villages."
+                ),
+                "nonlethal_path": (
+                    "You collapse every raid plan with stealth and misdirection, leaving the uprising disarmed without a single grave."
+                ),
+                "heroic_path": (
+                    "Your heroic authority wins public testimony from the provinces, exposing the true agitators behind the revolt."
+                ),
+                "rogue_path": (
+                    "You seize the rebellion's war chest and bind its commanders through covert contracts before they can regroup."
+                ),
+                "default": (
+                    "You break the uprising in a series of relentless strikes and restore control by force."
+                ),
+            },
+        ),
+        Quest(
+            quest_id="Q10",
+            title="Veil of the Eternal Watch",
+            objective="Secure the Eternal Watch archive and lock in the final doctrine that will govern the next shinobi generation.",
+            stealth_required=True,
+            reward_xp=820,
+            branch_outcomes={
+                "exiled_heir": (
+                    "You inscribe your clan's final covenant into the archive and bind the doctrine to sworn guardians."
+                ),
+                "street_ghost": (
+                    "You scatter mirrored copies of the archive and ensure no throne can ever monopolize its truths."
+                ),
+                "wandering_monk": (
+                    "You open the archive to every village and anchor the doctrine in restraint, service, and shared accountability."
+                ),
+                "nonlethal_path": (
+                    "Without blood debt to settle, you secure unanimous passage for a doctrine built on stealth, mercy, and balance."
+                ),
+                "heroic_path": (
+                    "Your heroic legacy earns the final vote, and the Eternal Watch pledges to defend villages before crowns."
+                ),
+                "rogue_path": (
+                    "You encode hidden enforcement clauses and keep the doctrine stable through unseen pressure from the shadows."
+                ),
+                "default": (
+                    "You force a hard compromise into law and secure the archive after one final midnight confrontation."
+                ),
+            },
+        ),
     ]
 
 

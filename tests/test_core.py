@@ -692,7 +692,7 @@ class CoreSystemTests(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # Q6-Q8 quest branching tests
+    # Q6-Q10 quest branching tests
     # ------------------------------------------------------------------
 
     def test_q6_exists_in_seeded_world(self):
@@ -701,6 +701,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("Q6", quest_ids)
         self.assertIn("Q7", quest_ids)
         self.assertIn("Q8", quest_ids)
+        self.assertIn("Q9", quest_ids)
+        self.assertIn("Q10", quest_ids)
 
     def test_q6_branching_uses_exiled_heir_backstory(self):
         world, player = build_mvp_world("Heir", [3, 1, 2, 4])
@@ -761,6 +763,21 @@ class CoreSystemTests(unittest.TestCase):
         result = world.resolve_quest_branch(player, "Q8")
         self.assertEqual(result["branch_key"], "heroic_path")
         self.assertIn("first guardian of the new age", result["outcome"])
+
+    def test_q9_branching_uses_street_ghost_backstory(self):
+        world, player = build_mvp_world("Ghost", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        result = world.resolve_quest_branch(player, "Q9")
+        self.assertEqual(result["branch_key"], "street_ghost")
+        self.assertIn("safehouses", result["outcome"])
+
+    def test_q10_branching_uses_nonlethal_path(self):
+        world, player = build_mvp_world("Pacifist", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q10")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+        self.assertIn("Without blood debt", result["outcome"])
 
     # ------------------------------------------------------------------
     # New trophy evaluation tests

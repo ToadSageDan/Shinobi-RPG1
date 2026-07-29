@@ -4029,6 +4029,39 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("fortify and defend", "evacuate civilians", "cripple both armies"),
             "follow_up_hook": "Pass survivors report a broken summoning pact behind the assault.",
             "reward_theme": "military_command",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You invoke bloodline authority to unite fractured captains, fortifying Red Pass before the invasion column can deploy."
+                ),
+                "street_ghost": (
+                    "You route civilians through hidden smuggler lanes, then blackmail both field commanders into a temporary withdrawal."
+                ),
+                "wandering_monk": (
+                    "You hold the pass with restraint and discipline, creating safe corridors that prevent panic and retaliation."
+                ),
+                "nonlethal_path": (
+                    "You evacuate every district and sabotage supply lines without executions, forcing both armies to disengage."
+                ),
+                "stealth_path": (
+                    "You ghost through forward camps, collapsing siege stockpiles before enemy standards can reach the pass."
+                ),
+                "charm_path": (
+                    "You broker a ceasefire chain between exhausted captains, reframing the pass as neutral ground."
+                ),
+                "evasion_path": (
+                    "You keep your force mobile through rotating fallback lanes, draining the invasion's momentum."
+                ),
+                "kill_path": (
+                    "You eliminate both spearhead commanders at dawn, ending the assault through shock and fear."
+                ),
+                "heroic_path": (
+                    "Your public standing rallies villagers and scouts into a disciplined defense line that saves Red Pass."
+                ),
+                "rogue_path": (
+                    "You sabotage payroll and rations, collapsing command loyalty and buying control of the battlefield."
+                ),
+                "default": "You stabilize Red Pass under pressure and deny the invasion its first decisive breach.",
+            },
         },
         {
             "quest_id": "Q17",
@@ -4038,6 +4071,39 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("seal the spirit", "mediate pact terms", "weaponize the summon"),
             "follow_up_hook": "Pact records identify a prisoner tied to moonlit escape plans.",
             "reward_theme": "summon_affinity",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You restore the ancestral pact seals and command the spirit to stand down under bloodline law."
+                ),
+                "street_ghost": (
+                    "You trace the spirit's handlers through contraband shrines, forcing a quiet pact rewrite in the undercity."
+                ),
+                "wandering_monk": (
+                    "You negotiate a vow of mutual restraint, releasing the spirit from coercion without reigniting the war."
+                ),
+                "nonlethal_path": (
+                    "You reseal the pact through synchronized stealth and diplomacy, ending the rampage with no fatalities."
+                ),
+                "stealth_path": (
+                    "You infiltrate the summoning circle and sever anchor sigils before the spirit can crest again."
+                ),
+                "charm_path": (
+                    "You redirect faction fear into a shared treaty, turning the spirit into a neutral witness."
+                ),
+                "evasion_path": (
+                    "You bait the spirit through abandoned lanes until its surge burns out, then secure a safe rebinding."
+                ),
+                "kill_path": (
+                    "You shatter the host and crush the spirit core, ending the threat at catastrophic cost."
+                ),
+                "heroic_path": (
+                    "Your reputation convinces rival squads to coordinate, allowing a clean reseal before towns are lost."
+                ),
+                "rogue_path": (
+                    "You auction pact secrets between factions and enforce compliance through fear of spirit reprisal."
+                ),
+                "default": "You contain the summon crisis and close the pact breach before border towns collapse.",
+            },
         },
         {
             "quest_id": "Q18",
@@ -4047,6 +4113,39 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("silent extraction", "public exchange", "false execution"),
             "follow_up_hook": "Prison intel points to the origin of your first blade lineage.",
             "reward_theme": "spy_network",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You use forgotten clan codes to enter the prison unchallenged and extract the witness before dawn."
+                ),
+                "street_ghost": (
+                    "You trigger a staged blackout through safehouse contacts and spirit the prisoner into ghost-held districts."
+                ),
+                "wandering_monk": (
+                    "You secure a lawful prisoner exchange, preserving lives while exposing the forged charges."
+                ),
+                "nonlethal_path": (
+                    "You complete the break through stealth diversions and social pressure, leaving every guard alive."
+                ),
+                "stealth_path": (
+                    "You execute a silent extraction route that avoids alarms, patrol clashes, and traceable signatures."
+                ),
+                "charm_path": (
+                    "You turn rival wardens into reluctant allies and walk the prisoner out under a negotiated transfer."
+                ),
+                "evasion_path": (
+                    "You weave through decoy routes and pursuit traps until the prison dragnet collapses."
+                ),
+                "kill_path": (
+                    "You stage a lethal revolt and disappear with the witness amid a brutal lockdown failure."
+                ),
+                "heroic_path": (
+                    "Your standing wins public support, forcing the prison to honor an emergency legal release."
+                ),
+                "rogue_path": (
+                    "You fake the prisoner's death records and sell silence to every official tied to the conspiracy."
+                ),
+                "default": "You pull off the prison operation and secure the witness without exposing your core network.",
+            },
         },
         {
             "quest_id": "Q19",
@@ -4056,6 +4155,39 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("accept legacy", "break the doctrine", "share the doctrine"),
             "follow_up_hook": "The duel's verdict sets terms for the Shattered Gate siege.",
             "reward_theme": "signature_technique",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You claim the first blade doctrine as rightful heir, binding legacy and command into one mandate."
+                ),
+                "street_ghost": (
+                    "You reinterpret the duel through street code, turning elite doctrine into tools for the forgotten."
+                ),
+                "wandering_monk": (
+                    "You refuse domination and recast the doctrine as restraint, ending the duel without vengeance."
+                ),
+                "nonlethal_path": (
+                    "You complete the ancestral trial without killing intent, proving doctrine can survive without blood tribute."
+                ),
+                "stealth_path": (
+                    "You win by reading feints and silence, ending the phantom duel before a decisive strike lands."
+                ),
+                "charm_path": (
+                    "You sway witnesses and elders mid-trial, transforming the duel into a negotiated doctrinal accord."
+                ),
+                "evasion_path": (
+                    "You outlast every decisive exchange, forcing the phantom legacy to concede through exhaustion."
+                ),
+                "kill_path": (
+                    "You sever the phantom doctrine in a final execution stroke and claim power through fear."
+                ),
+                "heroic_path": (
+                    "Your honorable conduct turns the duel into a unifying legend that steadies the region before siege."
+                ),
+                "rogue_path": (
+                    "You weaponize the doctrine as leverage, selling allegiance oaths to the highest bidder."
+                ),
+                "default": "You survive the ancestral duel and carry its verdict into the coming siege.",
+            },
         },
         {
             "quest_id": "Q20",
@@ -4065,6 +4197,39 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("defend the gate", "open the gate", "mediate ceasefire"),
             "follow_up_hook": "War aftermath fractures faction trust and starts internal schisms.",
             "reward_theme": "arc_transition",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "You rally bloodline loyalists to hold the inner wall, establishing lawful command as dawn breaks."
+                ),
+                "street_ghost": (
+                    "You coordinate safehouses and tunnel scouts, then break the siege from inside the supply grid."
+                ),
+                "wandering_monk": (
+                    "You prevent massacre at the gate, forcing both armies into a truce framed by restraint."
+                ),
+                "nonlethal_path": (
+                    "You dismantle the siege through stealth, charm, and evasion, preserving the gate without executions."
+                ),
+                "stealth_path": (
+                    "You center Dawn at Shattered Gate on stealth-first tactics, cutting siege command lines before open war spikes."
+                ),
+                "charm_path": (
+                    "You convert rival captains into a ceasefire coalition and redirect the conflict into negotiated reconstruction."
+                ),
+                "evasion_path": (
+                    "You rotate units through evasive choke-point play, burning out the siege with minimal casualties."
+                ),
+                "kill_path": (
+                    "You drive Dawn at Shattered Gate to a brutal conclusion, eliminating siege leadership in a single strike chain."
+                ),
+                "heroic_path": (
+                    "Your heroic standing unites civilians, allies, and defenders into the first guardian line of the new era."
+                ),
+                "rogue_path": (
+                    "You seize the gate's black ledgers and force every faction to bargain under your shadow rule."
+                ),
+                "default": "You break the siege at Shattered Gate and decide the opening terms of the next era.",
+            },
         },
         {
             "quest_id": "Q21",

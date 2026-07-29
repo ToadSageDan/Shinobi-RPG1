@@ -872,6 +872,28 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["branch_key"], "kill_path")
         self.assertIn("brutal conclusion", result["outcome"])
 
+    def test_q16_branching_uses_nonlethal_path(self):
+        world, player = build_mvp_world("PacifistMain", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q16")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+        self.assertIn("without executions", result["outcome"])
+
+    def test_q18_branching_uses_heroic_path(self):
+        world, player = build_mvp_world("HeroMain", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q18")
+        self.assertEqual(result["branch_key"], "heroic_path")
+        self.assertIn("public support", result["outcome"])
+
+    def test_q19_branching_uses_wandering_monk_backstory(self):
+        world, player = build_mvp_world("MonkMain", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[2])  # wandering_monk
+        result = world.resolve_quest_branch(player, "Q19")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("restraint", result["outcome"].lower())
+
     def test_backstory_branching_still_overrides_tactical_path(self):
         world, player = build_mvp_world("GhostMain", [3, 1, 2, 4])
         player.choose_backstory(world.player_backstories[1])  # street_ghost

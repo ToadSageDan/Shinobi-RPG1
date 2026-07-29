@@ -3504,7 +3504,7 @@ def _seed_quests() -> List[Quest]:
                     "You open the archive to every village and anchor the doctrine in restraint, service, and shared accountability."
                 ),
                 "nonlethal_path": (
-                    "Without blood debt to settle, you secure unanimous passage for a doctrine built on stealth, mercy, and balance."
+                    "without blood debt to settle, you secure unanimous passage for a doctrine built on stealth, mercy, and balance."
                 ),
                 "heroic_path": (
                     "Your heroic legacy earns the final vote, and the Eternal Watch pledges to defend villages before crowns."

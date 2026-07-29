@@ -777,7 +777,7 @@ class CoreSystemTests(unittest.TestCase):
             world.apply_player_decision(player, decision)
         result = world.resolve_quest_branch(player, "Q10")
         self.assertEqual(result["branch_key"], "nonlethal_path")
-        self.assertIn("Without blood debt", result["outcome"])
+        self.assertIn("without blood debt", result["outcome"])
 
     # ------------------------------------------------------------------
     # New trophy evaluation tests

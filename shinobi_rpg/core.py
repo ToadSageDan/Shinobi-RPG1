@@ -457,7 +457,14 @@ class Quest:
     objective: str
     stealth_required: bool
     reward_xp: int
+    premise: str = ""
+    choices: Tuple[str, ...] = field(default_factory=tuple)
     branch_outcomes: Dict[str, str] = field(default_factory=dict)
+    rewards: Dict[str, Any] = field(default_factory=dict)
+    follow_up_hook: str = ""
+    villain_stance_impacts: Dict[str, int] = field(default_factory=dict)
+    reputation_impacts: Dict[str, int] = field(default_factory=dict)
+    trophy_hooks: Tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -1653,7 +1660,7 @@ class NinjaWorld:
             "already_defeated": already_defeated,
         }
 
-    def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, str]:
+    def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
         if not quest:
             raise ValueError(f'Quest "{quest_id}" not found.')
@@ -1664,6 +1671,14 @@ class NinjaWorld:
                 "title": quest.title,
                 "branch_key": "default",
                 "outcome": quest.objective,
+                "premise": quest.premise or quest.objective,
+                "objective": quest.objective,
+                "choices": list(quest.choices),
+                "rewards": dict(quest.rewards),
+                "follow_up_hook": quest.follow_up_hook,
+                "villain_stance_impacts": dict(quest.villain_stance_impacts),
+                "reputation_impacts": dict(quest.reputation_impacts),
+                "trophy_hooks": list(quest.trophy_hooks),
             }
 
         branch_key = self._resolve_branch_key(player, quest.branch_outcomes)
@@ -1676,9 +1691,17 @@ class NinjaWorld:
             "title": quest.title,
             "branch_key": branch_key,
             "outcome": outcome,
+            "premise": quest.premise or quest.objective,
+            "objective": quest.objective,
+            "choices": list(quest.choices),
+            "rewards": dict(quest.rewards),
+            "follow_up_hook": quest.follow_up_hook,
+            "villain_stance_impacts": dict(quest.villain_stance_impacts),
+            "reputation_impacts": dict(quest.reputation_impacts),
+            "trophy_hooks": list(quest.trophy_hooks),
         }
 
-    def start_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, str]:
+    def start_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
         if not any(q.quest_id == quest_id for q in self.quests):
             raise ValueError(f'Quest "{quest_id}" not found.')
         if not player.quest_log:
@@ -2213,10 +2236,17 @@ class NinjaWorld:
                     {
                         "quest_id": quest.quest_id,
                         "title": quest.title,
+                        "premise": quest.premise,
                         "objective": quest.objective,
                         "stealth_required": quest.stealth_required,
                         "reward_xp": quest.reward_xp,
+                        "choices": list(quest.choices),
                         "branch_outcomes": dict(quest.branch_outcomes),
+                        "rewards": dict(quest.rewards),
+                        "follow_up_hook": quest.follow_up_hook,
+                        "villain_stance_impacts": dict(quest.villain_stance_impacts),
+                        "reputation_impacts": dict(quest.reputation_impacts),
+                        "trophy_hooks": list(quest.trophy_hooks),
                     }
                     for quest in self.quests
                 ],
@@ -2358,10 +2388,17 @@ class NinjaWorld:
             Quest(
                 quest_id=item["quest_id"],
                 title=item["title"],
+                premise=item.get("premise", item["objective"]),
                 objective=item["objective"],
                 stealth_required=item["stealth_required"],
                 reward_xp=item["reward_xp"],
+                choices=tuple(item.get("choices", ())),
                 branch_outcomes=dict(item.get("branch_outcomes", {})),
+                rewards=dict(item.get("rewards", {})),
+                follow_up_hook=item.get("follow_up_hook", ""),
+                villain_stance_impacts=dict(item.get("villain_stance_impacts", {})),
+                reputation_impacts=dict(item.get("reputation_impacts", {})),
+                trophy_hooks=tuple(item.get("trophy_hooks", ())),
             )
             for item in world_snapshot["quests"]
         ]
@@ -3285,7 +3322,7 @@ def _validate_boss_move_reward_config(regions: Sequence[Region]) -> None:
 
 
 def _seed_quests() -> List[Quest]:
-    return [
+    quests = [
         Quest(
             quest_id="Q1",
             title="Trial of Quiet Steps",
@@ -3518,6 +3555,490 @@ def _seed_quests() -> List[Quest]:
             },
         ),
     ]
+    quests.extend(_build_extended_quest_chain())
+    _normalize_seeded_quest_metadata(quests)
+    return quests
+
+
+def _build_extended_quest_chain() -> List[Quest]:
+    specs: List[Dict[str, Any]] = [
+        {
+            "quest_id": "Q11",
+            "title": "Ashes of the Courier",
+            "premise": "A missing courier carrying ceasefire terms could trigger renewed war.",
+            "objective": "Track down the courier and secure the terms before rival factions intercept them.",
+            "choices": ("rescue the courier", "forge replacement terms", "erase the treaty route"),
+            "follow_up_hook": "Recovered message routes point to hidden supply ports.",
+            "reward_theme": "diplomatic_intel",
+        },
+        {
+            "quest_id": "Q12",
+            "title": "Lanterns in the Mist",
+            "premise": "Fogbound docks are moving contraband for masked jonin cells.",
+            "objective": "Expose, repurpose, or dismantle the port smuggling network.",
+            "choices": ("infiltrate the docks", "seize shipments", "negotiate with smugglers"),
+            "follow_up_hook": "Smuggler ledgers name tribunal sponsors and hidden judges.",
+            "reward_theme": "black_market_influence",
+        },
+        {
+            "quest_id": "Q13",
+            "title": "The Silent Tribunal",
+            "premise": "A village tribunal weaponizes your past choices to shift power.",
+            "objective": "Protect an ally, condemn them, or collapse the hearing without civil bloodshed.",
+            "choices": ("defend the ally", "turn state witness", "expose forged evidence"),
+            "follow_up_hook": "Court records reveal tunnels beneath the Hollow Tree shrine.",
+            "reward_theme": "political_access",
+        },
+        {
+            "quest_id": "Q14",
+            "title": "Roots of the Hollow Tree",
+            "premise": "Ancient tunnel wards protect a relic tied to fractured clan claims.",
+            "objective": "Recover, seal, or relocate the relic while surviving legacy traps.",
+            "choices": ("disarm seals", "claim relic authority", "destroy the relic"),
+            "follow_up_hook": "Relic inscriptions expose a banquet assassination schedule.",
+            "reward_theme": "relic_mastery",
+        },
+        {
+            "quest_id": "Q15",
+            "title": "Feast of Knives",
+            "premise": "A peace banquet hides layered assassination contracts.",
+            "objective": "Identify the real target and decide whether to protect or exploit them.",
+            "choices": ("guard the target", "stage a decoy kill", "broker assassin truces"),
+            "follow_up_hook": "Captured assassins trace orders to the Red Pass command.",
+            "reward_theme": "court_influence",
+        },
+        {
+            "quest_id": "Q16",
+            "title": "Crows Over Red Pass",
+            "premise": "Border defenses crack as rival commands test your loyalties.",
+            "objective": "Hold, evacuate, or sabotage Red Pass before a full invasion lands.",
+            "choices": ("fortify and defend", "evacuate civilians", "cripple both armies"),
+            "follow_up_hook": "Pass survivors report a broken summoning pact behind the assault.",
+            "reward_theme": "military_command",
+        },
+        {
+            "quest_id": "Q17",
+            "title": "The Broken Summoning Pact",
+            "premise": "A rogue summon spirit turns on every faction at once.",
+            "objective": "Rebind, negotiate release, or defeat the spirit before it levels border towns.",
+            "choices": ("seal the spirit", "mediate pact terms", "weaponize the summon"),
+            "follow_up_hook": "Pact records identify a prisoner tied to moonlit escape plans.",
+            "reward_theme": "summon_affinity",
+        },
+        {
+            "quest_id": "Q18",
+            "title": "Moonlit Prison Break",
+            "premise": "A political prisoner holds proof that could rewrite alliances.",
+            "objective": "Extract, exchange, or fake the prisoner's death without exposing your network.",
+            "choices": ("silent extraction", "public exchange", "false execution"),
+            "follow_up_hook": "Prison intel points to the origin of your first blade lineage.",
+            "reward_theme": "spy_network",
+        },
+        {
+            "quest_id": "Q19",
+            "title": "Echoes of the First Blade",
+            "premise": "A backstory phantom duel determines your ideological legacy.",
+            "objective": "Survive the ancestral duel and claim or reject its doctrine.",
+            "choices": ("accept legacy", "break the doctrine", "share the doctrine"),
+            "follow_up_hook": "The duel's verdict sets terms for the Shattered Gate siege.",
+            "reward_theme": "signature_technique",
+        },
+        {
+            "quest_id": "Q20",
+            "title": "Dawn at Shattered Gate",
+            "premise": "A siege at Shattered Gate decides who commands the next era.",
+            "objective": "Lead defense, trigger a breach, or broker ceasefire before total collapse.",
+            "choices": ("defend the gate", "open the gate", "mediate ceasefire"),
+            "follow_up_hook": "War aftermath fractures faction trust and starts internal schisms.",
+            "reward_theme": "arc_transition",
+        },
+        {
+            "quest_id": "Q21",
+            "title": "Beneath the Shrine Bell",
+            "premise": "Shrine custodians accuse both armies of desecration to spark holy retaliation.",
+            "objective": "Find the true instigator and decide whether to expose or leverage them.",
+            "choices": ("protect shrine neutrals", "publish proof", "coerce confessions"),
+            "follow_up_hook": "Recovered tokens reveal a coordinated courier sabotage ring.",
+            "reward_theme": "spiritual_favor",
+        },
+        {
+            "quest_id": "Q22",
+            "title": "Paper Wings, Iron Chains",
+            "premise": "Intercepted messenger birds isolate allied villages.",
+            "objective": "Restore secure communication and determine who controls the cipher routes.",
+            "choices": ("restore old ciphers", "create new network", "trap interceptors"),
+            "follow_up_hook": "Cipher metadata exposes the Fifth Mask syndicate.",
+            "reward_theme": "intel_speed",
+        },
+        {
+            "quest_id": "Q23",
+            "title": "The Fifth Mask",
+            "premise": "A hidden masked leader manipulates every side of the conflict.",
+            "objective": "Unmask, recruit, or publicly ruin the Fifth Mask.",
+            "choices": ("recruit quietly", "public reveal", "erase all records"),
+            "follow_up_hook": "Mask safehouses map directly to sabotaged farmlands.",
+            "reward_theme": "covert_control",
+        },
+        {
+            "quest_id": "Q24",
+            "title": "Salt in the Ricefields",
+            "premise": "Systematic crop sabotage threatens famine and uprising.",
+            "objective": "Stop field poisoning and choose civilian relief or military stockpiles.",
+            "choices": ("prioritize civilians", "secure war reserves", "split aid lines"),
+            "follow_up_hook": "Supply caravan routes become immediate high-value targets.",
+            "reward_theme": "civilian_trust",
+        },
+        {
+            "quest_id": "Q25",
+            "title": "Wolves at Noon",
+            "premise": "Neutral caravans are attacked to force economic allegiance.",
+            "objective": "Protect, raid, or redirect caravans to reshape the war economy.",
+            "choices": ("escort caravans", "tax and redirect goods", "stage false raids"),
+            "follow_up_hook": "Captured manifests contain forged Kage directives.",
+            "reward_theme": "resource_pipeline",
+        },
+        {
+            "quest_id": "Q26",
+            "title": "Threads of the Kage Cloak",
+            "premise": "Forged executive orders are tearing command ranks apart.",
+            "objective": "Prove authenticity or exploit the confusion to force leadership change.",
+            "choices": ("validate chain of command", "install proxy leadership", "collapse both hierarchies"),
+            "follow_up_hook": "Competing leaders hide evidence in poisoned waterways.",
+            "reward_theme": "command_authority",
+        },
+        {
+            "quest_id": "Q27",
+            "title": "When the River Runs Black",
+            "premise": "Toxic river sabotage threatens every village downstream.",
+            "objective": "Trace the source and choose transparent justice or strategic secrecy.",
+            "choices": ("public trial", "quiet purge", "controlled cover-up"),
+            "follow_up_hook": "Witnesses flee to an abandoned dojo linked to disappearances.",
+            "reward_theme": "medical_network",
+        },
+        {
+            "quest_id": "Q28",
+            "title": "The Empty Dojo",
+            "premise": "A legendary dojo is empty after a forced conscription experiment.",
+            "objective": "Recover the missing students and choose reform, retaliation, or secrecy.",
+            "choices": ("free students", "weaponize training logs", "bury the scandal"),
+            "follow_up_hook": "Recovered logs expose a summit ambush timetable.",
+            "reward_theme": "advanced_training",
+        },
+        {
+            "quest_id": "Q29",
+            "title": "Storm over Ironwood",
+            "premise": "A final summit is interrupted by synchronized ambush teams.",
+            "objective": "Save delegates, secure records, and choose who speaks for peace.",
+            "choices": ("save delegates", "secure evidence first", "eliminate ambushers"),
+            "follow_up_hook": "Summit survivors call for a total banner war.",
+            "reward_theme": "faction_alignment",
+        },
+        {
+            "quest_id": "Q30",
+            "title": "Last Light of the Five Banners",
+            "premise": "Five alliances collapse into one final campaign for dominance.",
+            "objective": "End the campaign through unity, domination, or shadow governance.",
+            "choices": ("forge unity", "enforce rule", "rule from shadows"),
+            "follow_up_hook": "Emergency succession powers activate after the banner collapse.",
+            "reward_theme": "ending_lock",
+        },
+        {
+            "quest_id": "Q31",
+            "title": "Ash Crown Protocol",
+            "premise": "Emergency war succession powers trigger a contested regency.",
+            "objective": "Support, restrain, or remove the temporary sovereign.",
+            "choices": ("stabilize rule", "limit powers", "topple regency"),
+            "follow_up_hook": "Regency decrees expose chakra ore seizure operations.",
+            "reward_theme": "regime_control",
+        },
+        {
+            "quest_id": "Q32",
+            "title": "Veins of the Mountain",
+            "premise": "Chakra ore mines become the new center of wartime leverage.",
+            "objective": "Retake mines, negotiate labor terms, or destroy extraction sites.",
+            "choices": ("retake by force", "broker labor pact", "cripple extraction"),
+            "follow_up_hook": "Mine ledgers reveal identity theft operations on clan archives.",
+            "reward_theme": "crafting_scale",
+        },
+        {
+            "quest_id": "Q33",
+            "title": "The Thief of Names",
+            "premise": "Clan identity records are stolen to weaponize bloodlines.",
+            "objective": "Recover records and decide who controls lineage truth.",
+            "choices": ("restore full archives", "privatize key records", "burn bloodline lists"),
+            "follow_up_hook": "Recovered aliases connect to frozen signal tower failures.",
+            "reward_theme": "clan_loyalty",
+        },
+        {
+            "quest_id": "Q34",
+            "title": "Frost on the Signal Fires",
+            "premise": "Warning towers go dark during coordinated winter raids.",
+            "objective": "Relight the defense chain and handle the traitor behind the outage.",
+            "choices": ("publicly expose traitor", "flip traitor as double-agent", "silent execution"),
+            "follow_up_hook": "Traitor dispatches mention toxin vials in envoy circles.",
+            "reward_theme": "early_warning",
+        },
+        {
+            "quest_id": "Q35",
+            "title": "Three Cups of Poison",
+            "premise": "Envoys are dosed to collapse fragile diplomacy.",
+            "objective": "Find antidote supply and identify who profits from delayed deaths.",
+            "choices": ("distribute antidotes", "control antidote access", "booby-trap toxin stocks"),
+            "follow_up_hook": "Antidote brokers carry references to a forbidden oath ledger.",
+            "reward_theme": "toxin_resistance",
+        },
+        {
+            "quest_id": "Q36",
+            "title": "The Ninth Oath",
+            "premise": "An obsolete oath forces a mission that could restart war.",
+            "objective": "Honor, rewrite, or break the oath with lasting legitimacy.",
+            "choices": ("honor oath", "rewrite oath terms", "break and replace oath"),
+            "follow_up_hook": "Oath chambers reveal coordinates for the Bone Orchard.",
+            "reward_theme": "legacy_authority",
+        },
+        {
+            "quest_id": "Q37",
+            "title": "Bone Orchard",
+            "premise": "A grave site begins producing hostile summoned remnants.",
+            "objective": "Purify, bind, or weaponize the Orchard before factions claim it.",
+            "choices": ("purify shrine", "bind remnants", "weaponize remnants"),
+            "follow_up_hook": "Recovered relic shards point to a forged treaty draft.",
+            "reward_theme": "summon_depth",
+        },
+        {
+            "quest_id": "Q38",
+            "title": "Ink of the Last Treaty",
+            "premise": "A forged treaty is leaked to lock in false peace terms.",
+            "objective": "Validate, replace, or manipulate the final treaty text.",
+            "choices": ("publish authentic treaty", "forge better terms", "hold treaty hostage"),
+            "follow_up_hook": "Treaty dispute collapses into simultaneous fort uprisings.",
+            "reward_theme": "diplomatic_lock",
+        },
+        {
+            "quest_id": "Q39",
+            "title": "Night of Falling Banners",
+            "premise": "Allied fortresses fail at once, forcing irreversible triage.",
+            "objective": "Choose which fronts survive and absorb the political cost.",
+            "choices": ("save civilians first", "save military core", "preserve archives first"),
+            "follow_up_hook": "The final power vacuum opens the Quiet Steel succession.",
+            "reward_theme": "ally_survival",
+        },
+        {
+            "quest_id": "Q40",
+            "title": "Throne of Quiet Steel",
+            "premise": "A final succession crisis decides long-term world order.",
+            "objective": "Define rule by unity, dominance, or shadow balance.",
+            "choices": ("federal unity model", "centralized rule", "hidden arbitration network"),
+            "follow_up_hook": "Winter relief collapses under sabotage despite formal victory.",
+            "reward_theme": "true_ending",
+        },
+        {
+            "quest_id": "Q41",
+            "title": "Embers Under Snow",
+            "premise": "A winter ceasefire is hiding targeted sabotage in relief camps.",
+            "objective": "Uncover the saboteurs and protect relief lines without reigniting war.",
+            "choices": ("defend camps", "trace saboteurs", "use ceasefire as trap"),
+            "follow_up_hook": "Temple bells vanish from guarded sanctuaries overnight.",
+            "reward_theme": "postwar_stability",
+        },
+        {
+            "quest_id": "Q42",
+            "title": "The Sixth Bell",
+            "premise": "A missing temple bell is used to mark assassination targets.",
+            "objective": "Recover the bell and decode the hit-list ritual.",
+            "choices": ("recover bell quietly", "publicly reveal list", "replace list with decoys"),
+            "follow_up_hook": "Bell couriers connect to the Glass Sparrow network.",
+            "reward_theme": "ritual_counterintel",
+        },
+        {
+            "quest_id": "Q43",
+            "title": "Glass Sparrow Network",
+            "premise": "Children are coerced into courier duty for rival spymasters.",
+            "objective": "Free the couriers and dismantle the handlers controlling them.",
+            "choices": ("rescue and relocate", "flip handlers", "burn entire network"),
+            "follow_up_hook": "Courier testimonies expose the Daimyo debt archive.",
+            "reward_theme": "ethical_intel",
+        },
+        {
+            "quest_id": "Q44",
+            "title": "Debt of the Daimyo",
+            "premise": "A secret debt bankrolls opposing factions at once.",
+            "objective": "Audit the debt ledger and choose repayment, exposure, or seizure.",
+            "choices": ("forgive debt", "public exposure", "seize collateral"),
+            "follow_up_hook": "Seized records prove staged atrocities under your banner.",
+            "reward_theme": "macro_economy",
+        },
+        {
+            "quest_id": "Q45",
+            "title": "The Hollow Banner",
+            "premise": "Your faction banner is forged to justify civilian atrocities.",
+            "objective": "Stop false-flag operations and decide how publicly to respond.",
+            "choices": ("public tribunal", "secret retaliation", "counter-propaganda strike"),
+            "follow_up_hook": "False-flag operators trade forbidden scrolls in a night market.",
+            "reward_theme": "legitimacy_control",
+        },
+        {
+            "quest_id": "Q46",
+            "title": "Night Market of Teeth",
+            "premise": "Forbidden jutsu auctions attract every surviving power broker.",
+            "objective": "Disrupt, infiltrate, or dominate the auction economy.",
+            "choices": ("destroy auction stock", "buy and seal scrolls", "control auction ring"),
+            "follow_up_hook": "Auction maps reveal tampered borders with no true north.",
+            "reward_theme": "forbidden_jutsu",
+        },
+        {
+            "quest_id": "Q47",
+            "title": "The Map with No North",
+            "premise": "Border maps are altered to trigger legal territorial wars.",
+            "objective": "Restore authoritative maps and settle claims before armies mobilize.",
+            "choices": ("restore neutral maps", "redraw in your favor", "erase all claims"),
+            "follow_up_hook": "Border casualties spark conflict at a fallen allies memorial.",
+            "reward_theme": "territorial_stability",
+        },
+        {
+            "quest_id": "Q48",
+            "title": "Ash Garden Requiem",
+            "premise": "A memorial for fallen allies becomes a battlefield of memory and blame.",
+            "objective": "Protect the memorial and resolve who controls historical narrative.",
+            "choices": ("honor all fallen", "elevate one faction", "seal memorial archives"),
+            "follow_up_hook": "Memorial archives reference an unnamed heir claimant.",
+            "reward_theme": "legacy_memory",
+        },
+        {
+            "quest_id": "Q49",
+            "title": "The Unwritten Name",
+            "premise": "A hidden heir emerges with evidence of legitimate succession.",
+            "objective": "Confirm, deny, or co-rule with the new claimant.",
+            "choices": ("endorse heir", "disprove claim", "form dual governance"),
+            "follow_up_hook": "Final settlement council convenes for lasting peace terms.",
+            "reward_theme": "succession_resolution",
+        },
+        {
+            "quest_id": "Q50",
+            "title": "After the Last War Drum",
+            "premise": "The final settlement determines justice, memory, and long-term peace.",
+            "objective": "Define post-war governance and lock the world into your legacy framework.",
+            "choices": ("restorative justice", "deterrence doctrine", "shadow equilibrium"),
+            "follow_up_hook": "Legacy state enters replay-vault history for future ages.",
+            "reward_theme": "new_game_plus",
+        },
+    ]
+
+    reward_cycle = (
+        "intel",
+        "allies",
+        "techniques",
+        "economy",
+        "political_access",
+        "status_mastery",
+    )
+    extended_quests: List[Quest] = []
+    for index, spec in enumerate(specs, start=11):
+        xp = 820 + (index - 10) * 55
+        reward_focus = reward_cycle[(index - 11) % len(reward_cycle)]
+        arc_tag = (
+            "escalation" if index <= 20 else "faction_fracture" if index <= 30 else "regime_endgame"
+        )
+        if index > 40:
+            arc_tag = "postwar_continuation"
+        branch_outcomes = _build_structured_branch_outcomes(spec)
+        extended_quests.append(
+            Quest(
+                quest_id=spec["quest_id"],
+                title=spec["title"],
+                premise=spec["premise"],
+                objective=spec["objective"],
+                stealth_required=any(
+                    marker in " ".join(spec["choices"]).lower()
+                    for marker in ("infiltrate", "silent", "quiet", "stealth")
+                ),
+                reward_xp=xp,
+                choices=tuple(spec["choices"]),
+                branch_outcomes=branch_outcomes,
+                rewards={
+                    "xp": xp,
+                    "credits": QUEST_CREDIT_REWARD_BASE + (index * 2),
+                    "theme": spec["reward_theme"],
+                    "focus": reward_focus,
+                    "arc": arc_tag,
+                },
+                follow_up_hook=spec["follow_up_hook"],
+                villain_stance_impacts={"kill": 2, "stealth": -1, "charm": -2, "evasion": -1},
+                reputation_impacts={"heroic": 6, "neutral": 2, "rogue": -6},
+                trophy_hooks=_quest_trophy_hooks(index),
+            )
+        )
+    return extended_quests
+
+
+def _build_structured_branch_outcomes(spec: Dict[str, Any]) -> Dict[str, str]:
+    title = spec["title"]
+    objective = spec["objective"]
+    return {
+        "exiled_heir": (
+            f"Your clan authority reframes {title} as a lawful mandate, giving you sanctioned access before rivals mobilize."
+        ),
+        "street_ghost": (
+            f"Your underworld network reroutes pressure points in {title}, letting you control outcomes through covert leverage."
+        ),
+        "wandering_monk": (
+            f"You guide {title} toward restraint and service, stabilizing the objective without escalating blood debt."
+        ),
+        "nonlethal_path": (
+            f"You complete {title} through stealth, charm, and evasion, proving the objective can be resolved without executions."
+        ),
+        "heroic_path": (
+            f"Your heroic standing unifies local support during {title}, turning public trust into operational momentum."
+        ),
+        "rogue_path": (
+            f"Your rogue reputation weaponizes fear and favors in {title}, forcing compliance from hidden power brokers."
+        ),
+        "default": f"You execute the core objective directly: {objective}",
+    }
+
+
+def _quest_trophy_hooks(quest_number: int) -> Tuple[str, ...]:
+    if quest_number <= 20:
+        return (TROPHY_SILENT_LEGEND, TROPHY_TRINITY_OPERATOR)
+    if quest_number <= 30:
+        return (TROPHY_HARMONY_VOICE, TROPHY_UNTOUCHABLE_GHOST)
+    if quest_number <= 40:
+        return (TROPHY_HEROIC_CREST, TROPHY_ROGUE_ASCENDANT)
+    return (TROPHY_MERCY_CROWN, TROPHY_QUESTMASTER)
+
+
+def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
+    required_branch_keys = ("exiled_heir", "street_ghost", "wandering_monk", "default")
+    for idx, quest in enumerate(quests):
+        if not quest.premise:
+            quest.premise = quest.objective
+        if not quest.choices:
+            quest.choices = (
+                "stealth-forward approach",
+                "direct confrontation",
+                "negotiated resolution",
+            )
+        if not quest.rewards:
+            quest.rewards = {
+                "xp": quest.reward_xp,
+                "credits": QUEST_CREDIT_REWARD_BASE + (idx * 2),
+                "theme": "legacy_progression",
+            }
+        if not quest.follow_up_hook:
+            next_quest_id = quests[idx + 1].quest_id if idx + 1 < len(quests) else "finale"
+            quest.follow_up_hook = f"Completion of {quest.quest_id} points toward {next_quest_id}."
+        if not quest.villain_stance_impacts:
+            quest.villain_stance_impacts = {"kill": 2, "stealth": -1, "charm": -2, "evasion": -1}
+        if not quest.reputation_impacts:
+            quest.reputation_impacts = {"heroic": 5, "neutral": 1, "rogue": -5}
+        if not quest.trophy_hooks:
+            quest_number = int(quest.quest_id[1:]) if quest.quest_id[1:].isdigit() else 1
+            quest.trophy_hooks = _quest_trophy_hooks(quest_number)
+        if "default" not in quest.branch_outcomes:
+            quest.branch_outcomes["default"] = quest.objective
+        for branch_key in required_branch_keys:
+            if branch_key not in quest.branch_outcomes:
+                quest.branch_outcomes[branch_key] = quest.branch_outcomes["default"]
 
 
 def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:

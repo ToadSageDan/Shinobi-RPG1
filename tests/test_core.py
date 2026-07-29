@@ -779,6 +779,37 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["branch_key"], "nonlethal_path")
         self.assertIn("without blood debt", result["outcome"])
 
+    def test_seeded_world_extends_quest_chain_to_q50(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        quest_ids = [q.quest_id for q in world.quests]
+        self.assertIn("Q40", quest_ids)
+        self.assertIn("Q50", quest_ids)
+        self.assertEqual(len(quest_ids), 50)
+
+    def test_extended_quests_include_structured_metadata(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        quest = next(q for q in world.quests if q.quest_id == "Q40")
+        self.assertTrue(quest.premise)
+        self.assertTrue(quest.choices)
+        self.assertTrue(quest.rewards)
+        self.assertTrue(quest.follow_up_hook)
+        self.assertIn("exiled_heir", quest.branch_outcomes)
+        self.assertIn("street_ghost", quest.branch_outcomes)
+        self.assertIn("wandering_monk", quest.branch_outcomes)
+        self.assertIn("default", quest.branch_outcomes)
+
+    def test_resolve_quest_branch_returns_structured_fields(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        result = world.resolve_quest_branch(player, "Q20")
+        self.assertIn("premise", result)
+        self.assertIn("objective", result)
+        self.assertIn("choices", result)
+        self.assertIn("rewards", result)
+        self.assertIn("follow_up_hook", result)
+        self.assertIn("villain_stance_impacts", result)
+        self.assertIn("reputation_impacts", result)
+        self.assertIn("trophy_hooks", result)
+
     # ------------------------------------------------------------------
     # New trophy evaluation tests
     # ------------------------------------------------------------------

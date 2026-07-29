@@ -53,6 +53,7 @@ python -m unittest discover -s tests -p "test_*.py"
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Community code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Ordered implementation backlog: [NEXT_STEPS.md](NEXT_STEPS.md)
 
 ## Example usage
 

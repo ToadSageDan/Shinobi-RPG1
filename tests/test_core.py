@@ -892,7 +892,7 @@ class CoreSystemTests(unittest.TestCase):
         player.choose_backstory(world.player_backstories[2])  # wandering_monk
         result = world.resolve_quest_branch(player, "Q19")
         self.assertEqual(result["branch_key"], "wandering_monk")
-        self.assertIn("restraint", result["outcome"].lower())
+        self.assertIn("restraint", result["outcome"])
 
     def test_backstory_branching_still_overrides_tactical_path(self):
         world, player = build_mvp_world("GhostMain", [3, 1, 2, 4])

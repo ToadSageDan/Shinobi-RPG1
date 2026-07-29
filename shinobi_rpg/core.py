@@ -4211,7 +4211,7 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You dismantle the siege through stealth, charm, and evasion, preserving the gate without executions."
                 ),
                 "stealth_path": (
-                    "You center Dawn at Shattered Gate on stealth-first tactics, cutting siege command lines before open war spikes."
+                    "You center Dawn at Shattered Gate on stealth-first tactics, cutting siege command lines before open war erupts."
                 ),
                 "charm_path": (
                     "You convert rival captains into a ceasefire coalition and redirect the conflict into negotiated reconstruction."

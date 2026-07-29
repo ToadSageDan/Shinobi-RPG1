@@ -277,6 +277,61 @@ WORLD_EVENT_LIBRARY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# Minimum accumulated seeds before a latent echo fires for each decision type.
+DECISION_SEED_THRESHOLDS: Dict[str, int] = {
+    "kill": 3,
+    "charm": 3,
+    "stealth": 4,
+    "evasion": 4,
+    "betray": 2,
+}
+
+# Subtle world echoes that emerge from accumulated decision seeds.
+# These are fired during tick_latent_effects, never immediately.
+LATENT_ECHO_LIBRARY: Dict[str, Dict[str, Any]] = {
+    "kill_echo": {
+        "label": "Fear spreads through border settlements after violent encounters.",
+        "region_pressure": 1,
+        "recovery_delta": -1,
+        "villain_signal": "fear",
+        "arc_bias": "fracture_front",
+        "narrative_tag": "feared_fighter",
+    },
+    "charm_echo": {
+        "label": "Word of a persuasive wanderer spreads through distant contacts.",
+        "region_pressure": -1,
+        "recovery_delta": 1,
+        "villain_signal": "diplomacy",
+        "arc_bias": "recovery_mandate",
+        "narrative_tag": "silver_voice",
+    },
+    "stealth_echo": {
+        "label": "Unexplained gaps in patrols unsettle local commanders.",
+        "region_pressure": 1,
+        "recovery_delta": 0,
+        "villain_signal": "paranoia",
+        "arc_bias": "fracture_front",
+        "narrative_tag": "phantom_presence",
+    },
+    "evasion_echo": {
+        "label": "Rumors of an uncatchable wanderer circulate among village scouts.",
+        "region_pressure": 0,
+        "recovery_delta": 1,
+        "villain_signal": "mystique",
+        "arc_bias": "political_war",
+        "narrative_tag": "elusive_ghost",
+    },
+    "betray_echo": {
+        "label": "Trust fractures quietly among those who trade in information.",
+        "region_pressure": 2,
+        "recovery_delta": -2,
+        "villain_signal": "betrayal",
+        "arc_bias": "rebellion_wave",
+        "narrative_tag": "shadow_agent",
+    },
+}
+
+
 def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
 
@@ -847,6 +902,8 @@ class NinjaWorld:
     current_era_index: int = 0
     world_recovery_score: int = 0
     run_counter: int = 0
+    latent_decision_seeds: Dict[str, int] = field(default_factory=dict)
+    latent_echo_history: List[Dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -1036,6 +1093,130 @@ class NinjaWorld:
         }
         return self.selected_final_antagonist
 
+    def _plant_decision_seed(self, decision_tag: str, intensity: int = 1) -> None:
+        """Silently accumulate a decision seed without triggering any immediate effect.
+
+        Seeds are checked and fired by tick_latent_effects, which is called on
+        significant player milestones rather than on every individual decision.
+        Only tracked decision types (keys in DECISION_SEED_THRESHOLDS) accumulate.
+        """
+        key = decision_tag.strip().lower()
+        if key in DECISION_SEED_THRESHOLDS:
+            self.latent_decision_seeds[key] = (
+                self.latent_decision_seeds.get(key, 0) + max(1, intensity)
+            )
+
+    def tick_latent_effects(self, player: PlayerProfile) -> List[Dict[str, Any]]:
+        """Fire any accumulated decision seeds that have crossed their threshold.
+
+        Called after quest completion or region clearing so that world consequences
+        emerge organically from the player's pattern of play rather than immediately
+        on each decision. Returns the list of echo records that fired.
+        """
+        fired: List[Dict[str, Any]] = []
+        for seed_key, threshold in DECISION_SEED_THRESHOLDS.items():
+            accumulated = self.latent_decision_seeds.get(seed_key, 0)
+            if accumulated < threshold:
+                continue
+            echo_key = f"{seed_key}_echo"
+            if echo_key not in LATENT_ECHO_LIBRARY:
+                continue
+            # Suppress back-to-back repeat fires of the same echo.
+            recent_keys = [e.get("echo_key") for e in self.latent_echo_history[-2:]]
+            if recent_keys.count(echo_key) >= 2:
+                continue
+            echo = dict(LATENT_ECHO_LIBRARY[echo_key])
+            # Drain the threshold portion; any remainder carries over.
+            self.latent_decision_seeds[seed_key] = accumulated - threshold
+            target_region = (
+                self.dynamic_region_chain[0]
+                if self.dynamic_region_chain
+                else next(
+                    (r.name for r in self.regions if not r.cleared),
+                    self.regions[0].name,
+                )
+            )
+            state = self.region_state.setdefault(
+                target_region,
+                {
+                    "region": target_region,
+                    "arc_key": "political_war",
+                    "pressure": 0,
+                    "recovery": 0,
+                    "disasters": 0,
+                    "rebuilds": 0,
+                },
+            )
+            pressure_delta = int(echo.get("region_pressure", 0))
+            recovery_delta = int(echo.get("recovery_delta", 0))
+            state["pressure"] = max(0, int(state.get("pressure", 0)) + pressure_delta)
+            state["recovery"] = max(0, int(state.get("recovery", 0)) + max(recovery_delta, 0))
+            if pressure_delta > 0:
+                state["disasters"] = int(state.get("disasters", 0)) + 1
+            if recovery_delta > 0:
+                state["rebuilds"] = int(state.get("rebuilds", 0)) + 1
+            self.world_recovery_score += recovery_delta
+            narrative_tag = str(echo.get("narrative_tag", ""))
+            if narrative_tag:
+                player.narrative_tags.add(narrative_tag)
+            villain_signal = str(echo.get("villain_signal", seed_key))
+            for villain in self.villains:
+                villain.apply_decision(villain_signal, intensity=1)
+            echo_record: Dict[str, Any] = {
+                "echo_key": echo_key,
+                "seed_key": seed_key,
+                "label": echo["label"],
+                "region": target_region,
+                "narrative_tag": narrative_tag,
+            }
+            self.latent_echo_history.append(echo_record)
+            self._log_tapestry(
+                event_type="world_drift",
+                label=echo["label"],
+                causes=[f"latent:{seed_key}"],
+                effects={
+                    "echo_key": echo_key,
+                    "region": target_region,
+                    "pressure_delta": pressure_delta,
+                    "recovery_delta": recovery_delta,
+                    "narrative_tag": narrative_tag,
+                },
+            )
+            fired.append(echo_record)
+        if fired:
+            self._refresh_arc_and_era()
+            self._schedule_dynamic_regions(player)
+        return fired
+
+    def get_world_drift_signals(self) -> Dict[str, Any]:
+        """Return accumulated drift indicators from the latent decision network.
+
+        Returns visible=False until at least three decision seeds have been planted,
+        so the system stays undetectable during the first couple of choices and only
+        surfaces once the world has started to genuinely respond to the player's pattern.
+        """
+        total_seeds = sum(self.latent_decision_seeds.values())
+        if total_seeds < 3:
+            return {
+                "visible": False,
+                "signals": [],
+                "total_decision_weight": total_seeds,
+                "dominant_pattern": None,
+                "echo_count": 0,
+            }
+        dominant: Tuple[str, int] = max(
+            self.latent_decision_seeds.items(),
+            key=lambda item: item[1],
+            default=("", 0),
+        )
+        return {
+            "visible": True,
+            "signals": [dict(e) for e in self.latent_echo_history[-5:]],
+            "total_decision_weight": total_seeds,
+            "dominant_pattern": dominant[0],
+            "echo_count": len(self.latent_echo_history),
+        }
+
     def trigger_world_event(
         self,
         player: PlayerProfile,
@@ -1184,6 +1365,7 @@ class NinjaWorld:
                 "remaining_chain": list(self.dynamic_region_chain),
             },
         )
+        self.tick_latent_effects(player)
         self.evaluate_trophies(player)
         return reward_name
 
@@ -1372,6 +1554,7 @@ class NinjaWorld:
             },
         )
         self.evaluate_trophies(player)
+        self._plant_decision_seed(normalized, intensity)
 
     def _find_villain(self, name: str) -> VillainProfile:
         villain = next((v for v in self.villains if v.name == name), None)
@@ -1550,6 +1733,7 @@ class NinjaWorld:
         if quest_id in {"Q3", "Q5", "Q7"}:
             self.trigger_world_event(player, causes=[f"quest:{quest_id}"])
 
+        self.tick_latent_effects(player)
         self.evaluate_trophies(player)
         return {
             "quest_id": quest.quest_id,
@@ -2140,6 +2324,8 @@ class NinjaWorld:
                 "current_era_index": self.current_era_index,
                 "world_recovery_score": self.world_recovery_score,
                 "run_counter": self.run_counter,
+                "latent_decision_seeds": dict(self.latent_decision_seeds),
+                "latent_echo_history": [dict(e) for e in self.latent_echo_history],
             },
             "player": player.to_snapshot(),
         }
@@ -2313,6 +2499,11 @@ class NinjaWorld:
             current_era_index=int(world_snapshot.get("current_era_index", 0)),
             world_recovery_score=int(world_snapshot.get("world_recovery_score", 0)),
             run_counter=int(world_snapshot.get("run_counter", 0)),
+            latent_decision_seeds={
+                key: int(value)
+                for key, value in world_snapshot.get("latent_decision_seeds", {}).items()
+            },
+            latent_echo_history=list(world_snapshot.get("latent_echo_history", [])),
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}

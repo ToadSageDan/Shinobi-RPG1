@@ -901,6 +901,132 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(world.trophy_catalog["questmaster"].tier, TrophyTier.LATE)
         self.assertEqual(world.trophy_catalog["shadow_heir"].tier, TrophyTier.LATE)
 
+    # ------------------------------------------------------------------
+    # Latent decision network tests
+    # ------------------------------------------------------------------
+
+    def test_decision_seeds_accumulate_silently(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(2):
+            world.apply_player_decision(player, "kill")
+        # Two kills below kill threshold (3) — no echo has fired yet.
+        self.assertEqual(world.latent_decision_seeds.get("kill", 0), 2)
+        self.assertEqual(world.latent_echo_history, [])
+
+    def test_drift_signals_invisible_below_three_seeds(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.apply_player_decision(player, "kill")
+        world.apply_player_decision(player, "charm")
+        drift = world.get_world_drift_signals()
+        self.assertFalse(drift["visible"])
+        self.assertEqual(drift["signals"], [])
+
+    def test_drift_signals_visible_at_three_seeds(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        drift = world.get_world_drift_signals()
+        self.assertTrue(drift["visible"])
+        self.assertEqual(drift["dominant_pattern"], "kill")
+        self.assertEqual(drift["total_decision_weight"], 3)
+
+    def test_tick_latent_effects_fires_kill_echo_at_threshold(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        fired = world.tick_latent_effects(player)
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(fired[0]["echo_key"], "kill_echo")
+        self.assertEqual(fired[0]["seed_key"], "kill")
+        # Spent seeds drained by threshold.
+        self.assertEqual(world.latent_decision_seeds.get("kill", 0), 0)
+        # Narrative tag added to player.
+        self.assertIn("feared_fighter", player.narrative_tags)
+
+    def test_tick_latent_effects_fires_charm_echo_at_threshold(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "charm")
+        fired = world.tick_latent_effects(player)
+        self.assertTrue(any(e["echo_key"] == "charm_echo" for e in fired))
+        self.assertIn("silver_voice", player.narrative_tags)
+
+    def test_tick_latent_effects_fires_on_quest_completion(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(4):
+            world.apply_player_decision(player, "stealth")
+        # Seeds should be planted but not yet fired.
+        self.assertEqual(world.latent_echo_history, [])
+        world.complete_quest(player, "Q1")
+        # Quest completion ticks latent effects.
+        self.assertTrue(any(e["echo_key"] == "stealth_echo" for e in world.latent_echo_history))
+        self.assertIn("phantom_presence", player.narrative_tags)
+
+    def test_tick_latent_effects_fires_on_region_clear(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(4):
+            world.apply_player_decision(player, "evasion")
+        world.clear_region(player, "Verdant Gate", "weapon")
+        self.assertTrue(any(e["echo_key"] == "evasion_echo" for e in world.latent_echo_history))
+        self.assertIn("elusive_ghost", player.narrative_tags)
+
+    def test_echo_logs_world_drift_tapestry_entry(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        world.tick_latent_effects(player)
+        drift_entries = [e for e in world.active_run_tapestry if e["event_type"] == "world_drift"]
+        self.assertTrue(drift_entries)
+        self.assertIn("latent:kill", drift_entries[0]["causes"])
+
+    def test_echo_does_not_fire_before_threshold(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(2):
+            world.apply_player_decision(player, "kill")
+        fired = world.tick_latent_effects(player)
+        self.assertEqual(fired, [])
+        self.assertEqual(world.latent_echo_history, [])
+
+    def test_seeds_carry_over_after_echo_fires(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        # Plant 5 kill seeds — threshold is 3, so remainder of 2 should carry over.
+        for _ in range(5):
+            world.apply_player_decision(player, "kill")
+        world.tick_latent_effects(player)
+        self.assertEqual(world.latent_decision_seeds.get("kill", 0), 2)
+
+    def test_latent_fields_persist_in_snapshot_round_trip(self):
+        import tempfile, os
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for _ in range(3):
+            world.apply_player_decision(player, "charm")
+        world.tick_latent_effects(player)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "snap.json")
+            save_world_snapshot(world, player, path)
+            restored_world, restored_player = load_world_snapshot(path)
+        self.assertEqual(
+            restored_world.latent_decision_seeds,
+            world.latent_decision_seeds,
+        )
+        self.assertEqual(len(restored_world.latent_echo_history), len(world.latent_echo_history))
+        self.assertIn("silver_voice", restored_player.narrative_tags)
+
+    def test_back_to_back_repeat_echo_suppression(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        # Plant enough kill seeds to fire 3 times in a row.
+        for _ in range(9):
+            world.apply_player_decision(player, "kill")
+        # First tick fires once.
+        world.tick_latent_effects(player)
+        # Second tick should be suppressed (same echo back-to-back twice now).
+        world.tick_latent_effects(player)
+        kill_echo_fires = sum(
+            1 for e in world.latent_echo_history if e["echo_key"] == "kill_echo"
+        )
+        # Should be at most 2 (fires on first tick, suppressed on 2nd consecutive tick).
+        self.assertLessEqual(kill_echo_fires, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

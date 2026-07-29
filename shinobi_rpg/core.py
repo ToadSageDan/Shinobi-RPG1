@@ -1099,11 +1099,14 @@ class NinjaWorld:
         Seeds are checked and fired by tick_latent_effects, which is called on
         significant player milestones rather than on every individual decision.
         Only tracked decision types (keys in DECISION_SEED_THRESHOLDS) accumulate.
+        Raises ValueError if intensity is not a positive integer.
         """
+        if intensity < 1:
+            raise ValueError("Seed intensity must be a positive integer.")
         key = decision_tag.strip().lower()
         if key in DECISION_SEED_THRESHOLDS:
             self.latent_decision_seeds[key] = (
-                self.latent_decision_seeds.get(key, 0) + max(1, intensity)
+                self.latent_decision_seeds.get(key, 0) + intensity
             )
 
     def tick_latent_effects(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -1121,9 +1124,10 @@ class NinjaWorld:
             echo_key = f"{seed_key}_echo"
             if echo_key not in LATENT_ECHO_LIBRARY:
                 continue
-            # Suppress back-to-back repeat fires of the same echo.
-            recent_keys = [e.get("echo_key") for e in self.latent_echo_history[-2:]]
-            if recent_keys.count(echo_key) >= 2:
+            # Suppress if the immediately prior echo was the same type, preventing
+            # the same world echo from dominating every consecutive milestone.
+            recent_keys = [e.get("echo_key") for e in self.latent_echo_history[-1:]]
+            if recent_keys == [echo_key]:
                 continue
             echo = dict(LATENT_ECHO_LIBRARY[echo_key])
             # Drain the threshold portion; any remainder carries over.
@@ -1191,7 +1195,7 @@ class NinjaWorld:
     def get_world_drift_signals(self) -> Dict[str, Any]:
         """Return accumulated drift indicators from the latent decision network.
 
-        Returns visible=False until at least three decision seeds have been planted,
+        Returns visible=False until once three or more decision seeds have been planted,
         so the system stays undetectable during the first couple of choices and only
         surfaces once the world has started to genuinely respond to the player's pattern.
         """

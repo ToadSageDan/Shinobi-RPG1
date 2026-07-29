@@ -338,6 +338,60 @@ LATENT_ECHO_LIBRARY: Dict[str, Dict[str, Any]] = {
 }
 
 
+# Lower threshold means an NPC crosses into antagonist pressure sooner.
+NPC_EVIL_TIER_THRESHOLDS: Dict[str, int] = {
+    "volatile": 4,
+    "balanced": 6,
+    "unlikely": 8,
+}
+NPC_EVIL_TIER_WEIGHTS: Tuple[Tuple[str, int], ...] = (
+    ("volatile", 1),
+    ("balanced", 3),
+    ("unlikely", 2),
+)
+# Event payload fields:
+# - label: in-world consequence text used in summaries/tapestry
+# - headline: intel-facing rumor text for newspaper/overheard channels
+# - min_shift/max_shift: evil-score delta range applied per affected NPC
+# - target_count: number of NPC profiles shifted by the event
+# - unlock_signal: suffix used for stealth intel-route unlock nodes
+EXTERNAL_PRESSURE_EVENT_LIBRARY: Dict[str, Dict[str, Any]] = {
+    "blackmail_dossier": {
+        "label": "Blackmail dossiers surface in back-channel markets.",
+        "headline": "Leaked dossiers expose hidden debts among shinobi cells.",
+        "min_shift": 1,
+        "max_shift": 3,
+        "target_count": 2,
+        "unlock_signal": "hidden_archive",
+    },
+    "border_false_flag": {
+        "label": "A false-flag strike blurs ally and enemy lines.",
+        "headline": "Witnesses dispute who ordered the border strike.",
+        "min_shift": 1,
+        "max_shift": 2,
+        "target_count": 3,
+        "unlock_signal": "watch_post",
+    },
+    "scarcity_crackdown": {
+        "label": "Supply scarcity drives hardline village crackdowns.",
+        "headline": "Ration riots trigger emergency law in fringe districts.",
+        "min_shift": 1,
+        "max_shift": 2,
+        "target_count": 2,
+        "unlock_signal": "supply_route",
+    },
+    "forbidden_scroll_auction": {
+        "label": "Forbidden scrolls reappear through masked brokers.",
+        "headline": "Rumors point to a midnight scroll auction under guard.",
+        "min_shift": 2,
+        "max_shift": 3,
+        "target_count": 1,
+        "unlock_signal": "auction_den",
+    },
+}
+INTEL_CHANNELS = {"newspaper", "overheard"}
+
+
 def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
 
@@ -926,6 +980,9 @@ class NinjaWorld:
     run_counter: int = 0
     latent_decision_seeds: Dict[str, int] = field(default_factory=dict)
     latent_echo_history: List[Dict[str, Any]] = field(default_factory=list)
+    npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
+    intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -956,6 +1013,8 @@ class NinjaWorld:
             self.antagonist_signal_log = {name: [] for name in self.antagonist_candidates}
         if not self.dynamic_region_chain:
             self.dynamic_region_chain = [region.name for region in self.regions]
+        if not self.npc_evil_profiles:
+            self.npc_evil_profiles = self._seed_npc_evil_profiles()
 
     def _current_era(self) -> Dict[str, Any]:
         timeline = self.era_timeline or _seed_era_timeline()
@@ -1114,6 +1173,186 @@ class NinjaWorld:
             "signals": list(signals[-6:]),
         }
         return self.selected_final_antagonist
+
+    def _seed_npc_evil_profiles(self) -> Dict[str, Dict[str, Any]]:
+        profiles: Dict[str, Dict[str, Any]] = {}
+        weighted_tiers: List[str] = []
+        for tier, weight in NPC_EVIL_TIER_WEIGHTS:
+            weighted_tiers.extend([tier] * max(weight, 1))
+        for name in sorted(self.antagonist_candidates):
+            seed = sum(ord(ch) for ch in name)
+            tier = weighted_tiers[seed % len(weighted_tiers)]
+            threshold = NPC_EVIL_TIER_THRESHOLDS[tier]
+            profiles[name] = {
+                "evil_tier": tier,
+                "evil_score": 0,
+                "evil_threshold": threshold,
+                "can_turn": True,
+                "last_trigger": None,
+            }
+        return profiles
+
+    def _apply_npc_evil_shift(
+        self,
+        npc_name: str,
+        *,
+        delta: int,
+        event_key: str,
+        source: str,
+    ) -> Dict[str, Any] | None:
+        if npc_name not in self.npc_evil_profiles:
+            return None
+        profile = self.npc_evil_profiles[npc_name]
+        before = int(profile.get("evil_score", 0))
+        threshold = int(profile.get("evil_threshold", NPC_EVIL_TIER_THRESHOLDS["balanced"]))
+        after = max(-3, min(20, before + delta))
+        profile["evil_score"] = after
+        profile["last_trigger"] = event_key
+        crossed_threshold = before < threshold <= after
+        if crossed_threshold:
+            self._update_antagonist_scores(
+                signal=f"evil_threshold:{event_key}",
+                intensity=2,
+                focal_points=[npc_name],
+                causes=[source],
+            )
+        record = {
+            "npc": npc_name,
+            "event_key": event_key,
+            "source": source,
+            "delta": delta,
+            "before": before,
+            "after": after,
+            "threshold": threshold,
+            "crossed_threshold": crossed_threshold,
+        }
+        self.external_pressure_history.append(record)
+        return record
+
+    def trigger_external_pressure_event(
+        self,
+        player: PlayerProfile,
+        *,
+        event_key: str | None = None,
+        causes: Sequence[str] | None = None,
+    ) -> Dict[str, Any]:
+        if event_key is None:
+            keys = sorted(EXTERNAL_PRESSURE_EVENT_LIBRARY.keys())
+            # Blend run progression (history length), world drift (recovery score),
+            # and event cadence to keep selection deterministic but non-static.
+            selector = (
+                len(self.external_pressure_history)
+                + len(self.world_event_history)
+                + abs(self.world_recovery_score)
+            ) % len(keys)
+            event_key = keys[selector]
+        if event_key not in EXTERNAL_PRESSURE_EVENT_LIBRARY:
+            raise ValueError(f'External pressure event "{event_key}" is not recognized.')
+        event = dict(EXTERNAL_PRESSURE_EVENT_LIBRARY[event_key])
+        if not self.npc_evil_profiles:
+            self.npc_evil_profiles = self._seed_npc_evil_profiles()
+        candidates = sorted(self.npc_evil_profiles.keys())
+        if not candidates:
+            raise ValueError("No NPC candidates are available for external pressure events.")
+        seed = len(self.external_pressure_history) + len(self.world_event_history) + abs(player.reputation)
+        ranked_candidates = sorted(
+            candidates,
+            key=lambda name: ((sum(ord(ch) for ch in name) + seed) % 97, name),
+        )
+        target_count = max(1, int(event.get("target_count", 1)))
+        targets = ranked_candidates[:target_count]
+        span = max(1, int(event.get("max_shift", 1)) - int(event.get("min_shift", 1)) + 1)
+        affected = []
+        for index, target in enumerate(targets):
+            name_seed = seed + sum(ord(ch) for ch in target) + index
+            delta = int(event.get("min_shift", 1)) + (name_seed % span)
+            shift_record = self._apply_npc_evil_shift(
+                target,
+                delta=delta,
+                event_key=event_key,
+                source="external_random",
+            )
+            if shift_record:
+                affected.append(shift_record)
+
+        target_region = self.dynamic_region_chain[0] if self.dynamic_region_chain else self.regions[0].name
+        event_record = {
+            "event_key": event_key,
+            "label": event["label"],
+            "headline": event["headline"],
+            "region": target_region,
+            "causes": list(causes or []),
+            "affected_npcs": [record["npc"] for record in affected],
+            "unlock_signal": event.get("unlock_signal", "intel_route"),
+        }
+        self.world_event_history.append(
+            {
+                "event_key": f"external::{event_key}",
+                "label": event["label"],
+                "region": target_region,
+                "causes": list(causes or []),
+                "effects": {
+                    "external_pressure": True,
+                    "affected_npcs": [record["npc"] for record in affected],
+                    "unlock_signal": event.get("unlock_signal", "intel_route"),
+                },
+            }
+        )
+        self._log_tapestry(
+            event_type="external_event",
+            label=event["label"],
+            causes=causes,
+            effects={
+                "event_key": event_key,
+                "region": target_region,
+                "affected_npcs": [record["npc"] for record in affected],
+            },
+        )
+        self._refresh_arc_and_era()
+        self._schedule_dynamic_regions(player)
+        return event_record
+
+    def discover_world_intel(
+        self,
+        player: PlayerProfile,
+        *,
+        channel: str = "newspaper",
+        stealth_probe: bool = False,
+    ) -> Dict[str, Any]:
+        normalized_channel = channel.strip().lower()
+        if normalized_channel not in INTEL_CHANNELS:
+            raise ValueError('Intel channel must be "newspaper" or "overheard".')
+        external_events = [
+            entry
+            for entry in reversed(self.world_event_history)
+            if str(entry.get("event_key", "")).startswith("external::")
+        ]
+        if not external_events:
+            intel = {
+                "channel": normalized_channel,
+                "headline": "No fresh intelligence has surfaced yet.",
+                "region": None,
+                "unlock_node": None,
+                "stealth_probe": stealth_probe,
+            }
+            self.intel_discovery_log.append(intel)
+            return intel
+        latest = external_events[0]
+        region = str(latest.get("region", self.regions[0].name))
+        unlock_signal = str(latest.get("effects", {}).get("unlock_signal", "intel_route"))
+        unlock_node = f"{region.lower().replace(' ', '_')}_{unlock_signal}"
+        if stealth_probe and unlock_node not in player.unlocked_zones:
+            player.unlocked_zones.append(unlock_node)
+        intel = {
+            "channel": normalized_channel,
+            "headline": latest.get("label"),
+            "region": region,
+            "unlock_node": unlock_node if stealth_probe else None,
+            "stealth_probe": stealth_probe,
+            "event_key": latest.get("event_key"),
+        }
+        self.intel_discovery_log.append(intel)
+        return intel
 
     def _plant_decision_seed(self, decision_tag: str, intensity: int = 1) -> None:
         """Silently accumulate a decision seed without triggering any immediate effect.
@@ -1581,6 +1820,12 @@ class NinjaWorld:
         )
         self.evaluate_trophies(player)
         self._plant_decision_seed(normalized, intensity)
+        decision_total = sum(player.encounter_outcomes.values())
+        if decision_total > 0 and decision_total % 4 == 0:
+            self.trigger_external_pressure_event(
+                player,
+                causes=[f"decision_cadence:{decision_total}"],
+            )
 
     def _find_villain(self, name: str) -> VillainProfile:
         villain = next((v for v in self.villains if v.name == name), None)
@@ -2149,6 +2394,9 @@ class NinjaWorld:
             "trophies": trophy_details,
             "trophy_progress": self.get_trophy_progress(player),
             "villain_evolution": self.get_villain_evolution_checkpoints(),
+            "npc_evil_profiles": {name: dict(profile) for name, profile in self.npc_evil_profiles.items()},
+            "external_pressure_history": [dict(entry) for entry in self.external_pressure_history[-20:]],
+            "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log[-20:]],
             "arc_state": {
                 "current_arc_key": self.current_arc_key,
                 "scheduled_regions": list(self.dynamic_region_chain),
@@ -2380,6 +2628,23 @@ class NinjaWorld:
                 "run_counter": self.run_counter,
                 "latent_decision_seeds": dict(self.latent_decision_seeds),
                 "latent_echo_history": [dict(e) for e in self.latent_echo_history],
+                "npc_evil_profiles": {
+                    name: {
+                        "evil_tier": str(payload.get("evil_tier", "balanced")),
+                        "evil_score": int(payload.get("evil_score", 0)),
+                        "evil_threshold": int(
+                            payload.get(
+                                "evil_threshold",
+                                NPC_EVIL_TIER_THRESHOLDS["balanced"],
+                            )
+                        ),
+                        "can_turn": bool(payload.get("can_turn", True)),
+                        "last_trigger": payload.get("last_trigger"),
+                    }
+                    for name, payload in self.npc_evil_profiles.items()
+                },
+                "external_pressure_history": [dict(entry) for entry in self.external_pressure_history],
+                "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log],
             },
             "player": player.to_snapshot(),
         }
@@ -2565,6 +2830,20 @@ class NinjaWorld:
                 for key, value in world_snapshot.get("latent_decision_seeds", {}).items()
             },
             latent_echo_history=list(world_snapshot.get("latent_echo_history", [])),
+            npc_evil_profiles={
+                name: {
+                    "evil_tier": str(payload.get("evil_tier", "balanced")),
+                    "evil_score": int(payload.get("evil_score", 0)),
+                    "evil_threshold": int(
+                        payload.get("evil_threshold", NPC_EVIL_TIER_THRESHOLDS["balanced"])
+                    ),
+                    "can_turn": bool(payload.get("can_turn", True)),
+                    "last_trigger": payload.get("last_trigger"),
+                }
+                for name, payload in world_snapshot.get("npc_evil_profiles", {}).items()
+            },
+            external_pressure_history=list(world_snapshot.get("external_pressure_history", [])),
+            intel_discovery_log=list(world_snapshot.get("intel_discovery_log", [])),
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}

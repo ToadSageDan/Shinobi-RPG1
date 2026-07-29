@@ -316,6 +316,38 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("minor_event_escalation", " ".join(projection["signals"]))
         self.assertTrue(projection["name"] in world.antagonist_candidates)
 
+    def test_all_antagonist_candidates_have_evil_threshold_profiles(self):
+        world, _ = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        self.assertTrue(world.npc_evil_profiles)
+        self.assertEqual(set(world.antagonist_candidates), set(world.npc_evil_profiles))
+        self.assertTrue(all(profile["can_turn"] for profile in world.npc_evil_profiles.values()))
+        self.assertTrue(
+            all(profile["evil_threshold"] >= 4 for profile in world.npc_evil_profiles.values())
+        )
+
+    def test_external_pressure_event_shifts_npc_evil_without_player_decision(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        baseline = {
+            name: profile["evil_score"] for name, profile in world.npc_evil_profiles.items()
+        }
+        event = world.trigger_external_pressure_event(player, event_key="border_false_flag")
+        self.assertEqual(event["event_key"], "border_false_flag")
+        changed = [
+            name
+            for name, profile in world.npc_evil_profiles.items()
+            if profile["evil_score"] != baseline[name]
+        ]
+        self.assertTrue(changed)
+        self.assertTrue(world.external_pressure_history)
+
+    def test_newspaper_or_overheard_intel_can_unlock_stealth_route(self):
+        world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.trigger_external_pressure_event(player, event_key="blackmail_dossier")
+        intel = world.discover_world_intel(player, channel="overheard", stealth_probe=True)
+        self.assertEqual(intel["channel"], "overheard")
+        self.assertTrue(intel["unlock_node"])
+        self.assertIn(intel["unlock_node"], player.unlocked_zones)
+
     def test_archive_captures_run_signature_and_vault_meta_tapestry(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
         world.apply_player_decision(player, "charm")
@@ -476,6 +508,8 @@ class CoreSystemTests(unittest.TestCase):
     def test_save_and_load_snapshot_restores_world_and_player_state(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "kill")
+        world.trigger_external_pressure_event(player, event_key="forbidden_scroll_auction")
+        world.discover_world_intel(player, channel="newspaper", stealth_probe=True)
         world.clear_region(player, "Verdant Gate", "weapon")
         world.complete_quest(player, "Q1")
         with TemporaryDirectory() as temp_dir:
@@ -488,6 +522,9 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(restored_player.quest_log["Q1"], QuestStatus.COMPLETED)
         self.assertEqual(restored_world.villains[0].decision_memory.get("kill"), 1)
         self.assertEqual(restored_player.red_bar_power_claims.get("Kage Renda"), "Rending Spiral")
+        self.assertTrue(restored_world.npc_evil_profiles)
+        self.assertTrue(restored_world.external_pressure_history)
+        self.assertTrue(restored_world.intel_discovery_log)
 
     def test_quest_log_initializes_with_first_quest_active(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -612,6 +649,9 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("kill_counter", summary)
         self.assertIn("trophy_progress", summary)
         self.assertIn("villain_evolution", summary)
+        self.assertIn("npc_evil_profiles", summary)
+        self.assertIn("external_pressure_history", summary)
+        self.assertIn("intel_discovery_log", summary)
         self.assertEqual(summary["kill_counter"]["total_kills"], 0)
 
     def test_villain_evolution_checkpoints_escalate_with_pressure(self):

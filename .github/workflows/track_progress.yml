@@ -1,0 +1,200 @@
+name: Track Progress
+
+on:
+  pull_request:
+    types: [opened, closed, reopened, ready_for_review]
+  push:
+    branches: [main]
+  issues:
+    types: [opened, closed, reopened]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Auto-label PRs based on files changed
+  # ──────────────────────────────────────────────────────────────────────────
+  auto-label:
+    name: Auto-label PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Label based on changed files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const paths = files.map(f => f.filename);
+            const labelsToAdd = new Set();
+
+            const rules = [
+              { pattern: /tests\//, label: 'testing' },
+              { pattern: /shinobi_rpg\/core\.py/, label: 'gameplay' },
+              { pattern: /CHANGELOG\.md|NEXT_STEPS\.md|README\.md/, label: 'documentation' },
+              { pattern: /\.github\/workflows\//, label: 'ci' },
+              { pattern: /scripts\//, label: 'tooling' },
+            ];
+
+            // Quest/narrative keywords in PR title or body
+            const title = context.payload.pull_request.title.toLowerCase();
+            const body  = (context.payload.pull_request.body || '').toLowerCase();
+            const text  = title + ' ' + body;
+
+            if (/quest|branch|backstory|villain|narrative/.test(text)) labelsToAdd.add('narrative');
+            if (/balance|status.effect|nonlethal|viability/.test(text))  labelsToAdd.add('balance');
+            if (/trophy|replay|snapshot|summary/.test(text))             labelsToAdd.add('gameplay');
+
+            for (const { pattern, label } of rules) {
+              if (paths.some(p => pattern.test(p))) labelsToAdd.add(label);
+            }
+
+            if (labelsToAdd.size > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: [...labelsToAdd],
+              });
+              console.log('Added labels:', [...labelsToAdd].join(', '));
+            }
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Update NEXT_STEPS.md checklist when a PR that references an issue merges
+  # ──────────────────────────────────────────────────────────────────────────
+  update-next-steps:
+    name: Sync NEXT_STEPS checklist
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mark completed items in NEXT_STEPS.md
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const prBody = context.payload.pull_request.body || '';
+            const prTitle = context.payload.pull_request.title || '';
+            const text = (prBody + ' ' + prTitle).toLowerCase();
+
+            const NEXT_STEPS_PATH = 'NEXT_STEPS.md';
+            if (!fs.existsSync(NEXT_STEPS_PATH)) {
+              console.log('NEXT_STEPS.md not found — skipping');
+              return;
+            }
+
+            let content = fs.readFileSync(NEXT_STEPS_PATH, 'utf8');
+
+            // Map keywords in PR text → checklist items to tick
+            const completions = [
+              { keywords: ['quest branch', 'q16', 'q17', 'q50', 'handcrafted branch'],
+                item: '1)' },
+              { keywords: ['villain stance', 'evolution trigger', 'mastery trophy'],
+                item: '2)' },
+              { keywords: ['balance pass', 'status.effect stacking', 'nonlethal viability'],
+                item: '3)' },
+              { keywords: ['replay', 'snapshot summary', 'fidelity'],
+                item: '4)' },
+              { keywords: ['targeted.*test', 'branch outcome.*test', 'trophy.*edge case'],
+                item: '5)' },
+            ];
+
+            let changed = false;
+            for (const { keywords, item } of completions) {
+              const matched = keywords.some(kw => new RegExp(kw).test(text));
+              if (matched) {
+                const before = content;
+                content = content.replace(
+                  new RegExp(`(- \\[ \\] ${item.replace(')', '\\)')})`, 'g'),
+                  (_, p1) => p1.replace('[ ]', '[x]')
+                );
+                if (content !== before) {
+                  changed = true;
+                  console.log(`Marked ${item} as complete`);
+                }
+              }
+            }
+
+            if (changed) {
+              fs.writeFileSync(NEXT_STEPS_PATH, content, 'utf8');
+              console.log('Updated NEXT_STEPS.md');
+            }
+
+      - name: Commit NEXT_STEPS update
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet NEXT_STEPS.md; then
+            echo "No changes to commit"
+          else
+            git add NEXT_STEPS.md
+            git commit -m "chore: mark completed items in NEXT_STEPS.md [skip ci]"
+            git push
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Post a progress comment on the PR when it opens
+  # ──────────────────────────────────────────────────────────────────────────
+  pr-progress-comment:
+    name: Post PR progress context
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment with backlog context
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let nextSteps = '';
+            try {
+              nextSteps = fs.readFileSync('NEXT_STEPS.md', 'utf8');
+            } catch {
+              nextSteps = '_NEXT_STEPS.md not found_';
+            }
+
+            const body = [
+              '## 📋 Current Backlog Snapshot',
+              '',
+              'This PR was opened against the following active backlog:',
+              '',
+              '```',
+              nextSteps.split('\n').slice(0, 20).join('\n'),
+              '```',
+              '',
+              '_This comment is auto-generated by the Track Progress workflow._',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });

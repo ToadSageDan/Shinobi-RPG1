@@ -2,6 +2,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from shinobi_rpg.core import (
     Affinity,
@@ -72,6 +73,9 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "attack")
         self.assertEqual(result["damage"], 10)
         self.assertIn("combat_physics", result)
+        self.assertIn("combat_targeting", result)
+        self.assertEqual(result["combat_targeting"]["mode"], "straight_line")
+        self.assertFalse(result["combat_targeting"]["tracking_required"])
         self.assertEqual(result["combat_physics"]["blood_intensity"], "none")
 
     def test_execute_defense_move_scales_with_defense(self):
@@ -135,6 +139,20 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["summon_type"], TechniqueType.SUMMONING.value)
         self.assertEqual(result["summon_power"], 20)
 
+    def test_lock_on_enables_tracking_for_targeted_attacks(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.execute_move("Ash Fang Drive", target_name="Kage Renda", lock_on=True)
+        self.assertEqual(player.locked_on_target, "Kage Renda")
+        self.assertEqual(result["combat_targeting"]["mode"], "tracking")
+        self.assertTrue(result["combat_targeting"]["tracking_required"])
+        self.assertTrue(result["combat_targeting"]["tracking_applied"])
+        self.assertEqual(result["combat_targeting"]["target"], "Kage Renda")
+
+    def test_lock_on_requires_target_when_unset(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        with self.assertRaisesRegex(ValueError, "Lock-on requires a target name"):
+            player.execute_move("Ash Fang Drive", lock_on=True)
+
     def test_execute_move_rejects_unknown_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         with self.assertRaisesRegex(ValueError, 'Move "Nope" is not unlocked for this player.'):
@@ -176,6 +194,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(overview["development"]["entrypoint"], "python -m shinobi_rpg")
         self.assertGreaterEqual(overview["seeded_content"]["allies"], DEFAULT_ALLY_MIN_COUNT)
         self.assertGreaterEqual(overview["seeded_content"]["regions"], 1)
+        self.assertGreaterEqual(overview["seeded_content"]["points_of_interest"], 20)
 
     def test_cli_main_prints_framework_overview_json(self):
         buffer = StringIO()
@@ -197,6 +216,27 @@ class CoreSystemTests(unittest.TestCase):
         self.assertFalse(
             any(name.startswith("AutoNinja-") for name in world.allies[:DEFAULT_ALLY_MIN_COUNT])
         )
+
+    def test_world_map_has_detailed_regions_and_points_of_interest(self):
+        world, _ = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        world_map = world.build_world_map()
+        self.assertEqual(world_map["region_count"], len(world.regions))
+        self.assertIn("environment", world_map)
+        self.assertIn(world_map["environment"]["time_of_day"], {"dawn", "day", "dusk", "night"})
+        self.assertIn(world_map["environment"]["weather"], {"clear", "breezy", "rain", "storm", "fog"})
+        self.assertEqual(len(world_map["regions"]), len(world.regions))
+        for region in world_map["regions"]:
+            self.assertIn("minimum_level", region)
+            self.assertIn("assassin_hunter_name", region)
+            self.assertGreaterEqual(region["minimum_level"], 1)
+            self.assertTrue(region["assassin_hunter_name"])
+            self.assertGreaterEqual(len(region["points_of_interest"]), 4)
+            self.assertTrue(region["strategic_value"])
+            self.assertGreaterEqual(len(region["travel_nodes"]), 4)
+            for poi in region["points_of_interest"]:
+                self.assertTrue(poi["name"])
+                self.assertTrue(poi["summary"])
+                self.assertGreaterEqual(len(poi["connected_nodes"]), 1)
 
     def test_region_clear_reward_unlocks_fast_travel(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
@@ -328,9 +368,12 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_world_event_updates_state_and_logs_cause_effect(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        baseline = world.get_environment_state()
         event = world.trigger_world_event(player, event_key="tornado", causes=["test_driver"])
         self.assertEqual(event["event_key"], "tornado")
         self.assertEqual(event["causes"], ["test_driver"])
+        self.assertIn("environment", event)
+        self.assertNotEqual(event["environment"]["time_of_day"], baseline["time_of_day"])
         self.assertTrue(world.world_event_history)
         tapestry_entry = world.active_run_tapestry[-1]
         self.assertEqual(tapestry_entry["event_type"], "world_event")
@@ -560,6 +603,8 @@ class CoreSystemTests(unittest.TestCase):
     def test_save_and_load_snapshot_restores_world_and_player_state(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "kill")
+        attack_name = player.moves_by_set[MoveCategory.ATTACK][0].name
+        player.execute_move(attack_name, target_name="Kage Renda", lock_on=True)
         world.trigger_external_pressure_event(player, event_key="forbidden_scroll_auction")
         world.discover_world_intel(player, channel="newspaper", stealth_probe=True)
         world.clear_region(player, "Verdant Gate", "weapon")
@@ -574,6 +619,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(restored_player.quest_log["Q1"], QuestStatus.COMPLETED)
         self.assertEqual(restored_world.villains[0].decision_memory.get("kill"), 1)
         self.assertEqual(restored_player.red_bar_power_claims.get("Kage Renda"), "Rending Spiral")
+        self.assertEqual(restored_player.locked_on_target, "Kage Renda")
+        self.assertGreaterEqual(restored_world.environment_cycle_step, world.environment_cycle_step)
         self.assertTrue(restored_world.npc_evil_profiles)
         self.assertTrue(restored_world.external_pressure_history)
         self.assertTrue(restored_world.intel_discovery_log)
@@ -610,6 +657,29 @@ class CoreSystemTests(unittest.TestCase):
         second = world.resolve_region_encounter(player, "Verdant Gate")
         self.assertNotEqual(first["encounter"], second["encounter"])
         self.assertEqual(player.encounter_history["Verdant Gate"], 2)
+        self.assertFalse(first["assassin_hunt_triggered"])
+        self.assertFalse(second["assassin_hunt_triggered"])
+
+    def test_resolve_region_encounter_can_trigger_assassin_hunt_in_high_level_region(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        with patch("shinobi_rpg.core.random.random", return_value=0.0):
+            result = world.resolve_region_encounter(player, "Sunken Hollow")
+        self.assertTrue(result["unauthorized_region"])
+        self.assertTrue(result["assassin_hunt_triggered"])
+        self.assertEqual(result["outcome"], "killed")
+        self.assertFalse(result["player_survived"])
+        self.assertEqual(player.encounter_history["Sunken Hollow"], 1)
+
+    def test_resolve_region_encounter_out_of_band_can_avoid_assassin_hunt(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        with patch("shinobi_rpg.core.random.random", return_value=0.99):
+            result = world.resolve_region_encounter(player, "Sunken Hollow")
+        region = self._get_region(world, "Sunken Hollow")
+        self.assertTrue(result["unauthorized_region"])
+        self.assertFalse(result["assassin_hunt_triggered"])
+        self.assertIn(result["encounter"], region.encounter_table)
+        self.assertTrue(result["player_survived"])
+        self.assertEqual(player.encounter_history["Sunken Hollow"], 1)
 
     def test_shop_inventory_respects_black_market_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -780,6 +850,44 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(
             restored_world.trophy_catalog["ghost_step"].tier,
             TrophyTier.EARLY,
+        )
+
+    def test_snapshot_roundtrip_preserves_region_points_of_interest(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        snapshot = world.to_snapshot(player)
+        restored_world, _ = world.from_snapshot(snapshot)
+        original = world.build_world_map()["regions"]
+        restored = restored_world.build_world_map()["regions"]
+        self.assertEqual(len(original), len(restored))
+        for original_region, restored_region in zip(original, restored):
+            self.assertEqual(original_region["name"], restored_region["name"])
+            self.assertEqual(original_region["travel_nodes"], restored_region["travel_nodes"])
+            self.assertEqual(
+                [poi["name"] for poi in original_region["points_of_interest"]],
+                [poi["name"] for poi in restored_region["points_of_interest"]],
+            )
+
+    def test_memory_store_tracks_subject_entries(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        count = world.store_memory(player.name, "Saved the hidden village from raiders.")
+        self.assertEqual(count, 1)
+        world.store_memory(player.name, "Brokered peace with rival scouts.")
+        self.assertEqual(
+            world.get_memory_store(player.name),
+            [
+                "Saved the hidden village from raiders.",
+                "Brokered peace with rival scouts.",
+            ],
+        )
+
+    def test_snapshot_roundtrip_preserves_memory_store(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.store_memory(player.name, "Recovered the moon archive seal.")
+        snapshot = world.to_snapshot(player)
+        restored_world, _ = world.from_snapshot(snapshot)
+        self.assertEqual(
+            restored_world.get_memory_store(player.name),
+            ["Recovered the moon archive seal."],
         )
 
     # ------------------------------------------------------------------

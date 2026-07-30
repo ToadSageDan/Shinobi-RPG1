@@ -748,7 +748,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("skill_physics", preview)
 
     def test_dual_affinity_animation_preview_blends_both_affinity_signatures(self):
-        world, _ = self._world()
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         preview = world.get_move_animation_preview("Tempest Throne Collapse")
         self.assertIn("compressed air ring gathers", preview["animation_profile"]["startup"])
         self.assertIn("seal stamp with rising rock plates", preview["animation_profile"]["startup"])

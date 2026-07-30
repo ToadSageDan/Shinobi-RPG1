@@ -5,13 +5,21 @@ from shinobi_rpg.core import (
     Affinity,
     Backstory,
     DEFAULT_ALLY_MIN_COUNT,
+    HEROIC_THRESHOLD_MIN,
     JutsuType,
     Move,
     MoveCategory,
+    NONLETHAL_CHARM_MASTER_THRESHOLD,
+    NONLETHAL_CHARM_REP_GAIN,
+    NONLETHAL_EVASION_MASTER_THRESHOLD,
+    NONLETHAL_STEALTH_MASTER_THRESHOLD,
     PlayerProfile,
     QuestStatus,
     ReputationTier,
+    STATUS_EFFECT_BANDS,
     StatusEffectType,
+    TROPHY_BATTLE_HARDENED,
+    TROPHY_GHOST_STEP,
     TrophyCategory,
     TrophyTier,
     VillainStance,
@@ -1175,6 +1183,287 @@ class CoreSystemTests(unittest.TestCase):
         )
         # Should be at most 2 (fires on first tick, suppressed on 2nd consecutive tick).
         self.assertLessEqual(kill_echo_fires, 2)
+
+
+class Issue1QuestBranchOutcomesTests(unittest.TestCase):
+    """Issue 1: Handcrafted branch outcomes for Q16–Q50 (Issue 1)."""
+
+    def _world(self) -> tuple:
+        return build_mvp_world("TestPlayer", [3, 1, 2, 4])
+
+    def test_q16_has_handcrafted_branch_outcomes(self):
+        world, player = self._world()
+        q = next(q for q in world.quests if q.quest_id == "Q16")
+        for key in ("exiled_heir", "street_ghost", "wandering_monk", "nonlethal_path",
+                    "heroic_path", "rogue_path", "default"):
+            self.assertIn(key, q.branch_outcomes)
+        # Outcomes should be narrative-specific (not the template pattern)
+        self.assertNotIn("reframes Crows Over Red Pass as a lawful mandate", q.branch_outcomes["exiled_heir"])
+
+    def test_q25_to_q35_all_have_full_branch_keys(self):
+        world, _ = self._world()
+        required = {"exiled_heir", "street_ghost", "wandering_monk", "nonlethal_path",
+                    "heroic_path", "rogue_path", "default"}
+        for qid in [f"Q{n}" for n in range(25, 36)]:
+            q = next(q for q in world.quests if q.quest_id == qid)
+            missing = required - set(q.branch_outcomes.keys())
+            self.assertFalse(missing, f"{qid} missing branch keys: {missing}")
+
+    def test_q40_to_q50_all_have_full_branch_keys(self):
+        world, _ = self._world()
+        required = {"exiled_heir", "street_ghost", "wandering_monk", "nonlethal_path",
+                    "heroic_path", "rogue_path", "default"}
+        for qid in [f"Q{n}" for n in range(40, 51)]:
+            q = next(q for q in world.quests if q.quest_id == qid)
+            missing = required - set(q.branch_outcomes.keys())
+            self.assertFalse(missing, f"{qid} missing branch keys: {missing}")
+
+    def test_q50_nonlethal_branch_resolves_correctly(self):
+        world, player = self._world()
+        for _ in range(3):
+            world.apply_player_decision(player, "stealth")
+            world.apply_player_decision(player, "charm")
+        # nonlethal path should be active
+        self.assertTrue(player.is_nonlethal_path_active())
+        result = world.resolve_quest_branch(player, "Q50")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+        self.assertIn("clean", result["outcome"])
+
+    def test_q30_exiled_heir_branch_overrides_tactical(self):
+        world, player = self._world()
+        player.choose_backstory(world.player_backstories[0])  # exiled_heir
+        for _ in range(5):
+            world.apply_player_decision(player, "stealth")
+        result = world.resolve_quest_branch(player, "Q30")
+        self.assertEqual(result["branch_key"], "exiled_heir")
+
+    def test_q16_rogue_branch_resolves_with_rogue_reputation(self):
+        world, player = self._world()
+        for _ in range(30):
+            world.apply_player_decision(player, "kill")
+        result = world.resolve_quest_branch(player, "Q16")
+        self.assertIn(result["branch_key"], ("rogue_path", "kill_path", "default"))
+
+
+class Issue2VillainEvolutionTests(unittest.TestCase):
+    """Issue 2: Villain stance evolution triggers and mastery trophies."""
+
+    def _world(self) -> tuple:
+        return build_mvp_world("TestPlayer", [3, 1, 2, 4])
+
+    def test_villain_checkpoint_includes_relationship_arc(self):
+        world, player = self._world()
+        checkpoints = world.get_villain_evolution_checkpoints()
+        self.assertTrue(len(checkpoints) > 0)
+        for cp in checkpoints:
+            self.assertIn("relationship_arc", cp)
+            self.assertIn("active_triggers", cp)
+
+    def test_villain_becomes_nemesis_after_heavy_kill_pressure(self):
+        world, player = self._world()
+        for _ in range(10):
+            world.apply_player_decision(player, "kill")
+        checkpoints = world.get_villain_evolution_checkpoints()
+        arcs = [cp["relationship_arc"] for cp in checkpoints]
+        self.assertIn("nemesis", arcs)
+
+    def test_villain_becomes_reformed_after_heavy_pacification(self):
+        world, player = self._world()
+        for _ in range(10):
+            world.apply_player_decision(player, "charm")
+        checkpoints = world.get_villain_evolution_checkpoints()
+        arcs = [cp["relationship_arc"] for cp in checkpoints]
+        self.assertIn("reformed", arcs)
+
+    def test_pacifier_trophy_awarded_for_two_passive_villains(self):
+        world, player = self._world()
+        # Enough charm to push at least two villains to PASSIVE
+        for _ in range(15):
+            world.apply_player_decision(player, "charm")
+        self.assertIn("pacifier", player.trophies)
+
+    def test_terror_trophy_awarded_for_two_aggressive_villains(self):
+        world, player = self._world()
+        for _ in range(15):
+            world.apply_player_decision(player, "kill")
+        self.assertIn("terror", player.trophies)
+
+    def test_shadow_whisperer_trophy_awarded_for_nonlethal_stealth_mastery(self):
+        world, player = self._world()
+        for _ in range(NONLETHAL_STEALTH_MASTER_THRESHOLD):
+            world.apply_player_decision(player, "stealth")
+        self.assertTrue(player.is_nonlethal_path_active())
+        self.assertIn("shadow_whisperer", player.trophies)
+
+    def test_silver_mask_trophy_awarded_for_nonlethal_charm_mastery(self):
+        world, player = self._world()
+        for _ in range(NONLETHAL_CHARM_MASTER_THRESHOLD):
+            world.apply_player_decision(player, "charm")
+        self.assertTrue(player.is_nonlethal_path_active())
+        self.assertIn("silver_mask", player.trophies)
+
+    def test_wind_dancer_trophy_awarded_for_nonlethal_evasion_mastery(self):
+        world, player = self._world()
+        for _ in range(NONLETHAL_EVASION_MASTER_THRESHOLD):
+            world.apply_player_decision(player, "evasion")
+        self.assertTrue(player.is_nonlethal_path_active())
+        self.assertIn("wind_dancer", player.trophies)
+
+    def test_mastery_trophies_not_awarded_if_kills_exist(self):
+        world, player = self._world()
+        world.apply_player_decision(player, "kill")
+        for _ in range(NONLETHAL_STEALTH_MASTER_THRESHOLD):
+            world.apply_player_decision(player, "stealth")
+        # kill breaks nonlethal path — mastery trophies should NOT fire
+        self.assertFalse(player.is_nonlethal_path_active())
+        self.assertNotIn("shadow_whisperer", player.trophies)
+
+    def test_new_mastery_trophies_in_catalog(self):
+        world, _ = self._world()
+        for key in ("pacifier", "terror", "stance_breaker",
+                    "shadow_whisperer", "silver_mask", "wind_dancer"):
+            self.assertIn(key, world.trophy_catalog, f"Trophy {key} missing from catalog")
+
+
+class Issue3BalancePassTests(unittest.TestCase):
+    """Issue 3: Status-effect stacking, nonlethal reputation viability."""
+
+    def _player(self) -> PlayerProfile:
+        _, player = build_mvp_world("BalanceTest", [3, 1, 2, 4])
+        return player
+
+    def test_status_effect_stacks_accumulate_not_replace(self):
+        player = self._player()
+        player.apply_status_effects([StatusEffectType.BLEED], duration=2, stacks=1)
+        player.apply_status_effects([StatusEffectType.BLEED], duration=2, stacks=1)
+        bleed = player.active_status_effects[StatusEffectType.BLEED.value]
+        self.assertEqual(bleed["stacks"], 2)
+
+    def test_status_effect_stacks_respect_band_cap(self):
+        player = self._player()
+        band_max = STATUS_EFFECT_BANDS[StatusEffectType.BLEED]["max_stacks"]
+        for _ in range(band_max + 2):
+            player.apply_status_effects([StatusEffectType.BLEED], duration=3, stacks=1)
+        bleed = player.active_status_effects[StatusEffectType.BLEED.value]
+        self.assertEqual(bleed["stacks"], band_max)
+
+    def test_status_effect_duration_refreshes_to_higher_value(self):
+        player = self._player()
+        player.apply_status_effects([StatusEffectType.BURN], duration=2, stacks=1)
+        player.apply_status_effects([StatusEffectType.BURN], duration=4, stacks=1)
+        burn = player.active_status_effects[StatusEffectType.BURN.value]
+        self.assertEqual(burn["duration"], 4)
+
+    def test_charm_decision_grants_reputation_gain(self):
+        world, player = build_mvp_world("RepTest", [3, 1, 2, 4])
+        start_rep = player.reputation
+        world.apply_player_decision(player, "charm")
+        self.assertGreater(player.reputation, start_rep)
+
+    def test_stealth_decision_grants_reputation_gain(self):
+        world, player = build_mvp_world("RepTest", [3, 1, 2, 4])
+        start_rep = player.reputation
+        world.apply_player_decision(player, "stealth")
+        self.assertGreater(player.reputation, start_rep)
+
+    def test_evasion_decision_grants_reputation_gain(self):
+        world, player = build_mvp_world("RepTest", [3, 1, 2, 4])
+        start_rep = player.reputation
+        world.apply_player_decision(player, "evasion")
+        self.assertGreater(player.reputation, start_rep)
+
+    def test_kill_decision_reduces_reputation(self):
+        world, player = build_mvp_world("RepTest", [3, 1, 2, 4])
+        start_rep = player.reputation
+        world.apply_player_decision(player, "kill")
+        self.assertLess(player.reputation, start_rep)
+
+    def test_nonlethal_path_can_reach_heroic_tier_without_kills(self):
+        world, player = build_mvp_world("PacifistTier", [3, 1, 2, 4])
+        needed = HEROIC_THRESHOLD_MIN // NONLETHAL_CHARM_REP_GAIN + 1
+        for _ in range(needed):
+            world.apply_player_decision(player, "charm")
+        self.assertEqual(player.current_reputation_tier().value, "heroic")
+
+
+class Issue4ReplaySummaryTests(unittest.TestCase):
+    """Issue 4: Replay/snapshot summary fidelity."""
+
+    def _world_and_player(self) -> tuple:
+        return build_mvp_world("SummaryTest", [3, 1, 2, 4])
+
+    def test_playthrough_summary_includes_playstyle_summary(self):
+        world, player = self._world_and_player()
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("playstyle_summary", summary)
+        ps = summary["playstyle_summary"]
+        self.assertIn("style_label", ps)
+        self.assertIn("nonlethal_total", ps)
+        self.assertIn("lethal_total", ps)
+        self.assertIn("playstyle_shift_note", ps)
+
+    def test_playstyle_label_reflects_stealth_dominant_nonlethal(self):
+        world, player = self._world_and_player()
+        for _ in range(5):
+            world.apply_player_decision(player, "stealth")
+        summary = world.generate_playthrough_summary(player)
+        label = summary["playstyle_summary"]["style_label"]
+        self.assertIn("Shadow Operative", label)
+
+    def test_playstyle_label_reflects_charm_dominant_nonlethal(self):
+        world, player = self._world_and_player()
+        for _ in range(5):
+            world.apply_player_decision(player, "charm")
+        summary = world.generate_playthrough_summary(player)
+        label = summary["playstyle_summary"]["style_label"]
+        self.assertIn("Silver Diplomat", label)
+
+    def test_playthrough_summary_includes_villain_relationship_arcs(self):
+        world, player = self._world_and_player()
+        for _ in range(5):
+            world.apply_player_decision(player, "kill")
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("villain_relationship_arcs", summary)
+        arcs = summary["villain_relationship_arcs"]
+        self.assertIsInstance(arcs, dict)
+        for name, data in arcs.items():
+            self.assertIn("arc", data)
+            self.assertIn("phase", data)
+            self.assertIn("active_triggers", data)
+
+    def test_playthrough_summary_includes_trophy_near_miss(self):
+        world, player = self._world_and_player()
+        # 2 stealth encounters — Ghost Step needs 3, so 1 away
+        world.apply_player_decision(player, "stealth")
+        world.apply_player_decision(player, "stealth")
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("trophy_near_miss", summary)
+        near_miss_keys = [item["trophy_key"] for item in summary["trophy_near_miss"]]
+        self.assertIn(TROPHY_GHOST_STEP, near_miss_keys)
+
+    def test_trophy_near_miss_empty_when_no_trophies_close(self):
+        world, player = self._world_and_player()
+        # No decisions at all — nothing should be near a threshold
+        summary = world.generate_playthrough_summary(player)
+        self.assertIsInstance(summary["trophy_near_miss"], list)
+
+    def test_vault_snapshot_roundtrip_preserves_new_fields(self):
+        import tempfile, os
+        from shinobi_rpg.core import save_world_snapshot, load_world_snapshot
+        world, player = self._world_and_player()
+        for _ in range(3):
+            world.apply_player_decision(player, "stealth")
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            save_world_snapshot(world, player, path)
+            world2, player2 = load_world_snapshot(path)
+            self.assertEqual(player2.encounter_outcomes["stealth"], 3)
+            summary = world2.generate_playthrough_summary(player2)
+            self.assertIn("playstyle_summary", summary)
+            self.assertIn("trophy_near_miss", summary)
+        finally:
+            os.unlink(path)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,57 @@ Build a lightweight MVP foundation for a ninja-inspired open-world RPG with prog
 - Quest chain includes stealth-required content.
 - Fast travel unlocks through progression milestones.
 
+## Regions and Region Bosses
+
+| # | Region | Hub Village | Boss | Boss Arc |
+|---|--------|-------------|------|----------|
+| 1 | Verdant Gate | Leafrise Village | Kage Renda (Wind Duelist) | Political Warfront |
+| 2 | Ashen Cradle | Cinder Port | General Voln (Fire Warlord) | Fracture Front |
+| 3 | Tideglass Basin | Azure Rest | Admiral Neris (Water Controller) | Recovery Mandate |
+| 4 | Stormwall Ridge | Crestfall Outpost | Zephyr Tyrant (Wind Warlord) | Highland Reckoning / Rebellion Wave |
+| 5 | Sunken Hollow | Dusk Refuge | Ashen Monarch (Earth Breaker) | Depths Awakening / Fracture Front |
+
+### Storyline Arcs
+- **Political Warfront** — Council leverage and control of supply routes; first region.
+- **Fracture Front** — Alliances fail or harden under pressure; fiery and underground zones.
+- **Recovery Mandate** — World stabilizes or collapses into splinter rule; coastal / water region.
+- **Rebellion Wave** — Minor actors radicalize into existential threats; spans early and storm regions.
+- **Highland Reckoning** — A mountain warlord's domain falls or expands to swallow nearby territories.
+- **Depths Awakening** — Forgotten underground power is weaponized or sealed before it destabilizes the surface.
+
+## Enemies by Region
+
+| Region | Field Enemies | Boss |
+|--------|--------------|------|
+| Verdant Gate | Bandit Scouts, Mist Ronin*, Root Stalkers*, Hidden Sentry | Kage Renda |
+| Ashen Cradle | Ash Mercenaries*, Lava Hounds, Ember Raiders* | General Voln |
+| Tideglass Basin | Tide Hunters*, Reef Assassins*, Basin Corsairs | Admiral Neris |
+| Stormwall Ridge | Windcutter Raiders*, Gale Monks*, Ridge Wolves, Stormcaller Scouts*, Aerial Sentry | Zephyr Tyrant |
+| Sunken Hollow | Cave Stalkers*, Poison Adepts*, Hollow Wraiths*, Ember Moles, Deep Sentries | Ashen Monarch |
+
+`*` = Important enemy with an exclusive learnable move
+
+## Enemy Exclusive Learnable Moves
+
+Important field enemies carry a signature technique the player may learn after defeating them.
+These are separate from boss rewards — earned through field encounters.
+
+| Enemy | Learnable Move | Category | Affinity | Key Effects |
+|-------|---------------|----------|----------|-------------|
+| Mist Ronin | Fog Dagger Surge | Attack | Water | Blind |
+| Root Stalkers | Creeping Vine Bind | Defense | Earth | Root |
+| Ash Mercenaries | Scorch Rush | Attack | Fire | Burn |
+| Ember Raiders | Ember Burst | Attack | Fire | Burn, Stagger |
+| Tide Hunters | Deep Current Drag | Escape | Water | Drench |
+| Reef Assassins | Reef Shadow Lunge | Attack | Water | Bleed, Drench |
+| Windcutter Raiders | Gale Blade Flurry | Attack | Wind | Bleed, Stagger |
+| Gale Monks | Resonant Wind Seal | Defense | Wind | Silence |
+| Stormcaller Scouts | Lightning Thread | Attack | Wind | Stagger, Crack Armor |
+| Cave Stalkers | Blind Ambush | Attack | Earth | Blind |
+| Poison Adepts | Venom Weave | Attack | Earth | Bleed, Crack Armor |
+| Hollow Wraiths | Wraith Shriek | Attack | Wind | Fear, Silence |
+
+
 ## Allies
 - Seed default allies: Dan, Moon, Sleep, Dot, Porter.
 - Support auto-generation of allies to at least 10 total.

@@ -22,7 +22,7 @@ class MoveCategory(str, Enum):
     ULTIMATE = "ultimate"
 
 
-class JutsuType(str, Enum):
+class TechniqueType(str, Enum):
     ELEMENTAL = "elemental"
     BARRIER = "barrier"
     MOBILITY = "mobility"
@@ -221,7 +221,7 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "category": MoveCategory.ATTACK,
         "affinities": (Affinity.WIND,),
         "power_scale": 1.28,
-        "jutsu_type": JutsuType.WEAPON_STYLE,
+        "technique_type": TechniqueType.WEAPON_STYLE,
         "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
     },
     "General Voln": {
@@ -229,7 +229,7 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "category": MoveCategory.ATTACK,
         "affinities": (Affinity.FIRE,),
         "power_scale": 1.3,
-        "jutsu_type": JutsuType.ELEMENTAL,
+        "technique_type": TechniqueType.ELEMENTAL,
         "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
     },
     "Admiral Neris": {
@@ -237,8 +237,125 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "category": MoveCategory.DEFENSE,
         "affinities": (Affinity.WATER,),
         "power_scale": 1.08,
-        "jutsu_type": JutsuType.BARRIER,
+        "technique_type": TechniqueType.BARRIER,
         "status_effects": (StatusEffectType.DRENCH, StatusEffectType.CHILL),
+    },
+    "Zephyr Tyrant": {
+        "name": "Cyclone Throne Shatter",
+        "category": MoveCategory.ULTIMATE,
+        "affinities": (Affinity.WIND, Affinity.EARTH),
+        "power_scale": 2.55,
+        "technique_type": TechniqueType.ELEMENTAL,
+        "status_effects": (StatusEffectType.STAGGER, StatusEffectType.CRACK_ARMOR),
+    },
+    "Ashen Monarch": {
+        "name": "Subterranean Collapse",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.EARTH,),
+        "power_scale": 1.35,
+        "technique_type": TechniqueType.ELEMENTAL,
+        "status_effects": (StatusEffectType.CRACK_ARMOR, StatusEffectType.ROOT),
+    },
+}
+
+# Learnable moves exclusive to important field enemies (non-boss).
+# When a player defeats an important enemy, they may claim this move.
+ENEMY_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
+    "Mist Ronin": {
+        "name": "Fog Dagger Surge",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WATER,),
+        "power_scale": 1.05,
+        "technique_type": TechniqueType.ILLUSION,
+        "status_effects": (StatusEffectType.BLIND,),
+    },
+    "Root Stalkers": {
+        "name": "Creeping Vine Bind",
+        "category": MoveCategory.DEFENSE,
+        "affinities": (Affinity.EARTH,),
+        "power_scale": 0.92,
+        "technique_type": TechniqueType.SEALING,
+        "status_effects": (StatusEffectType.ROOT,),
+    },
+    "Ash Mercenaries": {
+        "name": "Scorch Rush",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.FIRE,),
+        "power_scale": 1.07,
+        "technique_type": TechniqueType.ELEMENTAL,
+        "status_effects": (StatusEffectType.BURN,),
+    },
+    "Ember Raiders": {
+        "name": "Ember Burst",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.FIRE,),
+        "power_scale": 1.1,
+        "technique_type": TechniqueType.ELEMENTAL,
+        "status_effects": (StatusEffectType.BURN, StatusEffectType.STAGGER),
+    },
+    "Tide Hunters": {
+        "name": "Deep Current Drag",
+        "category": MoveCategory.ESCAPE,
+        "affinities": (Affinity.WATER,),
+        "power_scale": 0.78,
+        "technique_type": TechniqueType.MOBILITY,
+        "status_effects": (StatusEffectType.DRENCH,),
+    },
+    "Reef Assassins": {
+        "name": "Reef Shadow Lunge",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WATER,),
+        "power_scale": 1.08,
+        "technique_type": TechniqueType.WEAPON_STYLE,
+        "status_effects": (StatusEffectType.BLEED, StatusEffectType.DRENCH),
+    },
+    "Windcutter Raiders": {
+        "name": "Gale Blade Flurry",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.06,
+        "technique_type": TechniqueType.WEAPON_STYLE,
+        "status_effects": (StatusEffectType.BLEED, StatusEffectType.STAGGER),
+    },
+    "Gale Monks": {
+        "name": "Resonant Wind Seal",
+        "category": MoveCategory.DEFENSE,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 0.88,
+        "technique_type": TechniqueType.SEALING,
+        "status_effects": (StatusEffectType.SILENCE,),
+    },
+    "Stormcaller Scouts": {
+        "name": "Lightning Thread",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.09,
+        "technique_type": TechniqueType.SENSORY,
+        "status_effects": (StatusEffectType.STAGGER, StatusEffectType.CRACK_ARMOR),
+    },
+    "Cave Stalkers": {
+        "name": "Blind Ambush",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.EARTH,),
+        "power_scale": 1.1,
+        "technique_type": TechniqueType.ILLUSION,
+        "status_effects": (StatusEffectType.BLIND,),
+    },
+    "Poison Adepts": {
+        "name": "Venom Weave",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.EARTH,),
+        "power_scale": 1.06,
+        "technique_type": TechniqueType.SUPPORT,
+        "status_effects": (StatusEffectType.BLEED, StatusEffectType.CRACK_ARMOR),
+    },
+    "Hollow Wraiths": {
+        "name": "Wraith Shriek",
+        "category": MoveCategory.ATTACK,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.07,
+        "technique_type": TechniqueType.ILLUSION,
+        "status_effects": (StatusEffectType.FEAR, StatusEffectType.SILENCE),
     },
 }
 
@@ -429,7 +546,7 @@ class Move:
     category: MoveCategory
     affinities: Tuple[Affinity, ...]
     power_scale: float = 1.0
-    jutsu_type: JutsuType = JutsuType.ELEMENTAL
+    technique_type: TechniqueType = TechniqueType.ELEMENTAL
     status_effects: Tuple[StatusEffectType, ...] = ()
     animation_profile: Dict[str, str] = field(default_factory=dict)
 
@@ -780,7 +897,7 @@ class PlayerProfile:
                 "move": move.name,
                 "category": move.category.value,
                 "summon_power": summon_power,
-                "summon_type": move.jutsu_type.value,
+                "summon_type": move.technique_type.value,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
             }
@@ -946,7 +1063,7 @@ class PlayerProfile:
                         "category": move.category.value,
                         "affinities": [affinity.value for affinity in move.affinities],
                         "power_scale": move.power_scale,
-                        "jutsu_type": move.jutsu_type.value,
+                        "technique_type": move.technique_type.value,
                         "status_effects": [effect.value for effect in move.status_effects],
                         "animation_profile": dict(move.animation_profile),
                     }
@@ -986,7 +1103,7 @@ class NinjaWorld:
     trophy_catalog: Dict[str, Trophy]
     arcs: List[ArcDefinition] = field(default_factory=list)
     era_timeline: List[Dict[str, Any]] = field(default_factory=list)
-    ninjutsu_library: List[Move] = field(default_factory=list)
+    technique_library: List[Move] = field(default_factory=list)
     shop_inventory: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     vault_historic_ninjas: List[dict] = field(default_factory=list)
     vault_meta_tapestry: List[Dict[str, Any]] = field(default_factory=list)
@@ -1908,20 +2025,20 @@ class NinjaWorld:
             raise ValueError(f'Region "{region_name}" not found.')
         return region
 
-    def get_ninjutsu_catalog(
-        self, *, affinity: Affinity | None = None, jutsu_type: JutsuType | None = None
+    def get_technique_catalog(
+        self, *, affinity: Affinity | None = None, technique_type: TechniqueType | None = None
     ) -> List[Dict[str, Any]]:
-        moves = self.ninjutsu_library
+        moves = self.technique_library
         if affinity is not None:
             moves = [move for move in moves if affinity in move.affinities]
-        if jutsu_type is not None:
-            moves = [move for move in moves if move.jutsu_type == jutsu_type]
+        if technique_type is not None:
+            moves = [move for move in moves if move.technique_type == technique_type]
         return [
             {
                 "name": move.name,
                 "category": move.category.value,
                 "affinities": [affinity.value for affinity in move.affinities],
-                "jutsu_type": move.jutsu_type.value,
+                "technique_type": move.technique_type.value,
                 "status_effects": [effect.value for effect in move.status_effects],
                 "animation_profile": dict(move.animation_profile),
             }
@@ -1929,9 +2046,9 @@ class NinjaWorld:
         ]
 
     def get_move_animation_preview(self, move_name: str) -> Dict[str, Any]:
-        move = next((item for item in self.ninjutsu_library if item.name == move_name), None)
+        move = next((item for item in self.technique_library if item.name == move_name), None)
         if not move:
-            raise ValueError(f'Move "{move_name}" not found in ninjutsu catalog.')
+            raise ValueError(f'Move "{move_name}" not found in technique catalog.')
         return {
             "move": move.name,
             "affinities": [affinity.value for affinity in move.affinities],
@@ -1944,9 +2061,9 @@ class NinjaWorld:
     ) -> Dict[str, Any]:
         staged = []
         for beat, move_name in enumerate((starter_move, link_move, finisher_move), start=1):
-            move = next((item for item in self.ninjutsu_library if item.name == move_name), None)
+            move = next((item for item in self.technique_library if item.name == move_name), None)
             if not move:
-                raise ValueError(f'Move "{move_name}" not found in ninjutsu catalog.')
+                raise ValueError(f'Move "{move_name}" not found in technique catalog.')
             staged.append(
                 {
                     "beat": beat,
@@ -2739,7 +2856,7 @@ class NinjaWorld:
                             "category": villain.signature_power.category.value,
                             "affinities": [affinity.value for affinity in villain.signature_power.affinities],
                             "power_scale": villain.signature_power.power_scale,
-                            "jutsu_type": villain.signature_power.jutsu_type.value,
+                            "technique_type": villain.signature_power.technique_type.value,
                             "status_effects": [effect.value for effect in villain.signature_power.status_effects],
                             "animation_profile": dict(villain.signature_power.animation_profile),
                         },
@@ -2778,17 +2895,17 @@ class NinjaWorld:
                     }
                     for trophy_key, trophy in self.trophy_catalog.items()
                 },
-                "ninjutsu_library": [
+                "technique_library": [
                     {
                         "name": move.name,
                         "category": move.category.value,
                         "affinities": [affinity.value for affinity in move.affinities],
                         "power_scale": move.power_scale,
-                        "jutsu_type": move.jutsu_type.value,
+                        "technique_type": move.technique_type.value,
                         "status_effects": [effect.value for effect in move.status_effects],
                         "animation_profile": dict(move.animation_profile),
                     }
-                    for move in self.ninjutsu_library
+                    for move in self.technique_library
                 ],
                 "shop_inventory": {key: dict(value) for key, value in self.shop_inventory.items()},
                 "vault_historic_ninjas": list(self.vault_historic_ninjas),
@@ -2912,8 +3029,8 @@ class NinjaWorld:
                         for affinity in item.get("signature_power", {}).get("affinities", [Affinity.FIRE.value])
                     ),
                     power_scale=item.get("signature_power", {}).get("power_scale", 1.0),
-                    jutsu_type=JutsuType(
-                        item.get("signature_power", {}).get("jutsu_type", JutsuType.ELEMENTAL.value)
+                    technique_type=TechniqueType(
+                        item.get("signature_power", {}).get("technique_type", TechniqueType.ELEMENTAL.value)
                     ),
                     status_effects=tuple(
                         StatusEffectType(effect)
@@ -2960,19 +3077,19 @@ class NinjaWorld:
             )
             for trophy_key, item in world_snapshot["trophy_catalog"].items()
         }
-        ninjutsu_library = [
+        technique_library = [
             Move(
                 name=move["name"],
                 category=MoveCategory(move["category"]),
                 affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
                 power_scale=move.get("power_scale", 1.0),
-                jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
+                technique_type=TechniqueType(move.get("technique_type", TechniqueType.ELEMENTAL.value)),
                 status_effects=tuple(
                     StatusEffectType(effect) for effect in move.get("status_effects", [])
                 ),
                 animation_profile=dict(move.get("animation_profile", {})),
             )
-            for move in world_snapshot.get("ninjutsu_library", [])
+            for move in world_snapshot.get("technique_library", [])
         ]
         arcs = [
             ArcDefinition(
@@ -2998,7 +3115,7 @@ class NinjaWorld:
             trophy_catalog=trophy_catalog,
             arcs=arcs,
             era_timeline=[dict(item) for item in world_snapshot.get("era_timeline", [])],
-            ninjutsu_library=ninjutsu_library,
+            technique_library=technique_library,
             shop_inventory={key: dict(value) for key, value in world_snapshot.get("shop_inventory", {}).items()},
             vault_historic_ninjas=list(world_snapshot.get("vault_historic_ninjas", [])),
             vault_meta_tapestry=list(world_snapshot.get("vault_meta_tapestry", [])),
@@ -3115,7 +3232,7 @@ class NinjaWorld:
                     category=MoveCategory(move["category"]),
                     affinities=tuple(Affinity(affinity) for affinity in move["affinities"]),
                     power_scale=move.get("power_scale", 1.0),
-                    jutsu_type=JutsuType(move.get("jutsu_type", JutsuType.ELEMENTAL.value)),
+                    technique_type=TechniqueType(move.get("technique_type", TechniqueType.ELEMENTAL.value)),
                     status_effects=tuple(
                         StatusEffectType(effect) for effect in move.get("status_effects", [])
                     ),
@@ -3285,7 +3402,7 @@ def _make_move(
     category: MoveCategory,
     affinities: Tuple[Affinity, ...],
     power_scale: float,
-    jutsu_type: JutsuType,
+    technique_type: TechniqueType,
     status_effects: Tuple[StatusEffectType, ...] = (),
 ) -> Move:
     primary = affinities[0]
@@ -3294,7 +3411,7 @@ def _make_move(
         category=category,
         affinities=affinities,
         power_scale=power_scale,
-        jutsu_type=jutsu_type,
+        technique_type=technique_type,
         status_effects=status_effects,
         animation_profile=_affinity_animation_profile(primary, category),
     )
@@ -3303,18 +3420,18 @@ def _make_move(
 def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
     return {
         MoveCategory.ESCAPE: [
-            _make_move("Smoke Step", MoveCategory.ESCAPE, (Affinity.FIRE,), 0.6, JutsuType.MOBILITY),
-            _make_move("Afterimage Drift", MoveCategory.ESCAPE, (Affinity.WATER,), 0.7, JutsuType.CLONE),
-            _make_move("Silent Reed Slip", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.75, JutsuType.SENSORY),
-            _make_move("Mistfold Break", MoveCategory.ESCAPE, (Affinity.WATER,), 0.72, JutsuType.ILLUSION),
-            _make_move("Stone Skip Dash", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.68, JutsuType.MOBILITY),
-            _make_move("Crosswind Fade", MoveCategory.ESCAPE, (Affinity.WIND,), 0.74, JutsuType.CLONE),
+            _make_move("Smoke Step", MoveCategory.ESCAPE, (Affinity.FIRE,), 0.6, TechniqueType.MOBILITY),
+            _make_move("Afterimage Drift", MoveCategory.ESCAPE, (Affinity.WATER,), 0.7, TechniqueType.CLONE),
+            _make_move("Silent Reed Slip", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.75, TechniqueType.SENSORY),
+            _make_move("Mistfold Break", MoveCategory.ESCAPE, (Affinity.WATER,), 0.72, TechniqueType.ILLUSION),
+            _make_move("Stone Skip Dash", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.68, TechniqueType.MOBILITY),
+            _make_move("Crosswind Fade", MoveCategory.ESCAPE, (Affinity.WIND,), 0.74, TechniqueType.CLONE),
             _make_move(
                 "Ember Veil Vault",
                 MoveCategory.ESCAPE,
                 (Affinity.FIRE,),
                 0.71,
-                JutsuType.MOBILITY,
+                TechniqueType.MOBILITY,
                 (StatusEffectType.BURN,),
             ),
             _make_move(
@@ -3322,43 +3439,43 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ESCAPE,
                 (Affinity.WATER,),
                 0.73,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.DRENCH,),
             ),
-            _make_move("Burrow Snap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.69, JutsuType.MOBILITY),
-            _make_move("Gale Feather Shift", MoveCategory.ESCAPE, (Affinity.WIND,), 0.76, JutsuType.SENSORY),
+            _make_move("Burrow Snap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.69, TechniqueType.MOBILITY),
+            _make_move("Gale Feather Shift", MoveCategory.ESCAPE, (Affinity.WIND,), 0.76, TechniqueType.SENSORY),
             _make_move(
                 "Phantom Lantern Exit",
                 MoveCategory.ESCAPE,
                 (Affinity.WIND,),
                 0.75,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.BLIND,),
             ),
-            _make_move("Iron Cicada Swap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.7, JutsuType.CLONE),
+            _make_move("Iron Cicada Swap", MoveCategory.ESCAPE, (Affinity.EARTH,), 0.7, TechniqueType.CLONE),
         ],
         MoveCategory.ATTACK: [
-            _make_move("Edge Current", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, JutsuType.ELEMENTAL),
+            _make_move("Edge Current", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, TechniqueType.ELEMENTAL),
             _make_move(
                 "Threadline Volley",
                 MoveCategory.ATTACK,
                 (Affinity.WATER,),
                 1.05,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
             ),
             _make_move(
                 "Pressure Knot Strike",
                 MoveCategory.ATTACK,
                 (Affinity.EARTH,),
                 1.1,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
             ),
             _make_move(
                 "Cinder Lance",
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
                 1.02,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN,),
             ),
             _make_move(
@@ -3366,7 +3483,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ATTACK,
                 (Affinity.WATER,),
                 1.03,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.DRENCH,),
             ),
             _make_move(
@@ -3374,16 +3491,16 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ATTACK,
                 (Affinity.EARTH,),
                 1.04,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.CRACK_ARMOR,),
             ),
-            _make_move("Razor Gale Arc", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, JutsuType.ELEMENTAL),
+            _make_move("Razor Gale Arc", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, TechniqueType.ELEMENTAL),
             _make_move(
                 "Ash Fang Drive",
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
                 1.08,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.BLEED,),
             ),
             _make_move(
@@ -3391,16 +3508,16 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ATTACK,
                 (Affinity.WATER,),
                 1.06,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.CHILL,),
             ),
-            _make_move("Granite Spearline", MoveCategory.ATTACK, (Affinity.EARTH,), 1.07, JutsuType.ELEMENTAL),
+            _make_move("Granite Spearline", MoveCategory.ATTACK, (Affinity.EARTH,), 1.07, TechniqueType.ELEMENTAL),
             _make_move(
                 "Tempest Hook",
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
                 1.05,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.STAGGER,),
             ),
             _make_move(
@@ -3408,42 +3525,42 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
                 1.09,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.FEAR,),
             ),
         ],
         MoveCategory.DEFENSE: [
-            _make_move("Guarding Veil", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.8, JutsuType.BARRIER),
-            _make_move("Lattice Ward", MoveCategory.DEFENSE, (Affinity.WATER,), 0.78, JutsuType.SEALING),
-            _make_move("Flowback Mantle", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.75, JutsuType.SUPPORT),
-            _make_move("Current Shell", MoveCategory.DEFENSE, (Affinity.WATER,), 0.9, JutsuType.BARRIER),
-            _make_move("Ash Aegis", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.74, JutsuType.BARRIER),
-            _make_move("Granite Net Seal", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.95, JutsuType.SEALING),
+            _make_move("Guarding Veil", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.8, TechniqueType.BARRIER),
+            _make_move("Lattice Ward", MoveCategory.DEFENSE, (Affinity.WATER,), 0.78, TechniqueType.SEALING),
+            _make_move("Flowback Mantle", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.75, TechniqueType.SUPPORT),
+            _make_move("Current Shell", MoveCategory.DEFENSE, (Affinity.WATER,), 0.9, TechniqueType.BARRIER),
+            _make_move("Ash Aegis", MoveCategory.DEFENSE, (Affinity.FIRE,), 0.74, TechniqueType.BARRIER),
+            _make_move("Granite Net Seal", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.95, TechniqueType.SEALING),
             _make_move(
                 "Pressure Dome",
                 MoveCategory.DEFENSE,
                 (Affinity.WIND,),
                 0.84,
-                JutsuType.BARRIER,
+                TechniqueType.BARRIER,
                 (StatusEffectType.STAGGER,),
             ),
-            _make_move("Mirror Bark Plate", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.88, JutsuType.SUPPORT),
+            _make_move("Mirror Bark Plate", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.88, TechniqueType.SUPPORT),
             _make_move(
                 "Cyclone Parry Ring",
                 MoveCategory.DEFENSE,
                 (Affinity.WIND,),
                 0.86,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.BLIND,),
             ),
-            _make_move("Reef Anchor Guard", MoveCategory.DEFENSE, (Affinity.WATER,), 0.89, JutsuType.BARRIER),
-            _make_move("Dune Bastion", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.87, JutsuType.SEALING),
+            _make_move("Reef Anchor Guard", MoveCategory.DEFENSE, (Affinity.WATER,), 0.89, TechniqueType.BARRIER),
+            _make_move("Dune Bastion", MoveCategory.DEFENSE, (Affinity.EARTH,), 0.87, TechniqueType.SEALING),
             _make_move(
                 "Moonlit Counter Seal",
                 MoveCategory.DEFENSE,
                 (Affinity.WIND,),
                 0.83,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.SILENCE,),
             ),
         ],
@@ -3453,7 +3570,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.FIRE,),
                 1.0,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.BURN,),
             ),
             _make_move(
@@ -3461,7 +3578,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.FIRE,),
                 1.1,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.BLEED,),
             ),
             _make_move(
@@ -3469,7 +3586,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WATER,),
                 1.0,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.DRENCH,),
             ),
             _make_move(
@@ -3477,7 +3594,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WATER,),
                 1.08,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.BLIND,),
             ),
             _make_move(
@@ -3485,7 +3602,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.EARTH,),
                 1.0,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.STAGGER,),
             ),
             _make_move(
@@ -3493,7 +3610,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.EARTH,),
                 1.1,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.CRACK_ARMOR,),
             ),
             _make_move(
@@ -3501,7 +3618,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WIND,),
                 1.0,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.BLIND,),
             ),
             _make_move(
@@ -3509,7 +3626,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WIND,),
                 1.1,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.CHILL,),
             ),
             _make_move(
@@ -3517,7 +3634,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.FIRE,),
                 1.06,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.FEAR,),
             ),
             _make_move(
@@ -3525,7 +3642,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WATER,),
                 1.04,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.ROOT,),
             ),
             _make_move(
@@ -3533,7 +3650,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.EARTH,),
                 1.07,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.STAGGER,),
             ),
             _make_move(
@@ -3541,7 +3658,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.SUMMON,
                 (Affinity.WIND,),
                 1.05,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.SILENCE,),
             ),
         ],
@@ -3551,7 +3668,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.FIRE, Affinity.WIND),
                 2.5,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN,),
             ),
             _make_move(
@@ -3559,7 +3676,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WATER, Affinity.EARTH),
                 2.2,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.ROOT,),
             ),
             _make_move(
@@ -3567,7 +3684,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.FIRE, Affinity.WIND),
                 2.4,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN,),
             ),
             _make_move(
@@ -3575,7 +3692,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WATER, Affinity.EARTH),
                 2.35,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.DRENCH,),
             ),
             _make_move(
@@ -3583,7 +3700,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WIND, Affinity.WATER),
                 2.3,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.BLIND,),
             ),
             _make_move(
@@ -3591,7 +3708,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.FIRE, Affinity.EARTH),
                 2.45,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN, StatusEffectType.CRACK_ARMOR),
             ),
             _make_move(
@@ -3599,7 +3716,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WATER, Affinity.WIND),
                 2.42,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.DRENCH, StatusEffectType.CHILL),
             ),
             _make_move(
@@ -3607,7 +3724,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.EARTH, Affinity.FIRE),
                 2.38,
-                JutsuType.SEALING,
+                TechniqueType.SEALING,
                 (StatusEffectType.ROOT, StatusEffectType.STAGGER),
             ),
             _make_move(
@@ -3615,7 +3732,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WIND, Affinity.EARTH),
                 2.36,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.STAGGER,),
             ),
             _make_move(
@@ -3623,7 +3740,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.FIRE, Affinity.WATER),
                 2.33,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.FEAR,),
             ),
             _make_move(
@@ -3631,7 +3748,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.WATER, Affinity.FIRE),
                 2.37,
-                JutsuType.BARRIER,
+                TechniqueType.BARRIER,
                 (StatusEffectType.SILENCE,),
             ),
             _make_move(
@@ -3639,7 +3756,7 @@ def _seed_shared_move_pool() -> Dict[MoveCategory, List[Move]]:
                 MoveCategory.ULTIMATE,
                 (Affinity.FIRE, Affinity.WIND),
                 2.32,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.BLIND, StatusEffectType.BURN),
             ),
         ],
@@ -3662,7 +3779,7 @@ def _seed_moves(player_affinity: Affinity) -> Dict[MoveCategory, List[Move]]:
     return selected
 
 
-def _seed_ninjutsu_library() -> List[Move]:
+def _seed_technique_library() -> List[Move]:
     pool = _seed_shared_move_pool()
     ordered_categories = [
         MoveCategory.ESCAPE,
@@ -3671,7 +3788,20 @@ def _seed_ninjutsu_library() -> List[Move]:
         MoveCategory.SUMMON,
         MoveCategory.ULTIMATE,
     ]
-    return [move for category in ordered_categories for move in pool[category]]
+    library = [move for category in ordered_categories for move in pool[category]]
+    # Include all enemy-exclusive learnable moves so they appear in the technique catalog
+    for spec in ENEMY_EXCLUSIVE_MOVE_SPECS.values():
+        library.append(
+            _make_move(
+                spec["name"],
+                spec["category"],
+                spec["affinities"],
+                spec["power_scale"],
+                spec["technique_type"],
+                spec["status_effects"],
+            )
+        )
+    return library
 
 
 def _seed_era_timeline() -> List[Dict[str, Any]]:
@@ -3712,7 +3842,7 @@ def _seed_arcs() -> List[ArcDefinition]:
             title="Fracture Front",
             tone="attrition",
             stakes="alliances fail or harden under pressure",
-            regions=("Ashen Cradle",),
+            regions=("Ashen Cradle", "Sunken Hollow"),
             era_band="recovery_age",
         ),
         ArcDefinition(
@@ -3728,7 +3858,23 @@ def _seed_arcs() -> List[ArcDefinition]:
             title="Rebellion Wave",
             tone="volatile",
             stakes="minor actors radicalize into existential threats",
-            regions=("Verdant Gate", "Ashen Cradle"),
+            regions=("Verdant Gate", "Ashen Cradle", "Stormwall Ridge"),
+            era_band="hidden_age",
+        ),
+        ArcDefinition(
+            key="highland_reckoning",
+            title="Highland Reckoning",
+            tone="siege and sovereignty",
+            stakes="a warlord's highland domain falls or expands to swallow nearby territories",
+            regions=("Stormwall Ridge",),
+            era_band="war_age",
+        ),
+        ArcDefinition(
+            key="depths_awakening",
+            title="Depths Awakening",
+            tone="dread and excavation",
+            stakes="forgotten underground power is weaponized or sealed before it destabilizes the surface",
+            regions=("Sunken Hollow",),
             era_band="hidden_age",
         ),
     ]
@@ -3780,6 +3926,48 @@ def _seed_regions() -> List[Region]:
             },
             arc_key="recovery_mandate",
         ),
+        Region(
+            name="Stormwall Ridge",
+            village_hub="Crestfall Outpost",
+            enemies=["Windcutter Raiders", "Gale Monks", "Ridge Wolves"],
+            encounter_table=[
+                "Windcutter Raiders",
+                "Gale Monks",
+                "Ridge Wolves",
+                "Stormcaller Scouts",
+                "Aerial Sentry",
+            ],
+            allies=["Dan", "Moon"],
+            boss="Zephyr Tyrant",
+            boss_rewards={
+                "weapon": "Ridge Gale Blade",
+                "clothing": "Stormweave Mantle",
+                "move": "Cyclone Throne Shatter",
+            },
+            arc_key="rebellion_wave",
+            tutorial_mechanics=("wind_resistance", "aerial_dodge"),
+        ),
+        Region(
+            name="Sunken Hollow",
+            village_hub="Dusk Refuge",
+            enemies=["Cave Stalkers", "Poison Adepts", "Hollow Wraiths"],
+            encounter_table=[
+                "Cave Stalkers",
+                "Poison Adepts",
+                "Hollow Wraiths",
+                "Ember Moles",
+                "Deep Sentries",
+            ],
+            allies=["Sleep", "Dot"],
+            boss="Ashen Monarch",
+            boss_rewards={
+                "weapon": "Hollow Shard Axe",
+                "clothing": "Ashbone Shroud",
+                "move": "Subterranean Collapse",
+            },
+            arc_key="fracture_front",
+            tutorial_mechanics=("underground_navigation", "poison_resistance"),
+        ),
     ]
 
 
@@ -3795,9 +3983,34 @@ def _boss_exclusive_move_for(villain_name: str) -> Move:
         spec["category"],
         spec["affinities"],
         spec["power_scale"],
-        spec["jutsu_type"],
+        spec["technique_type"],
         spec["status_effects"],
     )
+
+
+def enemy_exclusive_move_for(enemy_name: str) -> Move | None:
+    """Return the learnable exclusive move for an important field enemy, or None if not defined.
+
+    Important enemies each carry a signature technique that the player may claim after
+    defeating them. This is separate from boss rewards — these moves are learned through
+    field encounters rather than region clears.
+    """
+    spec = ENEMY_EXCLUSIVE_MOVE_SPECS.get(enemy_name)
+    if not spec:
+        return None
+    return _make_move(
+        spec["name"],
+        spec["category"],
+        spec["affinities"],
+        spec["power_scale"],
+        spec["technique_type"],
+        spec["status_effects"],
+    )
+
+
+def get_learnable_enemy_moves() -> Dict[str, str]:
+    """Return a mapping of enemy name → exclusive move name for all learnable enemy moves."""
+    return {enemy: spec["name"] for enemy, spec in ENEMY_EXCLUSIVE_MOVE_SPECS.items()}
 
 
 def _validate_boss_move_reward_config(regions: Sequence[Region]) -> None:
@@ -5400,14 +5613,14 @@ def _build_extended_quest_chain() -> List[Quest]:
         {
             "quest_id": "Q46",
             "title": "Night Market of Teeth",
-            "premise": "Forbidden jutsu auctions attract every surviving power broker.",
+            "premise": "Forbidden technique auctions attract every surviving power broker.",
             "objective": "Disrupt, infiltrate, or dominate the auction economy.",
             "choices": ("destroy auction stock", "buy and seal scrolls", "control auction ring"),
             "follow_up_hook": "Auction maps reveal tampered borders with no true north.",
-            "reward_theme": "forbidden_jutsu",
+            "reward_theme": "forbidden_technique",
             "branch_outcomes": {
                 "exiled_heir": (
-                    "Clan interdiction authority over forbidden jutsu gives you "
+                    "Clan interdiction authority over forbidden techniques gives you "
                     "legal standing to seize the auction stock and prosecute its brokers."
                 ),
                 "street_ghost": (
@@ -5428,7 +5641,7 @@ def _build_extended_quest_chain() -> List[Quest]:
                 ),
                 "rogue_path": (
                     "You purchase the entire auction stock through proxies and "
-                    "control the forbidden jutsu economy, deciding who gets access and at what cost."
+                    "control the forbidden technique economy, deciding who gets access and at what cost."
                 ),
                 "default": (
                     "You raid the auction mid-session, neutralize every broker by force, "
@@ -5798,7 +6011,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
                 1.2,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.BLEED,),
             ),
             primary_affinity=Affinity.WIND,
@@ -5820,7 +6033,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
                 1.25,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN, StatusEffectType.STAGGER),
             ),
             primary_affinity=Affinity.FIRE,
@@ -5843,7 +6056,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.DEFENSE,
                 (Affinity.WATER,),
                 1.0,
-                JutsuType.BARRIER,
+                TechniqueType.BARRIER,
                 (StatusEffectType.DRENCH,),
             ),
             primary_affinity=Affinity.WATER,
@@ -5865,7 +6078,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.WATER,),
                 1.22,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.BLIND, StatusEffectType.FEAR),
             ),
             primary_affinity=Affinity.WATER,
@@ -5887,7 +6100,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.DEFENSE,
                 (Affinity.EARTH,),
                 1.12,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.STAGGER,),
             ),
             primary_affinity=Affinity.EARTH,
@@ -5909,7 +6122,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.EARTH,),
                 1.24,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.CRACK_ARMOR,),
             ),
             primary_affinity=Affinity.EARTH,
@@ -5931,7 +6144,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
                 1.2,
-                JutsuType.WEAPON_STYLE,
+                TechniqueType.WEAPON_STYLE,
                 (StatusEffectType.BLEED,),
             ),
             primary_affinity=Affinity.WIND,
@@ -5953,7 +6166,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.DEFENSE,
                 (Affinity.EARTH,),
                 1.08,
-                JutsuType.SEALING,
+                TechniqueType.SEALING,
                 (StatusEffectType.ROOT, StatusEffectType.BLEED),
             ),
             primary_affinity=Affinity.EARTH,
@@ -5975,7 +6188,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
                 1.18,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.FEAR, StatusEffectType.BLIND),
             ),
             primary_affinity=Affinity.FIRE,
@@ -5991,13 +6204,13 @@ def _seed_villains() -> List[VillainProfile]:
         ),
         VillainProfile(
             name="Silent Bell",
-            backstory="A shrine exile whose resonant bells suppress enemy jutsu flow.",
+            backstory="A shrine exile whose resonant bells suppress enemy technique flow.",
             signature_power=_make_move(
                 "Null Resonance",
                 MoveCategory.DEFENSE,
                 (Affinity.WIND,),
                 1.06,
-                JutsuType.SENSORY,
+                TechniqueType.SENSORY,
                 (StatusEffectType.SILENCE,),
             ),
             primary_affinity=Affinity.WIND,
@@ -6019,7 +6232,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.WATER,),
                 1.19,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.CHILL, StatusEffectType.BLEED),
             ),
             primary_affinity=Affinity.WATER,
@@ -6041,7 +6254,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.SUMMON,
                 (Affinity.WIND,),
                 1.16,
-                JutsuType.SUMMONING,
+                TechniqueType.SUMMONING,
                 (StatusEffectType.ROOT, StatusEffectType.FEAR),
             ),
             primary_affinity=Affinity.WIND,
@@ -6063,7 +6276,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.FIRE,),
                 1.23,
-                JutsuType.ELEMENTAL,
+                TechniqueType.ELEMENTAL,
                 (StatusEffectType.BURN, StatusEffectType.CRACK_ARMOR),
             ),
             primary_affinity=Affinity.FIRE,
@@ -6085,7 +6298,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.EARTH,),
                 1.17,
-                JutsuType.SUPPORT,
+                TechniqueType.SUPPORT,
                 (StatusEffectType.STAGGER,),
             ),
             primary_affinity=Affinity.EARTH,
@@ -6107,7 +6320,7 @@ def _seed_villains() -> List[VillainProfile]:
                 MoveCategory.ATTACK,
                 (Affinity.WIND,),
                 1.21,
-                JutsuType.ILLUSION,
+                TechniqueType.ILLUSION,
                 (StatusEffectType.FEAR, StatusEffectType.ROOT),
             ),
             primary_affinity=Affinity.WIND,
@@ -6120,6 +6333,59 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Tempest Hook",
             ),
             ultimate_skin_name="Tempest Throne Collapse",
+        ),
+        VillainProfile(
+            name="Zephyr Tyrant",
+            backstory=(
+                "A mountain warlord who harnessed storm currents to forge an unbreakable highland "
+                "empire. He believes the wind judges every living thing and punishes the weak."
+            ),
+            signature_power=_make_move(
+                "Hurricane Judgement",
+                MoveCategory.ATTACK,
+                (Affinity.WIND,),
+                1.27,
+                TechniqueType.ELEMENTAL,
+                (StatusEffectType.STAGGER, StatusEffectType.CRACK_ARMOR),
+            ),
+            primary_affinity=Affinity.WIND,
+            role="warlord",
+            skinned_move_names=_kit(
+                attack="Razor Gale Arc",
+                defense="Pressure Dome",
+                escape="Gale Feather Shift",
+                summon="Sky Hawk Pact",
+                link="Tempest Hook",
+            ),
+            ultimate_skin_name="Cyclone Throne Shatter",
+            health_bar_color="red",
+        ),
+        VillainProfile(
+            name="Ashen Monarch",
+            backstory=(
+                "A cursed sovereign who rules the deep underground, feeding on the fear of those "
+                "who seek forbidden earth-power beneath collapsed ruins."
+            ),
+            signature_power=_make_move(
+                "Deep Fissure Roar",
+                MoveCategory.ATTACK,
+                (Affinity.EARTH,),
+                1.26,
+                TechniqueType.ELEMENTAL,
+                (StatusEffectType.CRACK_ARMOR, StatusEffectType.FEAR),
+            ),
+            primary_affinity=Affinity.EARTH,
+            role="breaker",
+            skinned_move_names=_kit(
+                attack="Faultline Jab",
+                defense="Dune Bastion",
+                escape="Burrow Snap",
+                summon="Granite Tortoise Pact",
+                link="Pressure Knot Strike",
+            ),
+            ultimate_skin_name="Worldroot Fracture",
+            health_bar_color="red",
+            aggression_score=1,
         ),
     ]
 
@@ -6140,6 +6406,16 @@ def _seed_villain_behavior_rules() -> Dict[str, Dict[VillainStance, str]]:
             VillainStance.AGGRESSIVE: "Presses tide-form attacks in rapid, high-risk sequences.",
             VillainStance.BALANCED: "Keeps tempo steady with spacing and terrain control.",
             VillainStance.PASSIVE: "Seeks negotiation windows while guarding key positions.",
+        },
+        "Zephyr Tyrant": {
+            VillainStance.AGGRESSIVE: "Unleashes storm sequences with aerial pressure and no mercy.",
+            VillainStance.BALANCED: "Reads wind patterns and counters exploitable approaches.",
+            VillainStance.PASSIVE: "Withdraws to high ground and demands tribute before engaging.",
+        },
+        "Ashen Monarch": {
+            VillainStance.AGGRESSIVE: "Collapses the ground and traps targets in rubble ambushes.",
+            VillainStance.BALANCED: "Controls underground terrain and punishes surface movement.",
+            VillainStance.PASSIVE: "Seals tunnels and tests the intruder's resolve with riddles.",
         },
     }
     for villain in _seed_villains():
@@ -6513,7 +6789,7 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
         trophy_catalog=_seed_trophy_catalog(),
         arcs=_seed_arcs(),
         era_timeline=_seed_era_timeline(),
-        ninjutsu_library=_seed_ninjutsu_library(),
+        technique_library=_seed_technique_library(),
         shop_inventory=_seed_shop_inventory(),
     )
     player.weapons.extend(world.weapons)

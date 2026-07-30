@@ -199,6 +199,8 @@ NONLETHAL_CHARM_REP_GAIN = 2
 NONLETHAL_STEALTH_REP_GAIN = 1
 NONLETHAL_EVASION_REP_GAIN = 1
 KILL_REP_LOSS = -1
+SUMMONING_TECH_BOSS_NAME = "Vanta Puppetmaster"
+DEFAULT_REWARD_INVENTORY_KEYS = ("weapon", "clothing", "move", "ally", "tech")
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -270,6 +272,26 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "power_scale": 1.35,
         "technique_type": TechniqueType.ELEMENTAL,
         "status_effects": (StatusEffectType.CRACK_ARMOR, StatusEffectType.ROOT),
+    },
+}
+SUMMONING_TECH_SUPPORT_REWARD_SPECS: Dict[str, Dict[str, Any]] = {
+    "ally": {
+        "reward_name": "Storm Hawk Pact",
+        "move_name": "Storm Hawk Dive",
+        "category": MoveCategory.SUMMON,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.18,
+        "technique_type": TechniqueType.SUMMONING,
+        "status_effects": (StatusEffectType.STAGGER,),
+    },
+    "tech": {
+        "reward_name": "Skyline Glider Rig",
+        "move_name": "Skyline Glide Strike",
+        "category": MoveCategory.ESCAPE,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 0.9,
+        "technique_type": TechniqueType.MOBILITY,
+        "status_effects": (StatusEffectType.BLIND,),
     },
 }
 

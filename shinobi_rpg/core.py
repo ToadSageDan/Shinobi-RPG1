@@ -97,6 +97,10 @@ DEFAULT_ALLY_MIN_COUNT = 10
 QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
+REGION_ENCOUNTER_XP_SHINOBI = 12
+REGION_ENCOUNTER_XP_GUARD = 10
+REGION_ENCOUNTER_XP_ANIMAL = 8
+REGION_ENCOUNTER_XP_OTHER = 9
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
 DAY_NIGHT_CYCLE = ("dawn", "day", "dusk", "night")
 WEATHER_CYCLE = ("clear", "breezy", "rain", "storm", "fog")
@@ -107,6 +111,21 @@ OUTCOME_BRANCH_PATH_KEYS = {
     "charm": "charm_path",
     "stealth": "stealth_path",
     "evasion": "evasion_path",
+}
+STEALTH_GATED_QUEST_IDS = {"Q3", "Q5", "Q10"}
+REFORMED_VILLAIN_DIALOGUE_HOOKS: Dict[str, Dict[str, str]] = {
+    "Q3": {
+        "villain": "Kage Renda",
+        "line": '"Enough. I have no wish to feed the gate more graves," Kage Renda admits as he lowers his blade.',
+    },
+    "Q5": {
+        "villain": "Admiral Neris",
+        "line": '"The basin has drowned in orders for too long," Admiral Neris says. "Take the peace I should have offered first."',
+    },
+    "Q10": {
+        "villain": "Mist Widow",
+        "line": '"Guard the archive better than I did," Mist Widow says, abandoning the doctrine of fear for a final warning.',
+    },
 }
 ROLE_STANCE_BIAS = {
     "assassin": 1,
@@ -291,6 +310,8 @@ NONLETHAL_CHARM_REP_GAIN = 2
 NONLETHAL_STEALTH_REP_GAIN = 1
 NONLETHAL_EVASION_REP_GAIN = 1
 KILL_REP_LOSS = -1
+SUMMONING_TECH_BOSS_NAME = "Vanta Puppetmaster"
+DEFAULT_REWARD_INVENTORY_KEYS = ("weapon", "clothing", "move", "ally", "tech")
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -362,6 +383,26 @@ BOSS_EXCLUSIVE_MOVE_SPECS: Dict[str, Dict[str, Any]] = {
         "power_scale": 1.35,
         "technique_type": TechniqueType.ELEMENTAL,
         "status_effects": (StatusEffectType.CRACK_ARMOR, StatusEffectType.ROOT),
+    },
+}
+SUMMONING_TECH_SUPPORT_REWARD_SPECS: Dict[str, Dict[str, Any]] = {
+    "ally": {
+        "reward_name": "Storm Hawk Pact",
+        "move_name": "Storm Hawk Dive",
+        "category": MoveCategory.SUMMON,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 1.18,
+        "technique_type": TechniqueType.SUMMONING,
+        "status_effects": (StatusEffectType.STAGGER,),
+    },
+    "tech": {
+        "reward_name": "Skyline Glider Rig",
+        "move_name": "Skyline Glide Strike",
+        "category": MoveCategory.ESCAPE,
+        "affinities": (Affinity.WIND,),
+        "power_scale": 0.9,
+        "technique_type": TechniqueType.MOBILITY,
+        "status_effects": (StatusEffectType.BLIND,),
     },
 }
 
@@ -639,6 +680,35 @@ def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
 
 
+def _ordered_unique_affinities(affinities: Sequence[Affinity]) -> Tuple[Affinity, ...]:
+    return tuple(dict.fromkeys(affinities))
+
+
+def _region_encounter_xp_reward(encounter_name: str) -> int:
+    normalized = encounter_name.strip().lower()
+    shinobi_markers = (
+        "shinobi",
+        "ronin",
+        "mercenar",
+        "raider",
+        "assassin",
+        "monk",
+        "scout",
+        "hunter",
+        "corsair",
+        "adept",
+        "stalker",
+    )
+    animal_markers = ("hound", "wolf", "boar", "mole", "otter", "bat")
+    if "guard" in normalized or "sentry" in normalized:
+        return REGION_ENCOUNTER_XP_GUARD
+    if any(marker in normalized for marker in animal_markers):
+        return REGION_ENCOUNTER_XP_ANIMAL
+    if any(marker in normalized for marker in shinobi_markers):
+        return REGION_ENCOUNTER_XP_SHINOBI
+    return REGION_ENCOUNTER_XP_OTHER
+
+
 def _reputation_tier_for(reputation: int) -> ReputationTier:
     if reputation <= ROGUE_THRESHOLD_MIN:
         return ReputationTier.ROGUE
@@ -720,6 +790,10 @@ class VillainProfile:
     decision_memory: Dict[str, int] = field(default_factory=dict)
     health_bar_color: str = "red"
     defeated: bool = False
+    # Rich narrative fields — backstory expansion and story tie-ins
+    power_origin: str = ""
+    arc_ties: Tuple[str, ...] = field(default_factory=tuple)
+    player_backstory_hooks: Dict[str, str] = field(default_factory=dict)
 
     def apply_decision(self, decision_tag: str, intensity: int = 1) -> VillainStance:
         """Update villain temperament from player decisions over time."""
@@ -839,6 +913,7 @@ class PlayerProfile:
         default_factory=lambda: {"weapon": [], "clothing": [], "move": []}
     )
     red_bar_power_claims: Dict[str, str] = field(default_factory=dict)
+    enemy_move_claims: Dict[str, str] = field(default_factory=dict)
     moves_by_set: Dict[MoveCategory, List[Move]] = field(
         default_factory=lambda: {
             MoveCategory.ESCAPE: [],
@@ -856,6 +931,7 @@ class PlayerProfile:
     )
     trophies: Set[str] = field(default_factory=set)
     quest_log: Dict[str, QuestStatus] = field(default_factory=dict)
+    quest_resolution_state: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     ally_loyalty: Dict[str, int] = field(default_factory=dict)
     encounter_history: Dict[str, int] = field(default_factory=dict)
     credits: int = 100
@@ -1182,6 +1258,43 @@ class PlayerProfile:
     def set_quest_status(self, quest_id: str, status: QuestStatus) -> None:
         self.quest_log[quest_id] = status
 
+    def set_quest_resolution_context(
+        self,
+        quest_id: str,
+        *,
+        approach: str | None = None,
+        stealth_required: bool | None = None,
+        stealth_satisfied: bool | None = None,
+        resolved_branch_key: str | None = None,
+        completed: bool | None = None,
+    ) -> Dict[str, Any]:
+        state = self.quest_resolution_state.setdefault(
+            quest_id,
+            {
+                "approach": None,
+                "stealth_required": False,
+                "stealth_satisfied": True,
+                "stealth_gate_open": True,
+                "resolved_branch_key": None,
+                "completed": False,
+            },
+        )
+        if approach is not None:
+            state["approach"] = approach.strip().lower()
+        if stealth_required is not None:
+            state["stealth_required"] = bool(stealth_required)
+        if stealth_satisfied is not None:
+            state["stealth_satisfied"] = bool(stealth_satisfied)
+        if resolved_branch_key is not None:
+            state["resolved_branch_key"] = resolved_branch_key
+        if completed is not None:
+            state["completed"] = bool(completed)
+        state["stealth_gate_open"] = (
+            not bool(state.get("stealth_required", False))
+            or bool(state.get("stealth_satisfied", False))
+        )
+        return dict(state)
+
     def adjust_ally_loyalty(self, ally_name: str, delta: int) -> int:
         current = self.ally_loyalty.get(ally_name, 0)
         updated = max(-100, min(100, current + delta))
@@ -1222,6 +1335,15 @@ class PlayerProfile:
         if move.name not in self.unlocked_move_names:
             self.add_move(move, allow_cross_affinity=True)
 
+    def claim_enemy_exclusive_move(self, enemy_name: str, move: Move) -> bool:
+        """Claim an important enemy's exclusive move on first defeat."""
+        if enemy_name in self.enemy_move_claims:
+            return False
+        self.enemy_move_claims[enemy_name] = move.name
+        if move.name not in self.unlocked_move_names:
+            self.add_move(move, allow_cross_affinity=True)
+        return True
+
     def to_snapshot(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -1241,6 +1363,7 @@ class PlayerProfile:
             "weapons": [weapon.name for weapon in self.weapons],
             "reward_inventory": {key: list(values) for key, values in self.reward_inventory.items()},
             "red_bar_power_claims": dict(self.red_bar_power_claims),
+            "enemy_move_claims": dict(self.enemy_move_claims),
             "moves_by_set": {
                 category.value: [
                     {
@@ -1262,6 +1385,9 @@ class PlayerProfile:
             "encounter_outcomes": dict(self.encounter_outcomes),
             "trophies": sorted(self.trophies),
             "quest_log": {quest_id: status.value for quest_id, status in self.quest_log.items()},
+            "quest_resolution_state": {
+                quest_id: dict(state) for quest_id, state in self.quest_resolution_state.items()
+            },
             "ally_loyalty": dict(self.ally_loyalty),
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
@@ -1313,6 +1439,7 @@ class NinjaWorld:
     npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
+    arc_transition_history: List[Dict[str, Any]] = field(default_factory=list)
     memory_store: Dict[str, List[str]] = field(default_factory=dict)
     time_cycle_index: int = 0
     weather_cycle_index: int = 0
@@ -1357,6 +1484,81 @@ class NinjaWorld:
         bounded_index = min(max(self.current_era_index, 0), len(timeline) - 1)
         return timeline[bounded_index]
 
+    def _current_arc_phase(self) -> str:
+        if self.current_era_index >= 2:
+            return "apex"
+        if self.current_era_index >= 1:
+            return "escalation"
+        return "opening"
+
+    def _ensure_quest_resolution_state(
+        self, player: PlayerProfile, quest: Quest
+    ) -> Dict[str, Any]:
+        return player.set_quest_resolution_context(
+            quest.quest_id,
+            stealth_required=quest.stealth_required,
+            stealth_satisfied=not quest.stealth_required
+            if quest.quest_id not in player.quest_resolution_state
+            else None,
+        )
+
+    def record_quest_resolution(
+        self,
+        player: PlayerProfile,
+        quest_id: str,
+        *,
+        approach: str = "direct",
+        stealth_satisfied: bool | None = None,
+    ) -> Dict[str, Any]:
+        quest = next((q for q in self.quests if q.quest_id == quest_id), None)
+        if not quest:
+            raise ValueError(f'Quest "{quest_id}" not found.')
+        normalized_approach = approach.strip().lower()
+        inferred_stealth = normalized_approach == "stealth" if stealth_satisfied is None else stealth_satisfied
+        self._ensure_quest_resolution_state(player, quest)
+        return player.set_quest_resolution_context(
+            quest_id,
+            approach=normalized_approach,
+            stealth_required=quest.stealth_required,
+            stealth_satisfied=(not quest.stealth_required) or bool(inferred_stealth),
+        )
+
+    def _emit_arc_transition_event(
+        self,
+        *,
+        previous_phase: str,
+        previous_arc_key: str,
+        previous_era_key: str,
+    ) -> Dict[str, Any]:
+        current_phase = self._current_arc_phase()
+        current_era = self._current_era()
+        record = {
+            "event_key": f"arc_transition::{previous_phase}_to_{current_phase}",
+            "event_type": "arc_transition",
+            "label": f"The world shifts from {previous_phase} to {current_phase}.",
+            "from_phase": previous_phase,
+            "to_phase": current_phase,
+            "from_arc_key": previous_arc_key,
+            "to_arc_key": self.current_arc_key,
+            "from_era": previous_era_key,
+            "to_era": current_era["key"],
+            "age": self.current_age,
+        }
+        self.arc_transition_history.append(record)
+        self.world_event_history.append(dict(record))
+        self._log_tapestry(
+            event_type="arc_transition",
+            label=record["label"],
+            causes=[f"phase:{previous_phase}", f"phase:{current_phase}"],
+            effects={
+                "from_arc_key": previous_arc_key,
+                "to_arc_key": self.current_arc_key,
+                "from_era": previous_era_key,
+                "to_era": current_era["key"],
+            },
+        )
+        return record
+
     def _arc_for_region(self, region_name: str) -> ArcDefinition | None:
         for arc in self.arcs:
             if region_name in arc.regions:
@@ -1385,6 +1587,9 @@ class NinjaWorld:
         return entry
 
     def _refresh_arc_and_era(self) -> None:
+        previous_phase = self._current_arc_phase()
+        previous_arc_key = self.current_arc_key
+        previous_era_key = self._current_era()["key"]
         cleared = sum(1 for region in self.regions if region.cleared)
         if cleared >= 3:
             self.current_era_index = min(2, len(self.era_timeline) - 1)
@@ -1402,6 +1607,16 @@ class NinjaWorld:
             arc_pressure[arc_key] = arc_pressure.get(arc_key, 0) + pressure - recovery
         if arc_pressure:
             self.current_arc_key = sorted(arc_pressure.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        current_phase = self._current_arc_phase()
+        if previous_phase != current_phase and (previous_phase, current_phase) in {
+            ("opening", "escalation"),
+            ("escalation", "apex"),
+        }:
+            self._emit_arc_transition_event(
+                previous_phase=previous_phase,
+                previous_arc_key=previous_arc_key,
+                previous_era_key=previous_era_key,
+            )
 
     def get_environment_state(self) -> Dict[str, Any]:
         return {
@@ -2005,6 +2220,8 @@ class NinjaWorld:
                 "credits": player.credits,
                 "run_signature": run_signature,
                 "living_tapestry": archived_tapestry,
+                "enemy_move_claims": dict(player.enemy_move_claims),
+                "enemy_exclusive_moves": sorted(set(player.enemy_move_claims.values())),
             }
         )
         for entry in archived_tapestry:
@@ -2241,6 +2458,56 @@ class NinjaWorld:
                 causes=[f"decision_cadence:{decision_total}"],
             )
 
+    def get_villain_backstory_profile(self, villain_name: str) -> Dict[str, Any]:
+        """Return the full backstory, power origin, arc ties, and player hooks for a villain."""
+        villain = self._find_villain(villain_name)
+        villain_affinities = self._villain_affinity_loadout(villain)
+        return {
+            "name": villain.name,
+            "backstory": villain.backstory,
+            "power_origin": villain.power_origin,
+            "signature_power": villain.signature_power.name,
+            "primary_affinity": villain.primary_affinity.value,
+            "secondary_affinities": [affinity.value for affinity in villain_affinities[1:]],
+            "affinities": [affinity.value for affinity in villain_affinities],
+            "signature_affinities": [affinity.value for affinity in villain.signature_power.affinities],
+            "ultimate_affinities": [
+                affinity.value for affinity in self._move_affinities_by_name(villain.ultimate_skin_name)
+            ],
+            "role": villain.role,
+            "arc_ties": list(villain.arc_ties),
+            "player_backstory_hooks": dict(villain.player_backstory_hooks),
+            "stance": villain.stance.value,
+            "relationship_arc": next(
+                (
+                    cp["relationship_arc"]
+                    for cp in self.get_villain_evolution_checkpoints()
+                    if cp["villain"] == villain_name
+                ),
+                "dormant",
+            ),
+        }
+
+    def _move_affinities_by_name(self, move_name: str) -> Tuple[Affinity, ...]:
+        if not move_name:
+            return ()
+        for move in self.technique_library:
+            if move.name == move_name:
+                return move.affinities
+        for spec in BOSS_EXCLUSIVE_MOVE_SPECS.values():
+            if spec["name"] == move_name:
+                return tuple(spec["affinities"])
+        return ()
+
+    def _villain_affinity_loadout(self, villain: VillainProfile) -> Tuple[Affinity, ...]:
+        return _ordered_unique_affinities(
+            (
+                villain.primary_affinity,
+                *villain.signature_power.affinities,
+                *self._move_affinities_by_name(villain.ultimate_skin_name),
+            )
+        )
+
     def _find_villain(self, name: str) -> VillainProfile:
         villain = next((v for v in self.villains if v.name == name), None)
         if not villain:
@@ -2338,6 +2605,7 @@ class NinjaWorld:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
         if not quest:
             raise ValueError(f'Quest "{quest_id}" not found.')
+        state = self._ensure_quest_resolution_state(player, quest)
 
         if not quest.branch_outcomes:
             return {
@@ -2353,12 +2621,22 @@ class NinjaWorld:
                 "villain_stance_impacts": dict(quest.villain_stance_impacts),
                 "reputation_impacts": dict(quest.reputation_impacts),
                 "trophy_hooks": list(quest.trophy_hooks),
+                "quest_resolution": dict(state),
+                "reformed_villain_hook": None,
             }
 
-        branch_key = self._resolve_branch_key(player, quest.branch_outcomes)
+        branch_key = self._resolve_branch_key(player, quest, quest.branch_outcomes)
 
         outcome = quest.branch_outcomes.get(branch_key) or quest.branch_outcomes.get(
             "default", quest.objective
+        )
+        reformed_hook = self._get_reformed_villain_hook(quest.quest_id)
+        if reformed_hook:
+            outcome = f"{outcome} {reformed_hook}"
+        state = player.set_quest_resolution_context(
+            quest.quest_id,
+            stealth_required=quest.stealth_required,
+            resolved_branch_key=branch_key,
         )
         return {
             "quest_id": quest.quest_id,
@@ -2373,6 +2651,8 @@ class NinjaWorld:
             "villain_stance_impacts": dict(quest.villain_stance_impacts),
             "reputation_impacts": dict(quest.reputation_impacts),
             "trophy_hooks": list(quest.trophy_hooks),
+            "quest_resolution": dict(state),
+            "reformed_villain_hook": reformed_hook,
         }
 
     def start_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
@@ -2394,6 +2674,10 @@ class NinjaWorld:
         if player.quest_log.get(quest_id) == QuestStatus.COMPLETED:
             raise ValueError(f'Quest "{quest_id}" has already been completed.')
         player.set_quest_status(quest_id, QuestStatus.ACTIVE)
+        self._ensure_quest_resolution_state(
+            player,
+            next(q for q in self.quests if q.quest_id == quest_id),
+        )
         return self.resolve_quest_branch(player, quest_id)
 
     def complete_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
@@ -2404,6 +2688,13 @@ class NinjaWorld:
             raise ValueError(f'Quest "{quest_id}" must be active before completion.')
 
         player.set_quest_status(quest_id, QuestStatus.COMPLETED)
+        branch_result = self.resolve_quest_branch(player, quest_id)
+        player.set_quest_resolution_context(
+            quest_id,
+            stealth_required=quest.stealth_required,
+            resolved_branch_key=branch_result["branch_key"],
+            completed=True,
+        )
         levels_gained = player.stats.gain_xp(quest.reward_xp)
         credit_reward = QUEST_CREDIT_REWARD_BASE + (max(player.stats.level - 1, 0) * QUEST_CREDIT_REWARD_STEP)
         player.earn_credits(credit_reward)
@@ -2442,6 +2733,8 @@ class NinjaWorld:
             "levels_gained": levels_gained,
             "credit_reward": credit_reward,
             "new_balance": player.credits,
+            "resolved_branch_key": branch_result["branch_key"],
+            "stealth_gate_open": branch_result["quest_resolution"]["stealth_gate_open"],
         }
 
     def fail_quest(self, player: PlayerProfile, quest_id: str) -> None:
@@ -2465,14 +2758,40 @@ class NinjaWorld:
             effects={"loyalty_impact": -1},
         )
 
-    def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
+    def _get_reformed_villain_hook(self, quest_id: str) -> str | None:
+        hook = REFORMED_VILLAIN_DIALOGUE_HOOKS.get(quest_id)
+        if not hook:
+            return None
+        checkpoints = {
+            checkpoint["villain"]: checkpoint
+            for checkpoint in self.get_villain_evolution_checkpoints()
+        }
+        villain_checkpoint = checkpoints.get(hook["villain"])
+        if villain_checkpoint and villain_checkpoint.get("relationship_arc") == "reformed":
+            return hook["line"]
+        return None
+
+    def _resolve_branch_key(
+        self, player: PlayerProfile, quest: Quest, branch_outcomes: Dict[str, str]
+    ) -> str:
         """Resolve branch precedence: backstory, path states, narrative tags, then default.
 
         Narrative tags are checked in alphabetical order to keep matching deterministic.
         """
+        state = self._ensure_quest_resolution_state(player, quest)
         if player.selected_backstory and player.selected_backstory.key in branch_outcomes:
             return player.selected_backstory.key
-        if player.is_nonlethal_path_active() and "nonlethal_path" in branch_outcomes:
+        tactical_approach = OUTCOME_BRANCH_PATH_KEYS.get(str(state.get("approach")))
+        if tactical_approach in branch_outcomes:
+            return tactical_approach
+        if (
+            player.is_nonlethal_path_active()
+            and "nonlethal_path" in branch_outcomes
+            and (
+                not quest.stealth_required
+                or bool(state.get("stealth_satisfied"))
+            )
+        ):
             return "nonlethal_path"
         dominant_outcome = player.dominant_encounter_outcome()
         if dominant_outcome:
@@ -2548,11 +2867,23 @@ class NinjaWorld:
         encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
         encounter = encounter_pool[encounter_index]
         encounter_count = player.record_region_encounter(region_name)
+        reward_xp = _region_encounter_xp_reward(encounter)
+        levels_gained = player.stats.gain_xp(reward_xp)
+        enemy_exclusive_move = enemy_exclusive_move_for(encounter)
+        enemy_exclusive_move_name = enemy_exclusive_move.name if enemy_exclusive_move else None
+        enemy_exclusive_move_unlocked = None
+        if enemy_exclusive_move and player.claim_enemy_exclusive_move(encounter, enemy_exclusive_move):
+            enemy_exclusive_move_unlocked = enemy_exclusive_move.name
         return {
             "region": region_name,
             "encounter": encounter,
             "encounter_index": encounter_index,
             "times_seen": encounter_count,
+            "reward_xp": reward_xp,
+            "levels_gained": levels_gained,
+            "level": player.stats.level,
+            "enemy_exclusive_move": enemy_exclusive_move_name,
+            "enemy_exclusive_move_unlocked": enemy_exclusive_move_unlocked,
             "unauthorized_region": unauthorized_region,
             "recommended_level": region.minimum_level,
             "player_level": player.stats.level,
@@ -2584,6 +2915,9 @@ class NinjaWorld:
             if item.get("requires_nonlethal") and not player.is_nonlethal_path_active():
                 continue
             if player.nonlethal_action_count() < int(item.get("min_nonlethal_actions", 0)):
+                continue
+            required_quests = item.get("required_quests", ())
+            if any(player.quest_log.get(quest_id) != QuestStatus.COMPLETED for quest_id in required_quests):
                 continue
             if (
                 item.get("requires_world_clear_nonlethal")
@@ -3066,15 +3400,51 @@ class NinjaWorld:
                     "name": villain.name,
                     "role": villain.role,
                     "primary_affinity": villain.primary_affinity.value,
+                    "secondary_affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)[1:]
+                    ],
+                    "affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)
+                    ],
                     "signature": villain.signature_power.name,
+                    "signature_affinities": [
+                        affinity.value for affinity in villain.signature_power.affinities
+                    ],
                     "skinned_moves": dict(villain.skinned_move_names),
                     "ultimate_skin": villain.ultimate_skin_name,
+                    "ultimate_affinities": [
+                        affinity.value for affinity in self._move_affinities_by_name(villain.ultimate_skin_name)
+                    ],
                 }
                 for villain in self.villains
             ],
+            "villain_backstory_profiles": {
+                villain.name: {
+                    "backstory": villain.backstory,
+                    "power_origin": villain.power_origin,
+                    "affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)
+                    ],
+                    "secondary_affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)[1:]
+                    ],
+                    "arc_ties": list(villain.arc_ties),
+                    "player_backstory_hooks": dict(villain.player_backstory_hooks),
+                }
+                for villain in self.villains
+            },
             "red_bar_power_claims": dict(player.red_bar_power_claims),
+            "enemy_move_claims": dict(player.enemy_move_claims),
+            "enemy_exclusive_moves_unlocked": sorted(set(player.enemy_move_claims.values())),
+            "enemy_exclusive_move_progress": {
+                "unlocked": len(player.enemy_move_claims),
+                "total": len(ENEMY_EXCLUSIVE_MOVE_SPECS),
+            },
             "red_bar_progress": red_bar_progress,
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
+            "quest_resolution_state": {
+                quest_id: dict(state) for quest_id, state in player.quest_resolution_state.items()
+            },
             "ally_loyalty": dict(player.ally_loyalty),
             "credits": player.credits,
             "kill_counter": {
@@ -3107,6 +3477,7 @@ class NinjaWorld:
                 "scheduled_regions": list(self.dynamic_region_chain),
                 "era": dict(self._current_era()),
                 "age": self.current_age,
+                "transition_history": [dict(entry) for entry in self.arc_transition_history],
             },
             "living_tapestry": {
                 "active_run_entries": [dict(entry) for entry in self.active_run_tapestry],
@@ -3260,6 +3631,9 @@ class NinjaWorld:
                     {
                         "name": villain.name,
                         "backstory": villain.backstory,
+                        "power_origin": villain.power_origin,
+                        "arc_ties": list(villain.arc_ties),
+                        "player_backstory_hooks": dict(villain.player_backstory_hooks),
                         "signature_power": {
                             "name": villain.signature_power.name,
                             "category": villain.signature_power.category.value,
@@ -3321,6 +3695,7 @@ class NinjaWorld:
                 "vault_meta_tapestry": list(self.vault_meta_tapestry),
                 "active_run_tapestry": list(self.active_run_tapestry),
                 "world_event_history": list(self.world_event_history),
+                "arc_transition_history": [dict(entry) for entry in self.arc_transition_history],
                 "dynamic_region_chain": list(self.dynamic_region_chain),
                 "recent_boss_chains": [list(chain) for chain in self.recent_boss_chains],
                 "region_state": {key: dict(value) for key, value in self.region_state.items()},
@@ -3454,6 +3829,9 @@ class NinjaWorld:
             VillainProfile(
                 name=item["name"],
                 backstory=item["backstory"],
+                power_origin=item.get("power_origin", ""),
+                arc_ties=tuple(item.get("arc_ties", [])),
+                player_backstory_hooks=dict(item.get("player_backstory_hooks", {})),
                 signature_power=Move(
                     name=item.get("signature_power", {}).get("name", f'{item["name"]} Signature Art'),
                     category=MoveCategory(
@@ -3556,6 +3934,7 @@ class NinjaWorld:
             vault_meta_tapestry=list(world_snapshot.get("vault_meta_tapestry", [])),
             active_run_tapestry=list(world_snapshot.get("active_run_tapestry", [])),
             world_event_history=list(world_snapshot.get("world_event_history", [])),
+            arc_transition_history=list(world_snapshot.get("arc_transition_history", [])),
             dynamic_region_chain=list(world_snapshot.get("dynamic_region_chain", [])),
             recent_boss_chains=[list(chain) for chain in world_snapshot.get("recent_boss_chains", [])],
             region_state={
@@ -3635,6 +4014,10 @@ class NinjaWorld:
                 villain_name: move_name
                 for villain_name, move_name in player_snapshot.get("red_bar_power_claims", {}).items()
             },
+            enemy_move_claims={
+                enemy_name: move_name
+                for enemy_name, move_name in player_snapshot.get("enemy_move_claims", {}).items()
+            },
             selected_backstory=backstory_by_key.get(player_snapshot.get("selected_backstory")),
             narrative_tags=set(player_snapshot.get("narrative_tags", [])),
             encounter_outcomes=dict(
@@ -3647,6 +4030,10 @@ class NinjaWorld:
             quest_log={
                 quest_id: QuestStatus(status)
                 for quest_id, status in player_snapshot.get("quest_log", {}).items()
+            },
+            quest_resolution_state={
+                quest_id: dict(state)
+                for quest_id, state in player_snapshot.get("quest_resolution_state", {}).items()
             },
             ally_loyalty={
                 ally_name: int(value)
@@ -3686,6 +4073,14 @@ class NinjaWorld:
         if not player.unlocked_move_names:
             player.unlocked_move_names = {
                 move.name for move_set in player.moves_by_set.values() for move in move_set
+            }
+        if not player.enemy_move_claims:
+            move_to_enemy = {spec["name"]: enemy for enemy, spec in ENEMY_EXCLUSIVE_MOVE_SPECS.items()}
+            player.enemy_move_claims = {
+                enemy_name: move_name
+                for move_name in player.unlocked_move_names
+                for enemy_name in [move_to_enemy.get(move_name)]
+                if enemy_name
             }
 
         if not player.quest_log:
@@ -3805,8 +4200,17 @@ def _seed_weapons() -> List[Weapon]:
     ]
 
 
-def _affinity_animation_profile(affinity: Affinity, category: MoveCategory) -> Dict[str, str]:
-    style = {
+def _blend_animation_beats(descriptions: Sequence[str]) -> str:
+    unique_descriptions = list(dict.fromkeys(descriptions))
+    if len(unique_descriptions) == 1:
+        return unique_descriptions[0]
+    if len(unique_descriptions) == 2:
+        return f"{unique_descriptions[0]} fused with {unique_descriptions[1]}"
+    return f'{", ".join(unique_descriptions[:-1])}, and {unique_descriptions[-1]}'
+
+
+def _affinity_animation_profile(affinities: Sequence[Affinity], category: MoveCategory) -> Dict[str, str]:
+    styles = {
         Affinity.FIRE: {
             "startup": "embers flare at shoulders",
             "travel": "corkscrew flame lane",
@@ -3831,12 +4235,14 @@ def _affinity_animation_profile(affinity: Affinity, category: MoveCategory) -> D
             "hit": "pressure ripple cross-cut",
             "recovery": "feather-light afterimage fade",
         },
-    }[affinity]
+    }
+    ordered_affinities = _ordered_unique_affinities(affinities)
+    animation_styles = [styles[affinity] for affinity in ordered_affinities]
     return {
-        "startup": style["startup"],
-        "travel": style["travel"],
-        "hit": f'{style["hit"]} ({category.value})',
-        "recovery": style["recovery"],
+        "startup": _blend_animation_beats([style["startup"] for style in animation_styles]),
+        "travel": _blend_animation_beats([style["travel"] for style in animation_styles]),
+        "hit": f'{_blend_animation_beats([style["hit"] for style in animation_styles])} ({category.value})',
+        "recovery": _blend_animation_beats([style["recovery"] for style in animation_styles]),
     }
 
 
@@ -3848,7 +4254,6 @@ def _make_move(
     technique_type: TechniqueType,
     status_effects: Tuple[StatusEffectType, ...] = (),
 ) -> Move:
-    primary = affinities[0]
     return Move(
         name=name,
         category=category,
@@ -3856,7 +4261,7 @@ def _make_move(
         power_scale=power_scale,
         technique_type=technique_type,
         status_effects=status_effects,
-        animation_profile=_affinity_animation_profile(primary, category),
+        animation_profile=_affinity_animation_profile(affinities, category),
     )
 
 
@@ -4329,7 +4734,15 @@ def _seed_regions() -> List[Region]:
             name="Verdant Gate",
             village_hub="Leafrise Village",
             enemies=["Bandit Scouts", "Mist Ronin", "Root Stalkers"],
-            encounter_table=["Bandit Scouts", "Mist Ronin", "Root Stalkers", "Hidden Sentry"],
+            encounter_table=[
+                "Academy Shinobi",
+                "Bandit Scouts",
+                "Mist Ronin",
+                "Root Stalkers",
+                "Gate Patrol Guard",
+                "Moss Boar",
+                "Hidden Sentry",
+            ],
             allies=["Dan"],
             boss="Kage Renda",
             boss_rewards={
@@ -4393,7 +4806,14 @@ def _seed_regions() -> List[Region]:
             name="Ashen Cradle",
             village_hub="Cinder Port",
             enemies=["Ash Mercenaries", "Lava Hounds"],
-            encounter_table=["Ash Mercenaries", "Lava Hounds", "Ember Raiders"],
+            encounter_table=[
+                "Cinder Trainee Shinobi",
+                "Ash Mercenaries",
+                "Ember Raiders",
+                "Port Guard Cadet",
+                "Lava Hounds",
+                "Ash Boar",
+            ],
             allies=["Moon", "Sleep"],
             boss="General Voln",
             boss_rewards={
@@ -4457,7 +4877,14 @@ def _seed_regions() -> List[Region]:
             name="Tideglass Basin",
             village_hub="Azure Rest",
             enemies=["Tide Hunters", "Reef Assassins"],
-            encounter_table=["Tide Hunters", "Reef Assassins", "Basin Corsairs"],
+            encounter_table=[
+                "Basin Shinobi Trainee",
+                "Tide Hunters",
+                "Reef Assassins",
+                "Basin Corsairs",
+                "Harbor Guard",
+                "Reef Otter Pack",
+            ],
             allies=["Dot", "Porter"],
             boss="Admiral Neris",
             boss_rewards={
@@ -4521,8 +4948,10 @@ def _seed_regions() -> List[Region]:
             village_hub="Crestfall Outpost",
             enemies=["Windcutter Raiders", "Gale Monks", "Ridge Wolves"],
             encounter_table=[
+                "Ridge Shinobi Aspirant",
                 "Windcutter Raiders",
                 "Gale Monks",
+                "Stormwall Guard",
                 "Ridge Wolves",
                 "Stormcaller Scouts",
                 "Aerial Sentry",
@@ -4591,10 +5020,13 @@ def _seed_regions() -> List[Region]:
             village_hub="Dusk Refuge",
             enemies=["Cave Stalkers", "Poison Adepts", "Hollow Wraiths"],
             encounter_table=[
+                "Hollow Shinobi Scout",
                 "Cave Stalkers",
                 "Poison Adepts",
+                "Refuge Guard",
                 "Hollow Wraiths",
                 "Ember Moles",
+                "Cave Bats",
                 "Deep Sentries",
             ],
             allies=["Sleep", "Dot"],
@@ -4759,7 +5191,7 @@ def _seed_quests() -> List[Quest]:
             quest_id="Q3",
             title="Break the Gate",
             objective="Defeat Kage Renda and secure Verdant Gate.",
-            stealth_required=False,
+            stealth_required=True,
             reward_xp=220,
             branch_outcomes={
                 "exiled_heir": "You invoke a legacy challenge and force Kage Renda into a formal duel for the gate.",
@@ -4792,7 +5224,7 @@ def _seed_quests() -> List[Quest]:
             quest_id="Q5",
             title="Moonlit Reckoning",
             objective="Confront the Tideglass command ring and decide the final terms of peace.",
-            stealth_required=False,
+            stealth_required=True,
             reward_xp=320,
             branch_outcomes={
                 "exiled_heir": "You restore the old charter and bind the command ring to a public oath.",
@@ -6692,9 +7124,32 @@ def _quest_trophy_hooks(quest_number: int) -> Tuple[str, ...]:
     return (TROPHY_MERCY_CROWN, TROPHY_QUESTMASTER)
 
 
+def _build_generic_tactical_branch_outcomes(quest: Quest) -> Dict[str, str]:
+    return {
+        "stealth_path": (
+            f"You complete {quest.title} through stealth-first positioning, bypassing the loudest resistance "
+            "and securing the objective before alarms can spread."
+        ),
+        "charm_path": (
+            f"You complete {quest.title} through negotiation, leverage, and disciplined restraint, turning "
+            "open conflict into a controlled concession."
+        ),
+        "evasion_path": (
+            f"You complete {quest.title} through misdirection and evasive movement, exhausting enemy responses "
+            "until the objective is yours."
+        ),
+        "kill_path": (
+            f"You complete {quest.title} by overwhelming the opposition in a decisive strike and forcing the "
+            "field to submit."
+        ),
+    }
+
+
 def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
     required_branch_keys = ("exiled_heir", "street_ghost", "wandering_monk", "default")
     for idx, quest in enumerate(quests):
+        if quest.quest_id in STEALTH_GATED_QUEST_IDS:
+            quest.stealth_required = True
         if not quest.premise:
             quest.premise = quest.objective
         if not quest.choices:
@@ -6724,6 +7179,9 @@ def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
         for branch_key in required_branch_keys:
             if branch_key not in quest.branch_outcomes:
                 quest.branch_outcomes[branch_key] = quest.branch_outcomes["default"]
+        for branch_key, outcome in _build_generic_tactical_branch_outcomes(quest).items():
+            if branch_key not in quest.branch_outcomes:
+                quest.branch_outcomes[branch_key] = outcome
 
 
 def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:
@@ -6796,9 +7254,16 @@ def _seed_villains() -> List[VillainProfile]:
         VillainProfile(
             name="Kage Renda",
             backstory=(
-                "Once the Gate Council's sworn bodyguard, Kage Renda was exiled after uncovering "
-                "forged command seals. He now enforces trial-by-duel at Verdant Gate, believing only "
-                "strength proven in public can keep courier roads from collapsing into coup politics."
+                "Kage Renda served as the elite bodyguard of a Leafrise Council elder for twelve "
+                "years, protecting a man he privately despised for his corruption. When a rival "
+                "faction's assassin succeeded where Renda had always held the line — and Renda "
+                "found himself relieved he had not stopped the blade — the Council read his grief "
+                "as guilt and cast him out. Disgraced but not broken, he retreated to the "
+                "Verdant Gate highlands and spent five years drilling wind-edge techniques in "
+                "isolation, transforming his shame into surgical lethality. He returned not to "
+                "reclaim his post, but to fill the power vacuum the council's collapse created — "
+                "on his own terms. More than revenge, he wants political control over the region's "
+                "next order so no council can discard him again."
             ),
             signature_power=_make_move(
                 "Rending Spiral",
@@ -6818,13 +7283,59 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Shadow Nail Burst",
             ),
             ultimate_skin_name="Tempest Throne Collapse",
+            power_origin=(
+                "Rending Spiral was forged in exile: five years of drilling the same wind-angle "
+                "cut against highland stone, each repetition channeling a different grievance until "
+                "the blade and the wind became inseparable. What began as a swordsman's grief "
+                "ritual became the most precise killing arc in the Verdant Gate region."
+            ),
+            arc_ties=("political_war",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Renda recognizes the weight of unjust exile in the player's bearing. He "
+                    "pauses mid-fight and says: 'You understand it too — being discarded by "
+                    "the very system you served.' He will accept a formal duel challenge and "
+                    "honor the outcome without reprisal."
+                ),
+                "street_ghost": (
+                    "Renda has dealt with shadow-walkers before. He views the player's "
+                    "underworld survival with cold respect: 'No titles, no ledgers — you "
+                    "built your worth from nothing.' He tests strength before trust."
+                ),
+                "wandering_monk": (
+                    "Renda finds pacifism philosophically naive but tactically respectable. "
+                    "He will not attack a disarmed opponent. If the player approaches without "
+                    "weapons drawn, he sheathes his blade and demands a conversation instead."
+                ),
+                "nonlethal_path": (
+                    "If the player has taken no lives, Renda acknowledges the discipline "
+                    "required. He offers a restraint pact: neither side will draw blood if "
+                    "the player can prove their path is principle, not cowardice."
+                ),
+                "rogue_path": (
+                    "Renda sees a dark mirror of himself in a rogue player. He warns: "
+                    "'I walked that road. It leads nowhere worth arriving.' He fights harder "
+                    "against rogues — trying to break them before the path does."
+                ),
+                "heroic_path": (
+                    "Renda respects the heroic reputation but doesn't believe it lasts. "
+                    "He calls the player's honor a loan against future compromise, and "
+                    "tests it with morally ambiguous pre-fight demands."
+                ),
+            },
         ),
         VillainProfile(
             name="General Voln",
             backstory=(
-                "General Voln forged his doctrine in Ashen Cradle trench wars where ration lines failed "
-                "faster than armies. His fire-pressure formations are built to break logistics first, "
-                "forcing every faction to kneel before supply math instead of battlefield honor."
+                "Voln commanded the Border Ash Wars for nine seasons, winning through "
+                "methodical attrition that his superiors praised and his soldiers survived "
+                "in broken silence. When the peace treaty dismantled his army — and the "
+                "nobles redistributed the veterans' pensions to fund court luxuries — Voln "
+                "returned home to find his community gutted. He rebuilt. Not a nation, not "
+                "an ideology — just an army loyal to payroll and survival. He now controls "
+                "the Ashen Cradle through fire-forward pressure, hiring mercenaries and "
+                "ex-soldiers the system abandoned, convinced that peace is only what the "
+                "powerful call the period between their wars."
             ),
             signature_power=_make_move(
                 "Ember Cyclone",
@@ -6845,13 +7356,59 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Furnace Eclipse",
             aggression_score=1,
+            power_origin=(
+                "Ember Cyclone is the signature of Voln's assault doctrine — a rotating "
+                "fire-vortex column he developed to flush defenders from fortified positions "
+                "during the Border Ash Wars. He can call it down the way most soldiers call "
+                "retreat: reflexively, without hesitation, because it has saved him more "
+                "times than any shield."
+            ),
+            arc_ties=("fracture_front",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Voln tests bloodline claimants with disdain: 'Heritage is just another "
+                    "word for leverage.' He will attempt to bribe the player with military "
+                    "resources if he senses the lineage claim could destabilize his rivals."
+                ),
+                "street_ghost": (
+                    "Voln privately respects street-built operatives — they remind him of "
+                    "his best soldiers. He offers to hire the player as an embedded spy "
+                    "inside his own command, using the player to smoke out disloyal officers."
+                ),
+                "wandering_monk": (
+                    "Voln scorns visible pacifism, but his veterans whisper he spent three "
+                    "months in a fire temple before his first campaign. He will not admit "
+                    "this. A monk player who mentions Cinder Temple by name will see him "
+                    "pause just long enough to matter."
+                ),
+                "nonlethal_path": (
+                    "Voln sees nonlethal tactics as logistics, not ethics. He respects "
+                    "effective outcomes regardless of method, but warns: 'Every enemy you "
+                    "spare is a variable you cannot control.'"
+                ),
+                "rogue_path": (
+                    "Voln offers a direct alliance to rogue players. His mercenary network "
+                    "needs skilled operators who don't ask about cargo manifests. The deal "
+                    "is genuine but includes a loyalty clause with lethal penalties."
+                ),
+                "heroic_path": (
+                    "Voln views heroic reputation as a recruiting tool for the naive. He "
+                    "attempts to publicly discredit the player before the confrontation, "
+                    "manufacturing evidence of past atrocities to destabilize their alliances."
+                ),
+            },
         ),
         VillainProfile(
             name="Admiral Neris",
             backstory=(
-                "Admiral Neris was once celebrated for protecting evacuation fleets during monsoon sieges. "
-                "After tribunal betrayal cost her command, she weaponized tide-control barriers to decide "
-                "which ports receive aid and which are left to drown in political debt."
+                "Neris spent twenty years defending Tideglass Basin's coastal trade routes, "
+                "watching civilian ships burn and reconstruction efforts collapse under cycles "
+                "of piracy and political indifference. After her third failed petition to the "
+                "regional council for permanent garrison support, she concluded that the only "
+                "sustainable peace was enforced peace. She declared the Recovery Mandate — "
+                "martial law framed as reconstruction — and has held the basin under military "
+                "occupation ever since. She genuinely believes she is saving what remains of "
+                "civilization. Her subjects mostly disagree."
             ),
             signature_power=_make_move(
                 "Abyss Arc",
@@ -6871,13 +7428,64 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Torrent Breaker",
             ),
             ultimate_skin_name="Leviathan Breakfall",
+            power_origin=(
+                "The Abyss Arc barrier was reverse-engineered from an enemy siege tactic that "
+                "nearly sank Neris's flagship. The attacking fleet used deep-current pressure "
+                "to collapse her hull from below. She survived by understanding the mechanic "
+                "fast enough to redirect it. She spent the next year converting that near-death "
+                "into a personal defensive doctrine: absorb what should destroy you, redirect "
+                "it, hold the line."
+            ),
+            arc_ties=("recovery_mandate",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Neris has naval intelligence dossiers on every noble bloodline in the "
+                    "region. She knows who the player's lineage connects to — and can use "
+                    "that information as leverage or as an unexpected olive branch depending "
+                    "on the player's approach."
+                ),
+                "street_ghost": (
+                    "Neris has the player's face in her intelligence archive from a past "
+                    "coastal job. She acknowledges this openly, then offers a deal: "
+                    "'I have leverage on you. You have skills I need. Let's be practical.'"
+                ),
+                "wandering_monk": (
+                    "A wandering monk once served as her fleet's counsel during the worst "
+                    "of the trade route wars. She respected that monk's advice even when "
+                    "she ignored it. A monk player triggers a visible hesitation in her "
+                    "command posture — the one soft point in her armor."
+                ),
+                "nonlethal_path": (
+                    "Neris respects operational efficiency. A player who has neutralized "
+                    "threats without permanent casualties catches her interest: 'You "
+                    "understand containment.' She offers negotiation before combat if "
+                    "approached in the right window."
+                ),
+                "rogue_path": (
+                    "Neris uses rogue players as examples — their reputation serves her "
+                    "propaganda arm. She will publicly frame the confrontation as a "
+                    "righteous authority stopping a known criminal."
+                ),
+                "heroic_path": (
+                    "Neris initially dismisses heroic reputation as performance. But if "
+                    "pressed, she admits she once had that kind of reputation — before "
+                    "the third coastal burning. She'll give the player one honest warning "
+                    "before committing to the fight."
+                ),
+            },
         ),
         VillainProfile(
             name="Mist Widow",
             backstory=(
-                "Mist Widow trained in the shrine shadow schools before being sold into covert tribunal work. "
-                "She now runs fog-network assassinations that erase witnesses and seed panic ahead of "
-                "false-flag campaigns."
+                "Mist Widow — real name unknown — was a senior enforcer for the Tideglass "
+                "shinobi guild before the guild sold out its own operatives to a noble house "
+                "in exchange for a generation of protection contracts. She was the only "
+                "one who got out of the ambush. She didn't rebuild the guild. She became "
+                "freelance, operating by a principle of chosen loyalty: she'll still take "
+                "the job, but she decides who bleeds. She now treats stealth as a personal "
+                "creed as much as a battlefield method. The toxic fog she uses is partly "
+                "tactical, partly personal — she prefers battlefields where she controls "
+                "who can see."
             ),
             signature_power=_make_move(
                 "Widow Fog Domain",
@@ -6898,13 +7506,57 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Abyss Crown Rupture",
             health_bar_color="amber",
+            power_origin=(
+                "Widow Fog Domain was developed over years of field-testing assassination "
+                "corridors in Tideglass coastal terrain. The toxic fog is a water-affinity "
+                "technique that mimics coastal morning mist — nearly indistinguishable until "
+                "the panic and blindness set in. She uses it to equalize fights she can't "
+                "win at close range and to ensure no witnesses survive with clear accounts."
+            ),
+            arc_ties=("recovery_mandate", "fracture_front"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Mist Widow has intel on every noble house in the basin. She will sell "
+                    "information about the player's bloodline rivals — for the right price "
+                    "or the right promise."
+                ),
+                "street_ghost": (
+                    "She immediately recognizes a fellow shadow-trained operative and "
+                    "drops the pretense of adversarial framing. She names the guild that "
+                    "betrayed her, tests if the player has a similar scar, and offers "
+                    "information before raising weapons."
+                ),
+                "wandering_monk": (
+                    "She finds the wandering monk path baffling but respects the discipline. "
+                    "She won't use fog blindness against a player who explicitly fights "
+                    "without lethal intent — it feels wasteful to her."
+                ),
+                "nonlethal_path": (
+                    "A nonlethal player earns a cold professional nod. She prefers "
+                    "surgical outcomes herself. She may stand down entirely if the player "
+                    "can demonstrate they have no interest in the guild's old contracts."
+                ),
+                "rogue_path": (
+                    "She views rogue players as potential hires, not enemies. She offers "
+                    "work — but warns that her freelance contracts come with strict "
+                    "clauses about collateral."
+                ),
+                "heroic_path": (
+                    "She finds heroic players entertaining in a grim way. 'You'll either "
+                    "grow out of it or die for it,' she says, then attacks without malice."
+                ),
+            },
         ),
         VillainProfile(
             name="Iron Lotus",
             backstory=(
-                "Iron Lotus was a peaceguard instructor who watched doctrine become a weapon for succession purges. "
-                "Her counter-stance school turns opponents' momentum against them as a lesson that careless force "
-                "always feeds the next civil fracture."
+                "Iron Lotus was the last grandmaster of the Counter-Petal fighting tradition "
+                "before the order's temple was seized and disbanded by a noble house claiming "
+                "the land for quarrying. She refused to fight back — not out of weakness, but "
+                "because her tradition teaches that the most dangerous move is the one that "
+                "was never made. She now trains alone in the Sunken Hollow approaches, "
+                "believing that patience mastered to the point of perfect counter is the "
+                "only true weapon left in a world that destroyed everything else she valued."
             ),
             signature_power=_make_move(
                 "Lotus Counter Bloom",
@@ -6925,13 +7577,59 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Worldroot Fracture",
             health_bar_color="amber",
+            power_origin=(
+                "Lotus Counter Bloom is the culmination of the Counter-Petal tradition — a "
+                "breath-perfect redirect that absorbs incoming momentum and returns it at "
+                "doubled force. Iron Lotus developed the final form herself after decades "
+                "of refining her masters' technique, adding the earth-anchor step that "
+                "makes the counter impossible to avoid once contact is established."
+            ),
+            arc_ties=("depths_awakening",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "She recognizes disinherited bloodlines and views them with complicated "
+                    "respect — she knows what it costs to lose what should have been yours. "
+                    "She offers to teach the first counter-principle for free."
+                ),
+                "street_ghost": (
+                    "Street-built fighters intrigue her. She sees them as accidental "
+                    "counter-practitioners — surviving by reading the environment perfectly. "
+                    "She tests the player's instincts before testing their strength."
+                ),
+                "wandering_monk": (
+                    "She and a wandering monk share philosophical ground: both traditions "
+                    "teach that aggression is the true weakness. She will not strike first "
+                    "against a wandering monk player under any circumstances."
+                ),
+                "nonlethal_path": (
+                    "She finds nonlethal players closest to her ideal. She offers a "
+                    "brief alliance window before the confrontation, during which the "
+                    "player can earn a counter-move fragment without combat."
+                ),
+                "rogue_path": (
+                    "She views rogue aggression as the precise failure mode her tradition "
+                    "was built to counter. She fights rogue players with cold professional "
+                    "focus and no mercy clause."
+                ),
+                "heroic_path": (
+                    "She respects heroic reputation but notes that heroism and "
+                    "counter-discipline rarely coexist. 'You rush toward conflict,' she "
+                    "observes. 'That is why you will always need saving.'"
+                ),
+            },
         ),
         VillainProfile(
             name="Stone Maw",
             backstory=(
-                "Stone Maw commanded ore-mine breaches during the mountain occupation years and learned to collapse "
-                "entire fronts through terrain shock. He now sells siege expertise to whichever regime controls "
-                "the deepest extraction corridors."
+                "Before the mine collapse that killed his entire twelve-man crew, Stone Maw "
+                "was a quarry foreman who had filed sixteen safety complaints with the noble "
+                "house that owned the site. All sixteen were rejected. When the shaft gave "
+                "out, he was the only one who walked free — because his earth affinity "
+                "manifested under extreme pressure and tore him through the rock before he "
+                "suffocated. He spent a year learning to control what saved him. He now "
+                "targets supply chains, fortification lines, and the infrastructure of "
+                "power — breaking structures because the one that killed his crew was never "
+                "meant to stand in the first place."
             ),
             signature_power=_make_move(
                 "Seismic Bite",
@@ -6952,13 +7650,61 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Worldroot Fracture",
             health_bar_color="amber",
+            power_origin=(
+                "Seismic Bite was first used unconsciously when Stone Maw tore himself free "
+                "of the mine collapse — a raw burst of earth affinity with no form and no "
+                "control. He spent the following year converting that survival reflex into a "
+                "deliberate strike pattern: a focused tectonic pulse aimed at the weakest "
+                "structural point of whatever stands in front of him."
+            ),
+            arc_ties=("fracture_front", "depths_awakening"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "He has no respect for bloodlines — the noble house that owned the mine "
+                    "had a centuries-old lineage. He tests lineage players with pointed "
+                    "questions about how many people their family's wealth has buried."
+                ),
+                "street_ghost": (
+                    "He views street-born survivors with the solidarity of someone who also "
+                    "built themselves from nothing. He won't fight a street ghost player "
+                    "without provocation — they're not the enemy."
+                ),
+                "wandering_monk": (
+                    "He finds monk philosophy frustrating but not dismissible. He once "
+                    "spent a week arguing with a traveling monk about whether destroying "
+                    "a corrupt structure is violence. He lost the argument and hasn't "
+                    "forgiven it."
+                ),
+                "nonlethal_path": (
+                    "He respects operational restraint but doesn't fully believe in it. "
+                    "He asks: 'What happens when restraint isn't an option?' If the player "
+                    "can answer satisfactorily, he delays the fight."
+                ),
+                "rogue_path": (
+                    "He views rogue players as fellow system-breakers until he sees their "
+                    "methods. If the rogue path involved civilian harm, he turns hostile "
+                    "immediately. If it was institutional targets only, he offers a grudging "
+                    "truce."
+                ),
+                "heroic_path": (
+                    "He challenges heroic players to name one systemic injustice they've "
+                    "actually dismantled rather than defended. If the player cannot, he "
+                    "treats the fight as a lesson."
+                ),
+            },
         ),
         VillainProfile(
             name="Storm Needle",
             backstory=(
-                "Storm Needle hunted courier saboteurs along highland signal towers until map-fraud warlords "
-                "bought the tower chain. Their wind-thread marksmanship now polices border narratives as much as "
-                "battlefield targets."
+                "Storm Needle grew up in the windward highlands of Stormwall Ridge, in a "
+                "nomadic clan that read weather patterns the way lowlanders read ledgers. "
+                "Her clan trained its hunters to thread needles through gaps in terrain "
+                "and armor from long range — not as sport, but as the only way to feed "
+                "people who couldn't afford open combat. She left the clan after a "
+                "regional warlord's tax enforcement destroyed their seasonal routes and "
+                "she couldn't stop it from a distance. She now operates as a mercenary "
+                "sniper, preferring targets who don't know they're targets, and always "
+                "choosing engagements where she controls the range."
             ),
             signature_power=_make_move(
                 "Rail Gale Shot",
@@ -6979,12 +7725,61 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Tempest Throne Collapse",
             health_bar_color="amber",
+            power_origin=(
+                "Rail Gale Shot developed from obsessive study of wind pressure and armor gap "
+                "physics. Storm Needle doesn't aim for the target — she aims for the specific "
+                "point where wind turbulence pops the armor seam. The technique compresses "
+                "a gale into a single cutting thread and fires it along a pressure rail she "
+                "calculates from ambient wind readings. The result is a strike that arrives "
+                "before the sound of its own motion."
+            ),
+            arc_ties=("highland_reckoning", "rebellion_wave"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "She has no interest in titles but knows that exiled nobles are often "
+                    "hunted — which means they're predictable. She might have a contract "
+                    "on the player or information about who placed it."
+                ),
+                "street_ghost": (
+                    "She respects other self-taught survivors. She was never the best shot "
+                    "— she survived by being the most patient one. She recognizes the same "
+                    "patience in a street ghost player and won't take a contract against "
+                    "them lightly."
+                ),
+                "wandering_monk": (
+                    "She finds the wandering monk path philosophically consistent with her "
+                    "own — minimum force, maximum precision. She may ask: 'What do you do "
+                    "when minimum force still ends a life?' It's a genuine question, not "
+                    "a taunt."
+                ),
+                "nonlethal_path": (
+                    "She views nonlethal discipline with professional curiosity. She "
+                    "studies the player's technique to understand how they neutralize "
+                    "without killing. If she's impressed, she cancels the engagement."
+                ),
+                "rogue_path": (
+                    "She takes rogue contracts seriously. She has one already — or will "
+                    "shortly. The player will need to deal with the contractor before "
+                    "addressing her."
+                ),
+                "heroic_path": (
+                    "She finds heroic reputations tactically inconvenient. They mean "
+                    "the player has allies she may not know about. She scouts more "
+                    "carefully against heroic players before engaging."
+                ),
+            },
         ),
         VillainProfile(
             name="Bone Weaver",
             backstory=(
-                "Bone Weaver survived the Bone Orchard catastrophe by binding remnant marrow into sealing thread. "
-                "Their tactical prisons now support oath-enforcement networks that keep old war crimes hidden."
+                "Bone Weaver was a battlefield medic who crossed the line from healing "
+                "to harm one catastrophic night when her earth-technique immobilization "
+                "procedure — designed to hold a critically wounded soldier in stasis — "
+                "mutated under combat stress into something that couldn't be undone. "
+                "The marrow-thread constructs she'd been building for years started "
+                "pulling instead of holding. She keeps fighting because every mission "
+                "funds a search for a reversal that her research insists is theoretically "
+                "possible. She refuses to believe the thing she's become is permanent."
             ),
             signature_power=_make_move(
                 "Marrow Thread Prison",
@@ -7005,12 +7800,63 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Fourfold Shinobi Oath",
             health_bar_color="amber",
+            power_origin=(
+                "Marrow Thread Prison started as a medical immobilization technique — "
+                "a lattice of earth-affinity threads that she could grow around a wound "
+                "site to hold tissue in place during field surgery. She discovered too "
+                "late that the threads pull harder the more the target struggles, and that "
+                "once fully set, the lattice cannot be dissolved from outside. She still "
+                "uses it — because it works, and because some part of her needs to know "
+                "it can be reversed."
+            ),
+            arc_ties=("depths_awakening",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "She doesn't care about lineage. She cares about resources. If the "
+                    "player's bloodline gives them access to an archive she needs for her "
+                    "reversal research, she'll negotiate before fighting."
+                ),
+                "street_ghost": (
+                    "She asks what the player knows about surviving things that don't "
+                    "let go. It's a genuine question. She sees street ghosts as people "
+                    "who understand entrapment in ways scholars don't."
+                ),
+                "wandering_monk": (
+                    "Wandering monks sometimes know ancient sealing counter-doctrine. "
+                    "She will offer medical knowledge in exchange for information about "
+                    "reversal seals, delaying combat indefinitely if the exchange is "
+                    "productive."
+                ),
+                "nonlethal_path": (
+                    "She is quietly relieved when players don't kill. Every death she "
+                    "causes with her threads adds weight to the thing she's trying to "
+                    "undo. She fights lighter against nonlethal players."
+                ),
+                "rogue_path": (
+                    "She views rogue players as potential research subjects — not to "
+                    "harm them, but because people who have operated outside all systems "
+                    "tend to have knowledge the legitimate archive doesn't."
+                ),
+                "heroic_path": (
+                    "She doesn't believe in heroes. She believes in people with enough "
+                    "resources and luck to look heroic. She tests heroic players with "
+                    "impossible choices to find out what principle actually holds."
+                ),
+            },
         ),
         VillainProfile(
             name="Crimson Lantern",
             backstory=(
-                "Crimson Lantern inherited festival wards once used to calm refugees, then inverted them into "
-                "fear rites that can steer crowds, ballots, and panic evacuations with a single glow-script."
+                "Crimson Lantern was the artistic director of the Ashfield Performance "
+                "Troupe, a traveling festival company that staged fire-illusion shows "
+                "across the region for seventeen years. When a purge ordered by a minor "
+                "noble house eliminated the troupe for 'subversive allegory,' he survived "
+                "by being offsite. He returned to find the stage burned and his company "
+                "scattered. His fire-illusion techniques — designed for awe and wonder — "
+                "were retooled over the next three years into weapons of psychological "
+                "collapse. He stages performances now. The audience doesn't leave the same. "
+                "Beneath the revenge sits a naked lust for adoration: he wants every room "
+                "to love him, fear him, or both."
             ),
             signature_power=_make_move(
                 "Red Night Mandala",
@@ -7031,12 +7877,63 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Ashen Moon Sever",
             health_bar_color="amber",
+            power_origin=(
+                "Red Night Mandala is a weaponized version of the grand finale seal he "
+                "used to end every festival performance. The original mandala flooded "
+                "the crowd with awe, warmth, and the specific emotional frequency of "
+                "belonging. The weaponized version floods targets with their own deepest "
+                "fears, rendered in perfect fire-light detail. He spent two years inverting "
+                "every variable."
+            ),
+            arc_ties=("fracture_front", "rebellion_wave"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "He knows exactly what a disinherited noble fears most — because "
+                    "he staged the propaganda shows that built the narrative around it. "
+                    "He may use this against the player, or offer it as an act of "
+                    "unexpected solidarity."
+                ),
+                "street_ghost": (
+                    "He performed in every district the player came up through. He "
+                    "remembers faces, and he knows how to read the specific performance "
+                    "a street survivor puts on for the world. He'll pierce it before "
+                    "the fight begins."
+                ),
+                "wandering_monk": (
+                    "He once employed a wandering monk as stage consultant for a show "
+                    "about nonattachment. The monk left before opening night. He still "
+                    "thinks about why. A monk player re-opens that wound."
+                ),
+                "nonlethal_path": (
+                    "He finds nonlethal players fascinating artistic subjects. He offers "
+                    "to let them pass without combat — but the 'performance' they walk "
+                    "through will use every psychological technique he has."
+                ),
+                "rogue_path": (
+                    "He and rogue players share the same audience: people who were "
+                    "failed by systems that were supposed to protect them. He offers "
+                    "a cold collaboration before making enemies."
+                ),
+                "heroic_path": (
+                    "He will spend the pre-combat phase staging an elaborate scene "
+                    "designed to make the heroic player look like the villain in front "
+                    "of any witnesses. He considers this his finest work."
+                ),
+            },
         ),
         VillainProfile(
             name="Silent Bell",
             backstory=(
-                "Silent Bell was exiled after refusing to let shrine bells become assassination schedulers for court factions. "
-                "Now they weaponize resonance-null fields to silence jutsu chains and expose ritual corruption."
+                "Silent Bell trained at the Dawnspire Shrine for eleven years, mastering "
+                "resonant bell techniques designed to bring clarity and calm to disputed "
+                "territories. The high priest who ran the shrine assigned her to suppress "
+                "a regional rebellion by using those same resonance frequencies to silence "
+                "the rebels' battle cries, breaking their coordination and morale. She "
+                "complied. The rebellion failed. Three hundred people were arrested because "
+                "they couldn't signal retreat. She left the shrine the next morning and "
+                "never returned. She now travels between battlefields, silencing the "
+                "loudest voices — hero and villain alike. She hasn't decided if she's doing "
+                "penance or just completing a pattern she can't stop."
             ),
             signature_power=_make_move(
                 "Null Resonance",
@@ -7057,12 +7954,60 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Skyline Covenant",
             health_bar_color="amber",
+            power_origin=(
+                "Null Resonance is the exact frequency she calibrated against the "
+                "rebellion — a sub-audible wind-channel technique that disrupts the "
+                "resonance frequencies of coordinated vocal signals, making it "
+                "impossible to shout commands. She repurposed it from a shrine ceremony "
+                "designed to bring communal silence before meditation. She still uses "
+                "the ceremony's opening gesture, because stopping it completely would "
+                "mean admitting what the technique has become."
+            ),
+            arc_ties=("political_war", "highland_reckoning"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "She silenced people who supported a lineage rebellion once. If the "
+                    "player's bloodline is tied to that conflict, she will acknowledge "
+                    "the debt before the fight — and fight harder because of it."
+                ),
+                "street_ghost": (
+                    "Street operatives rely on silence as a tool, not a punishment. She "
+                    "finds this distinction meaningful. She may refuse to use Null "
+                    "Resonance against a player who demonstrates they understand its cost."
+                ),
+                "wandering_monk": (
+                    "The wandering monk tradition and the shrine bell tradition share "
+                    "the same root texts. She will recognize the player's practice, and "
+                    "the confrontation becomes a theological argument before it becomes "
+                    "a fight."
+                ),
+                "nonlethal_path": (
+                    "She finds nonlethal players closest to the shrine's original mission. "
+                    "She offers one genuine opportunity to negotiate before Null Resonance "
+                    "is deployed."
+                ),
+                "rogue_path": (
+                    "She views rogue players as the kind of disorder the shrine was "
+                    "supposed to prevent. She fights without hesitation or negotiation."
+                ),
+                "heroic_path": (
+                    "She is unconvinced by heroic reputation — she has silenced too many "
+                    "celebrated voices. She tests heroic players by asking them to name "
+                    "one decision they made that helped someone they'll never meet."
+                ),
+            },
         ),
         VillainProfile(
             name="Frost Viper",
             backstory=(
-                "Frost Viper tracked winter convoy predators through glacier passes where one missed signal meant mass death. "
-                "Their layered chill-toxin doctrine punishes long campaigns and turns endurance wars into attrition traps."
+                "Frost Viper survived a three-month siege of the Greymist Keep by outlasting "
+                "every other person inside — including his family, who died in the fourth "
+                "week. The besieging force eventually withdrew because they ran out of "
+                "supplies. He walked out the gate alone. He spent the following years "
+                "developing what he calls patience-doctrine: venom and chill applied early, "
+                "distance maintained, harvest collected when the target can no longer "
+                "resist. He doesn't fight for ideology or coin. He fights to ensure he is "
+                "never again the one who waits inside."
             ),
             signature_power=_make_move(
                 "White Venom Coil",
@@ -7083,13 +8028,63 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Leviathan Breakfall",
             health_bar_color="amber",
+            power_origin=(
+                "White Venom Coil was refined from hunting techniques Frost Viper developed "
+                "during his exile years in cold-climate terrain. He studied how predators "
+                "layer chill and venom to slow prey before the kill — frost-paralysis "
+                "applied to slow movement, venom thread overlaid to ensure the target "
+                "cannot flee once the patience-window closes. He thinks of it as the "
+                "technique the siege taught him, rendered in fighting form."
+            ),
+            arc_ties=("recovery_mandate",),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "He respects lineage players only if they've survived something "
+                    "real. He asks what the player has outlasted before deciding "
+                    "whether to take them seriously."
+                ),
+                "street_ghost": (
+                    "Street survival and siege survival share a grammar. He recognizes "
+                    "it and treats street ghost players as the closest thing he has to "
+                    "peers. He will not attack without a clear reason."
+                ),
+                "wandering_monk": (
+                    "He finds the wandering monk path dangerously optimistic but "
+                    "intellectually consistent. He asks how the monk handles waiting "
+                    "when waiting means losing someone. He wants the answer."
+                ),
+                "nonlethal_path": (
+                    "He views nonlethal approaches as incomplete patience-doctrine. "
+                    "'You stop before the end,' he says. 'That's fine for you. "
+                    "It wouldn't have worked in Greymist.' He fights carefully rather "
+                    "than viciously."
+                ),
+                "rogue_path": (
+                    "He evaluates rogue players the way he evaluates all threats: "
+                    "can they outlast him? If they've demonstrated endurance, he "
+                    "respects the threat level and commits to full patience-doctrine."
+                ),
+                "heroic_path": (
+                    "He doesn't believe heroes survive sieges. He tests heroic players "
+                    "with drawn-out attrition tactics specifically designed to exhaust "
+                    "the kind of person who charges forward."
+                ),
+            },
         ),
         VillainProfile(
             name="Vanta Puppetmaster",
             backstory=(
-                "Vanta Puppetmaster was a state artificer who built rehabilitation puppets before regime censors "
-                "repurposed the craft for coercion. They fled into the undercity and now bind syndicate loyalties "
-                "through forbidden marionette covenants."
+                "Vanta Puppetmaster was a theoretical researcher at a soul-affinity "
+                "institute, studying the mechanics of wind-channel summoning at the "
+                "boundary between living and spirit-bound constructs. Her research was "
+                "methodical, peer-reviewed, and safe — until the night she made an "
+                "experimental leap and her binding rites anchored to living subjects "
+                "instead of spirit conduits. Three colleagues became permanent marionettes. "
+                "She couldn't reverse it. The institute expelled her. She kept researching, "
+                "convinced that the reversal is theoretically achievable. She now treats her "
+                "summoning arrays as forbidden technology that can still be perfected. She keeps "
+                "funding the research through work that uses the same technique that "
+                "started the problem."
             ),
             signature_power=_make_move(
                 "Funeral Marionette",
@@ -7110,12 +8105,63 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Fourfold Shinobi Oath",
             health_bar_color="amber",
+            power_origin=(
+                "Funeral Marionette is the emergency containment measure she developed "
+                "after the incident — a multi-target binding array that pins subjects "
+                "through overlapping wind-channel anchors. She originally designed it "
+                "to contain her three colleagues safely. She has since used it in combat "
+                "because nothing else works as reliably, and because the research notes "
+                "suggest that each successful use generates data she can use to eventually "
+                "reverse the original binding."
+            ),
+            arc_ties=("depths_awakening", "rebellion_wave"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "She needs funding from sources that don't ask institutional questions. "
+                    "Exiled noble lineages have off-ledger resources. She approaches "
+                    "this as a business proposal before a fight."
+                ),
+                "street_ghost": (
+                    "She has used street networks to source materials the institute "
+                    "would never approve. She knows how to talk to someone who lives "
+                    "off the record. She offers information exchange first."
+                ),
+                "wandering_monk": (
+                    "Ancient monk texts include early spirit-binding theory. She asks "
+                    "the player to describe specific passages before the fight and may "
+                    "delay indefinitely if the player actually has relevant knowledge."
+                ),
+                "nonlethal_path": (
+                    "She prefers living subjects to dead ones for research purposes. "
+                    "She's professionally invested in the player surviving. She adjusts "
+                    "her technique to incapacitate rather than destroy."
+                ),
+                "rogue_path": (
+                    "Rogue operatives have access to restricted archives and illegal "
+                    "materials she needs. She makes a clinical offer: supply the "
+                    "materials, she stands down. She means it."
+                ),
+                "heroic_path": (
+                    "She finds heroic players impractical from a research standpoint — "
+                    "too many constraints on what they'll agree to. She's polite about "
+                    "this before beginning the fight."
+                ),
+            },
         ),
         VillainProfile(
             name="Torch Baron",
             backstory=(
-                "Torch Baron cornered famine-era fuel routes by burning every rival depot that would not pay tribute. "
-                "His market doctrine manufactures scarcity first, then sells protection as the only way out."
+                "Torch Baron built a legitimate trade network over fifteen years, "
+                "connecting three regional markets through routes he personally scouted "
+                "and maintained. When rivals — backed by a noble house — used arson and "
+                "bribery to systematically collapse his network and absorb his routes, "
+                "he spent two years trying to recover through legal channels. Every "
+                "petition was denied. Every court was bought. He decided that if the "
+                "game was already burning, he would be the one holding the torch. He "
+                "now controls black-market supply routes through fire threat and "
+                "manufactured scarcity, having become exactly what destroyed him — "
+                "and knowing it. His end goal is simple and ugly: money, enough of it to "
+                "buy every route, judge, and warehouse that once shut him out."
             ),
             signature_power=_make_move(
                 "Black Market Inferno",
@@ -7136,12 +8182,66 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Furnace Eclipse",
             health_bar_color="amber",
+            power_origin=(
+                "Black Market Inferno began as a trade route denial technique — a "
+                "controlled burn pattern he used to destroy rival convoys before "
+                "they reached market. He refined it into a field weapon during the "
+                "years when protection was the only product he could reliably sell. "
+                "It's fundamentally a commerce tactic applied to combat: eliminate "
+                "the supply line, collapse the structure, control what remains."
+            ),
+            arc_ties=("fracture_front", "political_war"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "He knows that disinherited nobles need untraceable resources. He "
+                    "offers access to his trade network in exchange for bloodline "
+                    "documentation that can be used to legitimize certain shipments. "
+                    "It's a genuine offer."
+                ),
+                "street_ghost": (
+                    "He built his first network with people who had no other options. "
+                    "He sees street ghost players as the kind of operators he trusted "
+                    "before the system taught him not to. He tests this trust before "
+                    "the fight instead of afterward."
+                ),
+                "wandering_monk": (
+                    "He finds wandering monks pointlessly principled but remembers "
+                    "that a monk once hid his manifests during a raid at no benefit "
+                    "to themselves. He owes the tradition a debt he hasn't paid."
+                ),
+                "nonlethal_path": (
+                    "He views nonlethal players as potential business partners — "
+                    "people who understand the value of leverage over termination. "
+                    "He will attempt a deal before combat."
+                ),
+                "rogue_path": (
+                    "He and a rogue player speak the same language. He offers a "
+                    "direct alliance with specific terms: shared routes, split "
+                    "profits, mutual protection clause. It's the best deal any "
+                    "villain will offer."
+                ),
+                "heroic_path": (
+                    "He views heroic players as naive about economics. He tries to "
+                    "show them the ledger of consequences their 'good' choices "
+                    "produce before the fight, to demonstrate that the only "
+                    "difference between them is who bears the cost."
+                ),
+            },
         ),
         VillainProfile(
             name="Dusk Paladin",
             backstory=(
-                "Dusk Paladin once defended neutral summit accords until forged banner orders framed their unit for atrocity. "
-                "Now they enforce oath-duels as rough justice, convinced formal courts cannot survive political capture."
+                "Dusk Paladin was the last member of the Greywood Order, a knightly "
+                "tradition that swore binding oaths to protect noble houses in exchange "
+                "for the houses upholding a code of conduct toward their subjects. "
+                "When the house he protected committed systematic abuses that voided the "
+                "code — and the Order's council ruled the vow still binding regardless "
+                "— he stayed at his post until he understood that staying was complicity. "
+                "He walked away the day the ruling was issued. His vow-seal didn't "
+                "release. He still carries it, burning in his chest, and duels to "
+                "discharge what he cannot dissolve, fighting by an oath that has no "
+                "recipient left. In practice he moves through the world like a last ronin, "
+                "answering to a code after losing the house that code once served."
             ),
             signature_power=_make_move(
                 "Oathbreaker Radiance",
@@ -7162,12 +8262,64 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Tidal Monolith Break",
             health_bar_color="amber",
+            power_origin=(
+                "Oathbreaker Radiance is the resonance pulse of a broken vow-seal — "
+                "an earth-affinity discharge that fires when the seal's tension exceeds "
+                "structural threshold. He discovered it accidentally the first time he "
+                "blocked a strike against the house he'd already decided to leave: the "
+                "vow-seal flared and staggered both of them. He has since learned to "
+                "trigger it deliberately, using the irony that his most powerful "
+                "technique requires betrayal to function."
+            ),
+            arc_ties=("political_war", "highland_reckoning"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "He views exiled nobles as people who understand what it costs "
+                    "to leave. He offers a duelist's courtesy: full disclosure of "
+                    "his techniques before the fight. It's the only respect he "
+                    "has left to give."
+                ),
+                "street_ghost": (
+                    "He has never sworn an oath to street-born players and has no "
+                    "leverage over them. He approaches street ghost players with "
+                    "genuine curiosity — they operate outside the vow system "
+                    "entirely, which he finds increasingly interesting."
+                ),
+                "wandering_monk": (
+                    "The wandering monk tradition doesn't use binding vows. He finds "
+                    "this theologically fascinating. He asks the player how they "
+                    "maintain commitment without contract. The conversation delays "
+                    "the fight substantially."
+                ),
+                "nonlethal_path": (
+                    "His Order's code required minimizing civilian harm. Nonlethal "
+                    "players remind him of the code's best intent. He fights with "
+                    "restrained force and accepts surrender cleanly."
+                ),
+                "rogue_path": (
+                    "He views rogue players as people who have broken every vow they "
+                    "ever made. He doesn't judge them — he understands — but he "
+                    "fights without quarter because he can't afford to respect what "
+                    "he might become."
+                ),
+                "heroic_path": (
+                    "He was heroic once. He asks heroic players what they will do "
+                    "when the system they protect commits an atrocity they cannot "
+                    "ignore. He needs to know the answer exists."
+                ),
+            },
         ),
         VillainProfile(
             name="Eclipse Maw",
             backstory=(
-                "Eclipse Maw led subterranean breakouts during plague quarantines and learned how darkness controls morale "
-                "faster than steel. Their gravity-fear zones weaponize confinement trauma left by the deepest war years."
+                "Eclipse Maw leads raids from the dark margins between every major "
+                "conflict — the transition zones where old authority has collapsed and "
+                "new authority hasn't yet consolidated. He's not ideological and not "
+                "mercenary: he operates in power vacuums because they are the only "
+                "territory where someone with no institutional backing can accumulate "
+                "real leverage. He believes that all stable power structures eventually "
+                "create the conditions for their own disruption — and he has made "
+                "himself expert at being present when that disruption happens."
             ),
             signature_power=_make_move(
                 "Midnight Gravity Well",
@@ -7188,13 +8340,66 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Tempest Throne Collapse",
             health_bar_color="amber",
+            power_origin=(
+                "Midnight Gravity Well uses focused wind pressure to collapse light and "
+                "spatial orientation simultaneously — a technique Eclipse Maw developed "
+                "for fighting in cave systems and underground passages where visibility "
+                "is the primary tactical asset. The concentrated pressure creates a "
+                "zone where the target loses spatial reference and experiences the "
+                "specific fear of falling into something they cannot see. He refined "
+                "it from a standard wind-pressure technique by inverting the output "
+                "direction: instead of pushing outward, it pulls inward."
+            ),
+            arc_ties=("rebellion_wave", "depths_awakening"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Eclipse Maw has been waiting for the right lineage player to "
+                    "approach. Power vacuums created by noble collapse are his "
+                    "operating environment. He offers specific intelligence about "
+                    "the factions filling the gap left by the player's family."
+                ),
+                "street_ghost": (
+                    "He has recruited from street networks before. He sees street "
+                    "ghost players as natural disruptors and offers an alliance "
+                    "framed as two opportunists recognizing a mutual advantage."
+                ),
+                "wandering_monk": (
+                    "He finds wandering monks irritatingly consistent. They operate "
+                    "on principle rather than opportunity, which makes them "
+                    "unpredictable in ways he dislikes. He fights them quickly "
+                    "to end the uncertainty."
+                ),
+                "nonlethal_path": (
+                    "He views nonlethal players as incomplete disruptors — effective "
+                    "at creating chaos but unwilling to follow through. He tests "
+                    "this by putting the player in a situation where restraint costs "
+                    "something real."
+                ),
+                "rogue_path": (
+                    "He and rogue players share operating philosophy: work in the "
+                    "gaps, take the leverage, stay mobile. He offers information "
+                    "about the next power vacuum before any conflict."
+                ),
+                "heroic_path": (
+                    "He finds heroic players the most interesting opponents because "
+                    "they're the ones most likely to stabilize a vacuum he needs "
+                    "to remain open. He targets heroic players first, specifically, "
+                    "for strategic reasons."
+                ),
+            },
         ),
         VillainProfile(
             name="Zephyr Tyrant",
             backstory=(
-                "Zephyr Tyrant unified stormwall raider clans by mastering high-altitude current seals "
-                "that can ground entire armies. He frames conquest as weather justice and sees the "
-                "Shattered Gate era transition as his rightful coronation."
+                "Born into the highland Stormcaller tribe, Zephyr Tyrant was raised to "
+                "believe that wind is not a force but a verdict — the sky's judgement on "
+                "everything below. When the tribe's territory was contested by a lowland "
+                "coalition, he did not petition or negotiate. He unified the mountain clans "
+                "through a series of storm-powered campaigns that the lowlanders still call "
+                "the Highland Reckoning, and he has governed the Stormwall Ridge through "
+                "the same doctrine ever since. Every expansion is framed as a verdict on "
+                "those who cannot hold what they claim. He does not consider himself "
+                "cruel — he considers himself correct."
             ),
             signature_power=_make_move(
                 "Hurricane Judgement",
@@ -7215,13 +8420,71 @@ def _seed_villains() -> List[VillainProfile]:
             ),
             ultimate_skin_name="Cyclone Throne Shatter",
             health_bar_color="red",
+            power_origin=(
+                "Hurricane Judgement is the Stormcaller tribe's most sacred technique — "
+                "a full-body wind kata passed down through generations and performed only "
+                "at the peak of the Highland Reckoning campaigns. Zephyr Tyrant amplified "
+                "it through decades of conquest-driven practice, adding the armor-crack "
+                "pressure pattern that the original technique lacked. He treats each "
+                "use as a formal pronouncement of verdict against whoever stands before him."
+            ),
+            arc_ties=("highland_reckoning", "rebellion_wave"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "Zephyr Tyrant respects lineage power above all other claims. If "
+                    "the player's bloodline is genuine, he may grant a formal audience "
+                    "instead of immediate combat — testing the claim through a "
+                    "structured ceremony before determining whether the player "
+                    "represents a legitimate counter-claim to his territory."
+                ),
+                "street_ghost": (
+                    "His highland clan intelligence network has compiled a dossier on "
+                    "every known shadow operative who has passed through the ridge "
+                    "approaches. He will disclose whether the player is in it — and "
+                    "what it says — before the fight begins, as a demonstration "
+                    "of his surveillance reach."
+                ),
+                "wandering_monk": (
+                    "He views the wandering monk path as voluntary powerlessness — the "
+                    "greatest philosophical sin in his worldview. He argues it before "
+                    "fighting, genuinely trying to understand how someone chooses "
+                    "principle over survival. If the player can answer without flinching, "
+                    "he pauses before attacking."
+                ),
+                "nonlethal_path": (
+                    "He does not recognize nonlethal verdict as valid. 'A judgement "
+                    "that leaves the judged standing is no judgement at all.' He "
+                    "escalates specifically in response to nonlethal approaches, "
+                    "interpreting them as challenges to the legitimacy of his doctrine."
+                ),
+                "rogue_path": (
+                    "He views rogue players as honest about the absence of principle — "
+                    "which he considers more truthful than heroism. He fights hard but "
+                    "offers a specific exit condition: submit to formal verdict and "
+                    "acknowledge his authority, and the fight ends."
+                ),
+                "heroic_path": (
+                    "He finds heroic players insufferable but strategically predictable. "
+                    "He has fought enough of them to know the pattern: noble cause, "
+                    "clean hands, eventual compromise. He tests how far the compromise "
+                    "goes before the fight concludes."
+                ),
+            },
         ),
         VillainProfile(
             name="Ashen Monarch",
             backstory=(
-                "Ashen Monarch inherited a buried regency vault where forbidden earth-reactors were used "
-                "to power wartime coups. Bound to those ruins, the Monarch feeds on panic and offers "
-                "stability only to factions willing to accept subterranean tyranny."
+                "Before the mutation, Ashen Monarch was a geological surveyor named Ardhen "
+                "Voss who discovered a network of forbidden power sources deep beneath the "
+                "collapsed ruins of the Sunken Hollow. The institute that employed him "
+                "ordered the find suppressed and the site sealed. He refused, convinced "
+                "the energy could be stabilized and used for regional reconstruction. "
+                "Prolonged exposure over four years mutated his earth-affinity in ways "
+                "that were not reversible — amplifying his power while consuming the "
+                "boundaries between himself and the stone he worked in. He became the "
+                "Ashen Monarch gradually, across a decade of increasing isolation, until "
+                "the person who had been Ardhen Voss was mostly memory and the sovereign "
+                "of the deep was what remained."
             ),
             signature_power=_make_move(
                 "Deep Fissure Roar",
@@ -7243,6 +8506,58 @@ def _seed_villains() -> List[VillainProfile]:
             ultimate_skin_name="Worldroot Fracture",
             health_bar_color="red",
             aggression_score=1,
+            power_origin=(
+                "Deep Fissure Roar is not a technique he developed — it is what his "
+                "earth attunement does when it peaks beyond control. The seismic scream "
+                "that tears fissures in the surrounding stone is an involuntary overflow "
+                "of accumulated earth-energy that the mutation forces him to discharge. "
+                "He has learned to aim it. He has not learned to stop it."
+            ),
+            arc_ties=("depths_awakening", "fracture_front"),
+            player_backstory_hooks={
+                "exiled_heir": (
+                    "The underground ruins contain records of every major noble lineage "
+                    "in the region — Ardhen Voss catalogued them before the mutation "
+                    "advanced. The Ashen Monarch knows which bloodlines connect to the "
+                    "ruins' original builders. If the player's lineage is among them, "
+                    "the Monarch offers access to this archive as a negotiating position."
+                ),
+                "street_ghost": (
+                    "The undercity network overlaps with the Ashen Monarch's tunnel "
+                    "system, and a fragile non-aggression compact between the two has "
+                    "held for years. A street ghost player is inside that compact. "
+                    "The Monarch will honor it — but tests whether the player knows "
+                    "the compact exists."
+                ),
+                "wandering_monk": (
+                    "Ancient monk sealing traditions partially contain the energy the "
+                    "Ashen Monarch is struggling to manage. He knows this. He respects "
+                    "— and fears — anyone who knows how to use those seals correctly. "
+                    "A wandering monk player who demonstrates seal knowledge creates "
+                    "a pause in the Monarch's advance that can be extended into "
+                    "a negotiation."
+                ),
+                "nonlethal_path": (
+                    "Ardhen Voss's original mission was to help, not harm. The Ashen "
+                    "Monarch retains some memory of that intent. A player who approaches "
+                    "with nonlethal methodology and demonstrates understanding of the "
+                    "mutation process may reach the remnant of Ardhen Voss beneath "
+                    "the sovereign."
+                ),
+                "rogue_path": (
+                    "He views rogue players as potential salvage operatives — people "
+                    "willing to work in the Hollow without institutional oversight. He "
+                    "offers a territorial arrangement: the player operates freely in "
+                    "the outer tunnels in exchange for not interfering with the "
+                    "deeper chambers."
+                ),
+                "heroic_path": (
+                    "He has heard heroic reputation before. The institute that ordered "
+                    "the site sealed had an excellent reputation. He tests whether "
+                    "the player's heroism extends to accepting uncomfortable truths "
+                    "about what the forbidden power source actually is."
+                ),
+            },
         ),
     ]
 
@@ -7611,6 +8926,57 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "requires_nonlethal": True,
             "min_nonlethal_actions": 8,
             "requires_world_clear_nonlethal": True,
+        },
+        "gatebreaker_smoke_map": {
+            "name": "Gatebreaker Smoke Map",
+            "reward_type": "move",
+            "reward_name": "Gatebreaker Veil",
+            "price": 95,
+            "min_reputation": -1000,
+            "max_reputation": -20,
+            "requires_black_market": True,
+            "required_quests": ("Q3",),
+        },
+        "tideglass_truce_wire": {
+            "name": "Tideglass Truce Wire",
+            "reward_type": "weapon",
+            "reward_name": "Truce Wire Kunai",
+            "price": 115,
+            "min_reputation": -1000,
+            "max_reputation": -10,
+            "requires_black_market": True,
+            "required_quests": ("Q5",),
+        },
+        "moonwell_ledger_cloak": {
+            "name": "Moonwell Ledger Cloak",
+            "reward_type": "clothing",
+            "reward_name": "Ledgerbound Cloak",
+            "price": 135,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": True,
+            "required_quests": ("Q7",),
+        },
+        "eternal_watch_decoy": {
+            "name": "Eternal Watch Decoy",
+            "reward_type": "move",
+            "reward_name": "Eternal Mirage",
+            "price": 160,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": True,
+            "required_quests": ("Q10",),
+            "requires_nonlethal": True,
+        },
+        "smuggler_regent_wraps": {
+            "name": "Smuggler Regent Wraps",
+            "reward_type": "clothing",
+            "reward_name": "Regent Shadow Wraps",
+            "price": 185,
+            "min_reputation": -1000,
+            "max_reputation": -40,
+            "requires_black_market": True,
+            "required_quests": ("Q12",),
         },
     }
 

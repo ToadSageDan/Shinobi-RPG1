@@ -28,6 +28,7 @@ from shinobi_rpg.core import (
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
+    get_learnable_enemy_moves,
     load_world_snapshot,
     resolve_affinity_minigame,
     save_world_snapshot,
@@ -130,6 +131,32 @@ class CoreSystemTests(unittest.TestCase):
         result = player.execute_move("Twin Dragon Convergence")
         self.assertEqual(result["category"], "ultimate")
         self.assertEqual(result["damage"], 50)
+
+    def test_move_power_scales_stay_within_balance_bands(self):
+        world, _ = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        balance_bands = {
+            MoveCategory.ESCAPE: (0.6, 0.8),
+            MoveCategory.ATTACK: (1.0, 1.15),
+            MoveCategory.DEFENSE: (0.7, 1.0),
+            MoveCategory.SUMMON: (1.0, 1.15),
+            MoveCategory.ULTIMATE: (2.2, 2.6),
+        }
+        for move in world.technique_library:
+            with self.subTest(move=move.name, category=move.category.value):
+                lower, upper = balance_bands[move.category]
+                self.assertGreaterEqual(move.power_scale, lower)
+                self.assertLessEqual(move.power_scale, upper)
+
+    def test_ultimate_damage_is_impactful_but_not_broken(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        strongest_attack = max(
+            player.execute_move(move.name)["damage"] for move in player.moves_by_set[MoveCategory.ATTACK]
+        )
+        for move in player.moves_by_set[MoveCategory.ULTIMATE]:
+            with self.subTest(ultimate=move.name):
+                damage = player.execute_move(move.name)["damage"]
+                self.assertGreaterEqual(damage, strongest_attack * 4)
+                self.assertLessEqual(damage, strongest_attack * 5)
 
     def test_execute_summon_move_uses_focus_and_defense(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -316,12 +343,18 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_vault_archives_historic_ninja(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         world.archive_historic_ninja(player)
         archive = world.vault_historic_ninjas[0]
         self.assertEqual(archive["name"], "Dot")
         self.assertEqual(archive["affinity"], player.affinity.value)
         self.assertEqual(archive["level"], player.stats.level)
         self.assertEqual(archive["reputation"], player.reputation)
+        self.assertIn("enemy_move_claims", archive)
+        self.assertIn("enemy_exclusive_moves", archive)
+        self.assertTrue(archive["enemy_exclusive_moves"])
 
     def test_vault_replay_summary_defaults_when_no_runs(self):
         world, _ = build_mvp_world("Dot", [1, 3, 5, 2, 1])
@@ -695,6 +728,92 @@ class CoreSystemTests(unittest.TestCase):
         self.assertTrue(result["player_survived"])
         self.assertEqual(player.encounter_history["Sunken Hollow"], 1)
 
+    def test_region_encounters_grant_repeatable_xp_for_grinding(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        initial_level = player.stats.level
+        initial_xp = player.stats.xp
+        first = world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertGreater(first["reward_xp"], 0)
+        self.assertEqual(player.stats.xp, initial_xp + first["reward_xp"])
+        for _ in range(12):
+            world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertGreater(player.stats.level, initial_level)
+
+    def test_region_encounter_unlocks_enemy_exclusive_move_once(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        learnable = get_learnable_enemy_moves()
+        region = self._get_region(world, "Verdant Gate")
+        target_enemy = next(enemy for enemy in region.encounter_table if enemy in learnable)
+        target_move = learnable[target_enemy]
+
+        first_unlock = None
+        for _ in range(len(region.encounter_table)):
+            result = world.resolve_region_encounter(player, "Verdant Gate")
+            if result["encounter"] == target_enemy:
+                first_unlock = result
+                break
+
+        self.assertIsNotNone(first_unlock)
+        self.assertEqual(first_unlock["enemy_exclusive_move"], target_move)
+        self.assertEqual(first_unlock["enemy_exclusive_move_unlocked"], target_move)
+        self.assertIn(target_move, self._get_unlocked_move_names(player))
+        self.assertEqual(player.enemy_move_claims[target_enemy], target_move)
+
+        repeat_unlock = None
+        for _ in range(len(region.encounter_table)):
+            result = world.resolve_region_encounter(player, "Verdant Gate")
+            if result["encounter"] == target_enemy:
+                repeat_unlock = result
+                break
+
+        self.assertIsNotNone(repeat_unlock)
+        self.assertEqual(repeat_unlock["enemy_exclusive_move"], target_move)
+        self.assertIsNone(repeat_unlock["enemy_exclusive_move_unlocked"])
+
+    def test_seeded_encounter_tables_include_shinobi_guards_and_animals(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        encounter_names = [
+            encounter.lower()
+            for region in world.regions
+            for encounter in (region.encounter_table or region.enemies)
+        ]
+        self.assertTrue(any("shinobi" in encounter for encounter in encounter_names))
+        self.assertTrue(any("guard" in encounter or "sentry" in encounter for encounter in encounter_names))
+        self.assertTrue(
+            any(
+                marker in encounter
+                for encounter in encounter_names
+                for marker in ("hound", "wolf", "boar", "mole", "otter", "bat")
+            )
+        )
+
+    def test_seeded_encounters_are_mostly_shinobi_conflicts(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        encounter_names = [
+            encounter.lower()
+            for region in world.regions
+            for encounter in (region.encounter_table or region.enemies)
+        ]
+        shinobi_markers = (
+            "shinobi",
+            "ronin",
+            "mercenar",
+            "raider",
+            "assassin",
+            "monk",
+            "scout",
+            "hunter",
+            "corsair",
+            "adept",
+            "stalker",
+            "guard",
+            "sentry",
+        )
+        shinobi_count = sum(
+            1 for encounter in encounter_names if any(marker in encounter for marker in shinobi_markers)
+        )
+        self.assertGreater(shinobi_count, len(encounter_names) // 2)
+
     def test_shop_inventory_respects_black_market_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         public_inventory = {item["key"] for item in world.get_shop_inventory(player)}
@@ -773,9 +892,15 @@ class CoreSystemTests(unittest.TestCase):
     def test_playthrough_summary_includes_new_tracking_fields(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "charm")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         summary = world.generate_playthrough_summary(player)
         self.assertIn("villain_decision_memory", summary)
         self.assertIn("red_bar_power_claims", summary)
+        self.assertIn("enemy_move_claims", summary)
+        self.assertIn("enemy_exclusive_moves_unlocked", summary)
+        self.assertIn("enemy_exclusive_move_progress", summary)
         self.assertIn("red_bar_progress", summary)
         self.assertIn("quest_log", summary)
         self.assertIn("ally_loyalty", summary)
@@ -787,6 +912,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("external_pressure_history", summary)
         self.assertIn("intel_discovery_log", summary)
         self.assertEqual(summary["kill_counter"]["total_kills"], 0)
+        self.assertGreaterEqual(summary["enemy_exclusive_move_progress"]["total"], 1)
 
     def test_villain_evolution_checkpoints_escalate_with_pressure(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -853,6 +979,14 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("villain_kits", summary)
         self.assertGreaterEqual(len(summary["villain_kits"]), 15)
         self.assertIn("skill_physics", preview)
+
+    def test_dual_affinity_animation_preview_blends_both_affinity_signatures(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        preview = world.get_move_animation_preview("Tempest Throne Collapse")
+        self.assertIn("compressed air ring gathers", preview["animation_profile"]["startup"])
+        self.assertIn("seal stamp with rising rock plates", preview["animation_profile"]["startup"])
+        self.assertIn("pressure ripple cross-cut", preview["animation_profile"]["hit"])
+        self.assertIn("fissure burst and heavy camera thud", preview["animation_profile"]["hit"])
 
     def test_snapshot_load_supports_legacy_trophies_without_tier(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -988,6 +1122,7 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("Pacifist", [3, 1, 2, 4])
         for decision in ["stealth", "charm", "evasion"]:
             world.apply_player_decision(player, decision)
+        world.record_quest_resolution(player, "Q10", approach="direct", stealth_satisfied=True)
         result = world.resolve_quest_branch(player, "Q10")
         self.assertEqual(result["branch_key"], "nonlethal_path")
         self.assertIn("without blood debt", result["outcome"].lower())
@@ -1679,17 +1814,448 @@ class Issue4ReplaySummaryTests(unittest.TestCase):
         world, player = self._world_and_player()
         for _ in range(3):
             world.apply_player_decision(player, "stealth")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
             save_world_snapshot(world, player, path)
             world2, player2 = load_world_snapshot(path)
             self.assertEqual(player2.encounter_outcomes["stealth"], 3)
+            self.assertTrue(player2.enemy_move_claims)
             summary = world2.generate_playthrough_summary(player2)
             self.assertIn("playstyle_summary", summary)
             self.assertIn("trophy_near_miss", summary)
+            self.assertIn("enemy_move_claims", summary)
         finally:
             os.unlink(path)
+
+
+class Issue5QuestPathingAndArcTests(unittest.TestCase):
+    def _world_and_player(self) -> tuple:
+        return build_mvp_world("PathingTest", [3, 1, 2, 4])
+
+    def test_stealth_gated_seeded_quests_are_flagged(self):
+        world, _ = self._world_and_player()
+        gated = {quest.quest_id for quest in world.quests if quest.stealth_required}
+        self.assertTrue({"Q3", "Q5", "Q10"}.issubset(gated))
+
+    def test_all_seeded_quests_expose_tactical_paths(self):
+        world, _ = self._world_and_player()
+        required = {"stealth_path", "charm_path", "evasion_path", "kill_path"}
+        for quest in world.quests:
+            with self.subTest(quest_id=quest.quest_id):
+                self.assertTrue(required.issubset(set(quest.branch_outcomes)))
+
+    def test_explicit_quest_approach_overrides_global_dominant_outcome(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        world.record_quest_resolution(player, "Q4", approach="stealth", stealth_satisfied=True)
+        result = world.resolve_quest_branch(player, "Q4")
+        self.assertEqual(result["branch_key"], "stealth_path")
+
+    def test_stealth_gate_blocks_nonlethal_branch_until_satisfied(self):
+        world, player = self._world_and_player()
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        blocked = world.resolve_quest_branch(player, "Q5")
+        self.assertNotEqual(blocked["branch_key"], "nonlethal_path")
+        self.assertFalse(blocked["quest_resolution"]["stealth_gate_open"])
+
+        world.record_quest_resolution(player, "Q5", approach="direct", stealth_satisfied=True)
+        unlocked = world.resolve_quest_branch(player, "Q5")
+        self.assertEqual(unlocked["branch_key"], "nonlethal_path")
+        self.assertTrue(unlocked["quest_resolution"]["stealth_gate_open"])
+
+    def test_complete_quest_persists_resolution_state(self):
+        world, player = self._world_and_player()
+        player.set_quest_status("Q3", QuestStatus.ACTIVE)
+        world.record_quest_resolution(player, "Q3", approach="stealth", stealth_satisfied=True)
+        result = world.complete_quest(player, "Q3")
+        self.assertEqual(result["resolved_branch_key"], "stealth_path")
+        self.assertTrue(player.quest_resolution_state["Q3"]["completed"])
+
+    def test_snapshot_roundtrip_preserves_quest_resolution_state(self):
+        world, player = self._world_and_player()
+        world.record_quest_resolution(player, "Q10", approach="stealth", stealth_satisfied=True)
+        with TemporaryDirectory() as temp_dir:
+            snapshot_path = f"{temp_dir}/snapshot.json"
+            save_world_snapshot(world, player, snapshot_path)
+            restored_world, restored_player = load_world_snapshot(snapshot_path)
+        self.assertEqual(
+            restored_player.quest_resolution_state["Q10"]["approach"],
+            "stealth",
+        )
+        restored = restored_world.resolve_quest_branch(restored_player, "Q10")
+        self.assertTrue(restored["quest_resolution"]["stealth_gate_open"])
+
+    def test_arc_transition_events_are_logged_once_per_phase(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            region_name = world.dynamic_region_chain[0]
+            world.clear_region(player, region_name, "weapon")
+        self.assertEqual(
+            [entry["to_phase"] for entry in world.arc_transition_history],
+            ["escalation", "apex"],
+        )
+        summary = world.generate_playthrough_summary(player)
+        self.assertEqual(len(summary["arc_state"]["transition_history"]), 2)
+        self.assertEqual(len(world.arc_transition_history), 2)
+        self.assertTrue(
+            any(entry.get("event_type") == "arc_transition" for entry in world.world_event_history)
+        )
+
+    def test_black_market_inventory_honors_required_quest_completion(self):
+        world, player = self._world_and_player()
+        player.update_reputation(-60)
+        inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertNotIn("gatebreaker_smoke_map", inventory)
+        player.set_quest_status("Q3", QuestStatus.COMPLETED)
+        inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertIn("gatebreaker_smoke_map", inventory)
+
+    def test_reformed_villain_hook_surfaces_in_quest_outcome(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            world.apply_player_decision(player, "charm")
+        result = world.resolve_quest_branch(player, "Q3")
+        self.assertIsNotNone(result["reformed_villain_hook"])
+        self.assertIn("lowers his blade", result["outcome"])
+
+
+class VillainBackstoryAndTieInTests(unittest.TestCase):
+    """Villain backstory, power origins, arc ties, and player backstory hooks."""
+
+    _PLAYER_BACKSTORY_KEYS = ("exiled_heir", "street_ghost", "wandering_monk")
+    _PATH_KEYS = ("nonlethal_path", "rogue_path", "heroic_path")
+    _BOSS_NAMES = ("Kage Renda", "General Voln", "Admiral Neris", "Zephyr Tyrant", "Ashen Monarch")
+
+    def _world(self) -> tuple:
+        return build_mvp_world("TestPlayer", [3, 1, 2, 4])
+
+    def _villain_text(self, villain) -> str:
+        parts = [
+            villain.backstory,
+            villain.power_origin,
+            villain.role,
+            villain.signature_power.name,
+            villain.signature_power.technique_type.value,
+            villain.signature_power.category.value,
+            " ".join(villain.skinned_move_names.values()),
+            " ".join(villain.player_backstory_hooks.values()),
+        ]
+        return " ".join(parts).lower()
+
+    # ------------------------------------------------------------------
+    # power_origin field
+    # ------------------------------------------------------------------
+
+    def test_all_villains_have_non_empty_power_origin(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertTrue(
+                    villain.power_origin,
+                    f"Villain '{villain.name}' is missing a power_origin.",
+                )
+
+    def test_boss_power_origins_are_substantive(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                self.assertGreater(
+                    len(villain.power_origin),
+                    80,
+                    f"'{name}' power_origin is too brief.",
+                )
+
+    def test_power_origins_mention_signature_power(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                # power_origin should contextually reference the technique
+                self.assertTrue(
+                    villain.power_origin,
+                    f"'{villain.name}' has empty power_origin.",
+                )
+
+    # ------------------------------------------------------------------
+    # arc_ties field
+    # ------------------------------------------------------------------
+
+    def test_all_villains_have_at_least_one_arc_tie(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertTrue(
+                    villain.arc_ties,
+                    f"Villain '{villain.name}' has no arc_ties.",
+                )
+
+    def test_boss_arc_ties_reference_known_arcs(self):
+        world, _ = self._world()
+        known_arcs = {
+            "political_war", "fracture_front", "recovery_mandate",
+            "rebellion_wave", "highland_reckoning", "depths_awakening",
+        }
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for arc in villain.arc_ties:
+                    self.assertIn(arc, known_arcs, f"'{name}' has unknown arc tie '{arc}'.")
+
+    def test_kage_renda_tied_to_political_war(self):
+        world, _ = self._world()
+        renda = next(v for v in world.villains if v.name == "Kage Renda")
+        self.assertIn("political_war", renda.arc_ties)
+
+    def test_general_voln_tied_to_fracture_front(self):
+        world, _ = self._world()
+        voln = next(v for v in world.villains if v.name == "General Voln")
+        self.assertIn("fracture_front", voln.arc_ties)
+
+    def test_admiral_neris_tied_to_recovery_mandate(self):
+        world, _ = self._world()
+        neris = next(v for v in world.villains if v.name == "Admiral Neris")
+        self.assertIn("recovery_mandate", neris.arc_ties)
+
+    def test_zephyr_tyrant_tied_to_highland_reckoning(self):
+        world, _ = self._world()
+        tyrant = next(v for v in world.villains if v.name == "Zephyr Tyrant")
+        self.assertIn("highland_reckoning", tyrant.arc_ties)
+
+    def test_ashen_monarch_tied_to_depths_awakening(self):
+        world, _ = self._world()
+        monarch = next(v for v in world.villains if v.name == "Ashen Monarch")
+        self.assertIn("depths_awakening", monarch.arc_ties)
+
+    # ------------------------------------------------------------------
+    # player_backstory_hooks field
+    # ------------------------------------------------------------------
+
+    def test_all_bosses_have_hooks_for_all_player_backstory_keys(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for key in self._PLAYER_BACKSTORY_KEYS:
+                    self.assertIn(
+                        key,
+                        villain.player_backstory_hooks,
+                        f"'{name}' missing player backstory hook for '{key}'.",
+                    )
+
+    def test_all_bosses_have_hooks_for_path_keys(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for key in self._PATH_KEYS:
+                    self.assertIn(
+                        key,
+                        villain.player_backstory_hooks,
+                        f"'{name}' missing hook for path '{key}'.",
+                    )
+
+    def test_all_villains_have_at_least_three_backstory_hooks(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertGreaterEqual(
+                    len(villain.player_backstory_hooks),
+                    3,
+                    f"'{villain.name}' has fewer than 3 backstory hooks.",
+                )
+
+    def test_kage_renda_exiled_heir_hook_references_exile(self):
+        world, _ = self._world()
+        renda = next(v for v in world.villains if v.name == "Kage Renda")
+        hook = renda.player_backstory_hooks["exiled_heir"]
+        self.assertTrue(hook)
+        self.assertIn("exile", hook.lower())
+
+    def test_ashen_monarch_wandering_monk_hook_references_seals(self):
+        world, _ = self._world()
+        monarch = next(v for v in world.villains if v.name == "Ashen Monarch")
+        hook = monarch.player_backstory_hooks["wandering_monk"]
+        self.assertIn("seal", hook.lower())
+
+    def test_villain_roster_covers_requested_personality_and_end_goal_themes(self):
+        world, _ = self._world()
+        villains = {villain.name: villain for villain in world.villains}
+
+        themed_expectations = {
+            "Kage Renda": ("political",),
+            "Silent Bell": ("shrine", "theological"),
+            "Torch Baron": ("money",),
+            "Crimson Lantern": ("lust",),
+            "Vanta Puppetmaster": ("technology", "summoning"),
+            "Mist Widow": ("stealth",),
+            "Dusk Paladin": ("last ronin",),
+            "Bone Weaver": ("medical",),
+            "Storm Needle": ("long range",),
+        }
+
+        for villain_name, expected_terms in themed_expectations.items():
+            with self.subTest(villain=villain_name):
+                text = self._villain_text(villains[villain_name])
+                for term in expected_terms:
+                    self.assertIn(term, text)
+
+    # ------------------------------------------------------------------
+    # get_villain_backstory_profile method
+    # ------------------------------------------------------------------
+
+    def test_get_villain_backstory_profile_returns_all_fields(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertEqual(profile["name"], "Kage Renda")
+        self.assertIn("backstory", profile)
+        self.assertIn("power_origin", profile)
+        self.assertIn("arc_ties", profile)
+        self.assertIn("player_backstory_hooks", profile)
+        self.assertIn("signature_power", profile)
+        self.assertIn("primary_affinity", profile)
+        self.assertIn("secondary_affinities", profile)
+        self.assertIn("affinities", profile)
+        self.assertIn("ultimate_affinities", profile)
+        self.assertIn("role", profile)
+        self.assertIn("stance", profile)
+        self.assertIn("relationship_arc", profile)
+
+    def test_get_villain_backstory_profile_tracks_dual_affinity_villains(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Zephyr Tyrant")
+        self.assertEqual(profile["primary_affinity"], Affinity.WIND.value)
+        self.assertEqual(profile["secondary_affinities"], [Affinity.EARTH.value])
+        self.assertEqual(profile["affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+        self.assertEqual(profile["ultimate_affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+
+    def test_get_villain_backstory_profile_raises_for_unknown_villain(self):
+        world, _ = self._world()
+        with self.assertRaises(ValueError):
+            world.get_villain_backstory_profile("Nonexistent Villain")
+
+    def test_get_villain_backstory_profile_arc_ties_is_list(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            with self.subTest(villain=name):
+                profile = world.get_villain_backstory_profile(name)
+                self.assertIsInstance(profile["arc_ties"], list)
+                self.assertTrue(profile["arc_ties"])
+
+    def test_get_villain_backstory_profile_hooks_is_dict(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("General Voln")
+        self.assertIsInstance(profile["player_backstory_hooks"], dict)
+        self.assertIn("exiled_heir", profile["player_backstory_hooks"])
+
+    def test_get_villain_backstory_profile_relationship_arc_dormant_at_start(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertEqual(profile["relationship_arc"], "dormant")
+
+    def test_get_villain_backstory_profile_relationship_arc_updates_with_pressure(self):
+        world, player = self._world()
+        for _ in range(10):
+            world.apply_player_decision(player, "kill")
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertIn(profile["relationship_arc"], ("nemesis", "rival", "active"))
+
+    # ------------------------------------------------------------------
+    # generate_playthrough_summary integration
+    # ------------------------------------------------------------------
+
+    def test_playthrough_summary_includes_villain_backstory_profiles(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("villain_backstory_profiles", summary)
+        profiles = summary["villain_backstory_profiles"]
+        self.assertIsInstance(profiles, dict)
+        for name in self._BOSS_NAMES:
+            with self.subTest(villain=name):
+                self.assertIn(name, profiles)
+
+    def test_villain_backstory_profiles_summary_contains_required_keys(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        profiles = summary["villain_backstory_profiles"]
+        for name, data in profiles.items():
+            with self.subTest(villain=name):
+                self.assertIn("backstory", data)
+                self.assertIn("power_origin", data)
+                self.assertIn("affinities", data)
+                self.assertIn("secondary_affinities", data)
+                self.assertIn("arc_ties", data)
+                self.assertIn("player_backstory_hooks", data)
+
+    def test_villain_kits_include_secondary_affinities_for_dual_affinity_villains(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        zephyr_kit = next(item for item in summary["villain_kits"] if item["name"] == "Zephyr Tyrant")
+        self.assertEqual(zephyr_kit["primary_affinity"], Affinity.WIND.value)
+        self.assertEqual(zephyr_kit["secondary_affinities"], [Affinity.EARTH.value])
+        self.assertEqual(zephyr_kit["affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+        self.assertEqual(zephyr_kit["ultimate_affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+
+    # ------------------------------------------------------------------
+    # Snapshot round-trip
+    # ------------------------------------------------------------------
+
+    def test_snapshot_round_trip_preserves_villain_backstory_fields(self):
+        import tempfile, os
+        world, player = self._world()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            save_world_snapshot(world, player, path)
+            restored_world, _ = load_world_snapshot(path)
+        finally:
+            os.unlink(path)
+
+        for original, restored in zip(world.villains, restored_world.villains):
+            with self.subTest(villain=original.name):
+                self.assertEqual(restored.power_origin, original.power_origin)
+                self.assertEqual(restored.arc_ties, original.arc_ties)
+                self.assertEqual(
+                    restored.player_backstory_hooks,
+                    original.player_backstory_hooks,
+                )
+
+    def test_snapshot_round_trip_preserves_boss_arc_ties(self):
+        import tempfile, os
+        world, player = self._world()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            save_world_snapshot(world, player, path)
+            restored_world, _ = load_world_snapshot(path)
+        finally:
+            os.unlink(path)
+
+        renda_orig = next(v for v in world.villains if v.name == "Kage Renda")
+        renda_rest = next(v for v in restored_world.villains if v.name == "Kage Renda")
+        self.assertEqual(renda_rest.arc_ties, renda_orig.arc_ties)
+        self.assertIn("political_war", renda_rest.arc_ties)
+
+    def test_legacy_snapshot_without_new_fields_loads_with_defaults(self):
+        """Snapshots saved before power_origin/arc_ties existed should still load."""
+        world, player = self._world()
+        snapshot = world.to_snapshot(player)
+        # Strip the new fields to simulate a legacy snapshot
+        for villain_data in snapshot["world"]["villains"]:
+            villain_data.pop("power_origin", None)
+            villain_data.pop("arc_ties", None)
+            villain_data.pop("player_backstory_hooks", None)
+        restored_world, _ = world.from_snapshot(snapshot)
+        for villain in restored_world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertEqual(villain.power_origin, "")
+                self.assertEqual(villain.arc_ties, ())
+                self.assertEqual(villain.player_backstory_hooks, {})
 
 
 if __name__ == "__main__":

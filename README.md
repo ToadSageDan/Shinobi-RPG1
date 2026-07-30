@@ -27,6 +27,7 @@ The bootstrap command outputs a JSON summary of the seeded player setup, support
 - Save/load snapshots for full world + player progression state
 - Quest state flow (active/completed/failed) with sequential gating
 - Quest chain including stealth-required content
+- Explicit quest-resolution tracking so most quests can resolve through stealth, charm, evasion, or force
 - **50 seeded quests (Q1–Q50)** with handcrafted backstory, nonlethal, heroic, and rogue branch outcomes
 - Seeded allies (Dan, Moon, Sleep, Dot, Porter) plus curated roster names, with AutoNinja fallback to 10+
 - Ally loyalty tracking influenced by decisions and quest outcomes
@@ -49,12 +50,14 @@ The bootstrap command outputs a JSON summary of the seeded player setup, support
 - Combo resolution helper with status-affinity synergy bonuses
 - Affinity animation preview metadata for move startup/travel/hit/recovery beats
 - Nonlethal progression tracking via charm, stealth, and evasion outcomes
-- Reputation-aware shop inventory and Black Market purchasing
+- Reputation-aware shop inventory and Black Market purchasing with quest-gated unlocks
 - Expanded trophy catalog (36 trophies) with category-based unlock conditions
 - Trophy tiers (early/mid/late) exposed in summary and progress views
 - Trophy progress tracking with near-miss hints in playthrough summary
 - **Playstyle summary** in `generate_playthrough_summary()` — style label, shift detection, nonlethal vs lethal totals
 - **Villain relationship arcs** in summary — dormant/active/rival/nemesis/reformed per villain
+- Arc-transition summary events recorded across world history, tapestry, and replay summaries
+- Reformed villain dialogue hooks for key quest outcomes
 - Playthrough summary report including backstory, trophies, reputation, and villain stances
 - NPC evil-threshold evolution and intel event systems
 - Canon world codex in [`LORE_DUMP.md`](LORE_DUMP.md) plus programmatic `generate_lore_dump()` output

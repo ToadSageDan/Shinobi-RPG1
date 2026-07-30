@@ -4229,7 +4229,6 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "military_command",
             "branch_outcomes": {
                 "exiled_heir": (
-<<<<<<< HEAD
                     "You invoke bloodline authority to unite fractured captains, fortifying Red Pass before the invasion column can deploy."
                 ),
                 "street_ghost": (
@@ -4260,35 +4259,6 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You sabotage payroll and rations, collapsing command loyalty and buying control of the battlefield."
                 ),
                 "default": "You stabilize Red Pass under pressure and deny the invasion its first decisive breach.",
-=======
-                    "You invoke ancestral garrison rights and rally the pass defenders under your clan seal, "
-                    "forcing rival commands to stand down before the first assault wave."
-                ),
-                "street_ghost": (
-                    "You slip behind both siege lines and detonate supply caches on each flank, "
-                    "collapsing the invasion timetable before it reaches the pass walls."
-                ),
-                "wandering_monk": (
-                    "You broker a temporary armistice at the pass gate, evacuating civilians "
-                    "under temple neutrality before either army can commit to bloodshed."
-                ),
-                "nonlethal_path": (
-                    "You disable command posts through stealth and evasion, leaving both assault "
-                    "forces leaderless and forcing a chaotic retreat without a single execution."
-                ),
-                "heroic_path": (
-                    "Your heroic reputation draws scattered defenders back to the walls; "
-                    "their unified stand breaks the invasion's momentum before dawn."
-                ),
-                "rogue_path": (
-                    "You sell rival command intelligence to both sides simultaneously, "
-                    "triggering mutual suspicion that stalls the invasion at the pass entrance."
-                ),
-                "default": (
-                    "You hold the pass through relentless counter-pressure, turning the border "
-                    "into a killing ground until the invasion force breaks and retreats."
-                ),
->>>>>>> origin/main
             },
         },
         {
@@ -4301,7 +4271,6 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "summon_affinity",
             "branch_outcomes": {
                 "exiled_heir": (
-<<<<<<< HEAD
                     "You restore the ancestral pact seals and command the spirit to stand down under bloodline law."
                 ),
                 "street_ghost": (
@@ -4332,35 +4301,6 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You auction pact secrets between factions and enforce compliance through fear of spirit reprisal."
                 ),
                 "default": "You contain the summon crisis and close the pact breach before border towns collapse.",
-=======
-                    "Old clan pact scrolls in your lineage give you the binding sequence; "
-                    "you reseal the spirit under hereditary oath before it crosses the border."
-                ),
-                "street_ghost": (
-                    "You trace the pact broker through underground channels and blackmail them "
-                    "into supplying the release phrase, dissolving the spirit without combat."
-                ),
-                "wandering_monk": (
-                    "You approach the spirit unarmed and negotiate terms of release, "
-                    "guiding it to a willing sanctuary instead of a forced seal."
-                ),
-                "nonlethal_path": (
-                    "You lure the spirit into a containment circle through misdirection and "
-                    "charm, binding it without ever raising a weapon against its form."
-                ),
-                "heroic_path": (
-                    "Your reputation draws master-class summoners to your side; "
-                    "their combined expertise reseals the spirit before border towns take damage."
-                ),
-                "rogue_path": (
-                    "You bargain with the spirit directly, trading a rival faction's pact "
-                    "secrets for its cooperation and redirecting its fury away from your allies."
-                ),
-                "default": (
-                    "You fight the spirit across three summoning anchors, destroying each seal "
-                    "until the pact collapses and the spirit dissipates."
-                ),
->>>>>>> origin/main
             },
         },
         {
@@ -4373,7 +4313,6 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "spy_network",
             "branch_outcomes": {
                 "exiled_heir": (
-<<<<<<< HEAD
                     "You use forgotten clan codes to enter the prison unchallenged and extract the witness before dawn."
                 ),
                 "street_ghost": (
@@ -4404,35 +4343,6 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You fake the prisoner's death records and sell silence to every official tied to the conspiracy."
                 ),
                 "default": "You pull off the prison operation and secure the witness without exposing your core network.",
-=======
-                    "Old warden contracts tied to your bloodline give you legitimate visitation "
-                    "rights; you walk the prisoner out through the official gate at midnight."
-                ),
-                "street_ghost": (
-                    "You map the prison through informant networks, then stage a false transfer "
-                    "order that moves the prisoner into your custody before anyone notices."
-                ),
-                "wandering_monk": (
-                    "You enter as a spiritual counselor and guide the prisoner out through a "
-                    "pre-arranged passage, leaving every guard unharmed and none the wiser."
-                ),
-                "nonlethal_path": (
-                    "You isolate guards through stealth diversions and charm distractions, "
-                    "slipping the prisoner free without triggering a single alarm."
-                ),
-                "heroic_path": (
-                    "You organize a public prisoner transfer petition backed by village witnesses, "
-                    "forcing the warden to release the prisoner under legal pressure."
-                ),
-                "rogue_path": (
-                    "You bribe the night warden and stage a convincing death record, "
-                    "letting the prisoner vanish into your network before morning roll call."
-                ),
-                "default": (
-                    "You breach the outer walls after dark, neutralize the cell block, "
-                    "and extract the prisoner through a route carved by force."
-                ),
->>>>>>> origin/main
             },
         },
         {
@@ -4445,7 +4355,6 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "signature_technique",
             "branch_outcomes": {
                 "exiled_heir": (
-<<<<<<< HEAD
                     "You claim the first blade doctrine as rightful heir, binding legacy and command into one mandate."
                 ),
                 "street_ghost": (
@@ -4476,35 +4385,6 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You weaponize the doctrine as leverage, selling allegiance oaths to the highest bidder."
                 ),
                 "default": "You survive the ancestral duel and carry its verdict into the coming siege.",
-=======
-                    "The phantom recognizes your bloodline seal and yields mid-duel, "
-                    "transferring the legacy doctrine into your authority by right of succession."
-                ),
-                "street_ghost": (
-                    "You read the phantom's fighting pattern through underworld records "
-                    "and counter every inherited technique until it dissolves the doctrine at last."
-                ),
-                "wandering_monk": (
-                    "You refuse to draw first; the phantom, confronted with restraint, "
-                    "dissolves peacefully and leaves the doctrine open for reinterpretation."
-                ),
-                "nonlethal_path": (
-                    "You survive every phantom strike through evasion alone, exhausting "
-                    "the duel's aggression until the doctrine fractures and becomes yours to reshape."
-                ),
-                "heroic_path": (
-                    "Witnesses from your heroic past stand at the duel's edge; their testimony "
-                    "reshapes the legacy verdict in your favor before the final exchange."
-                ),
-                "rogue_path": (
-                    "You corrupt the duel's ritual seals mid-fight, forcing the phantom to "
-                    "accept your terms rather than risk complete dissolution."
-                ),
-                "default": (
-                    "You outfight the phantom blow for blow, breaking its final technique "
-                    "and claiming the doctrine through the oldest right: decisive victory."
-                ),
->>>>>>> origin/main
             },
         },
         {
@@ -4517,7 +4397,6 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "arc_transition",
             "branch_outcomes": {
                 "exiled_heir": (
-<<<<<<< HEAD
                     "You rally bloodline loyalists to hold the inner wall, establishing lawful command as dawn breaks."
                 ),
                 "street_ghost": (
@@ -4548,43 +4427,6 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You seize the gate's black ledgers and force every faction to bargain under your shadow rule."
                 ),
                 "default": "You break the siege at Shattered Gate and decide the opening terms of the next era.",
-=======
-                    "You reveal an ancestral gate key that grants you exclusive command authority; "
-                    "both sides stand down pending your ruling on who crosses first."
-                ),
-                "street_ghost": (
-                    "You compromise the siege's supply lines through hidden tunnels, "
-                    "forcing the attacking force to the table before the gate falls."
-                ),
-                "wandering_monk": (
-                    "You step between the assault lines unarmed at first light and invoke "
-                    "the gate's sanctuary status, buying a ceasefire that holds through dawn."
-                ),
-                "nonlethal_path": (
-                    "You disable siege engines through stealth and charm commanders away "
-                    "from their posts, ending the siege before a single wall stone is breached."
-                ),
-                "stealth_path": (
-                    "You center the siege resolution on stealth-first tactics, cutting "
-                    "enemy supply and communication lines before open conflict can form."
-                ),
-                "heroic_path": (
-                    "Defenders rally to your banner and hold the gate far past projected "
-                    "collapse, giving ceasefire envoys time to reach both command posts."
-                ),
-                "rogue_path": (
-                    "You feed each side false intelligence about the other's resolve, "
-                    "triggering mutual hesitation that lets you dictate the gate's final status."
-                ),
-                "kill_path": (
-                    "You drive the siege to a brutal conclusion, eliminating command "
-                    "targets on both sides to end resistance and claim the gate immediately."
-                ),
-                "default": (
-                    "You fight through the breach point, shatter the siege command, "
-                    "and declare the gate's fate by force before nightfall."
-                ),
->>>>>>> origin/main
             },
         },
         {
@@ -4601,8 +4443,8 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "to establish yourself as protector and force the true instigator out of hiding."
                 ),
                 "street_ghost": (
-                    "You trace the false accusation back through a courier chain and surface "
-                    "the instigator's payment records before either army responds."
+                    "Your underworld courier contacts expose the false-flag trail and help you "
+                    "keep sacred spaces outside faction revenge cycles before either army retaliates."
                 ),
                 "wandering_monk": (
                     "You interview each custodian in mediation, separating coerced testimony "
@@ -5744,8 +5586,9 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "the world accepts your governance model because your path proved it was possible."
                 ),
                 "heroic_path": (
-                    "Your heroic record is written into the settlement as the new standard "
-                    "of legitimacy; every future claim to authority must measure itself against yours."
+                    "Your heroic record anchors the settlement's legitimacy as you "
+                    "finalize a postwar legacy framework that balances justice, deterrence, and stability "
+                    "for every faction forced to measure itself against your example."
                 ),
                 "rogue_path": (
                     "You establish a hidden arbitration network that enforces the peace "
@@ -5776,11 +5619,15 @@ def _build_extended_quest_chain() -> List[Quest]:
         )
         if index > 40:
             arc_tag = "postwar_continuation"
-        branch_outcomes = (
-            dict(spec.get("branch_outcomes", {}))
-            or _build_remaining_seeded_branch_outcomes(spec)
-            or _build_structured_branch_outcomes(spec)
-        )
+        focus_outcomes = _build_remaining_seeded_branch_outcomes(spec)
+        if focus_outcomes:
+            # Q21-Q50: start with focus-generated outcomes for full tactical coverage,
+            # then overlay per-quest hand-crafted text for keys where it is provided.
+            branch_outcomes = {**focus_outcomes, **dict(spec.get("branch_outcomes", {}))}
+        else:
+            # Q11-Q20: hand-crafted per-quest entries take full priority; fall back to
+            # the generic structured generator when no per-quest overrides are present.
+            branch_outcomes = dict(spec.get("branch_outcomes", {})) or _build_structured_branch_outcomes(spec)
         extended_quests.append(
             Quest(
                 quest_id=spec["quest_id"],

@@ -64,3 +64,28 @@ world, player = build_mvp_world("Dan", [3, 1, 2, 4, 5])
 reward = world.clear_region(player, "Verdant Gate", "move")
 print(player.affinity.value, reward)
 ```
+
+## HUD display mocks
+
+### Mock A: Minimal/Cinematic HUD (Skyrim-like feel)
+
+| Zone | What shows | Example |
+|---|---|---|
+| Top-left | HP / Chakra / Stamina as slim bars | HP 120/150, Chakra 80/120, Stamina 65/100 |
+| Bottom-center | Quick powers (small, low-noise) | 1: Chidori, 2: Gale Palm, Q: Shadow Step, R: Ultimate |
+| Top-center | Name + level | Dan • Lv.17 |
+| Top-right | Compass/minimap only | NE marker, objective ping |
+| Right side (collapsed by default) | Current objective | Reach Hidden Pass |
+| Near reticle/context area | Temporary status icons | Focus buff, Burn debuff |
+
+### Mock B: Full RPG HUD (information-dense)
+
+| Panel | What shows | Example |
+|---|---|---|
+| Character core | HP, Chakra, Stamina, XP, Level | HP 120/150, XP 72% to Lv.18 |
+| Attributes panel | Strength, Agility, Intelligence, Defense, Speed | STR 14, AGI 18, INT 12 |
+| Affinity panel | Primary/Secondary affinity + rank + bonuses | Lightning / Wind, Rank B |
+| Powers loadout | Equipped jutsu, cooldowns, resource costs, lock states | Kirin locked, Chidori ready |
+| Status tracker | Buff/debuff timers + stack counts | Burn x2 (6s), Focus (10s) |
+| Quest tracker | Main + side objectives with progress | Main: Reach Hidden Pass (2/4) |
+| World awareness | Minimap, alerts, stance/reputation hints | Rogue rep rising, stealth alert |

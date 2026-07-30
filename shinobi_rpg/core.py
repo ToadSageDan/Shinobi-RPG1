@@ -4520,7 +4520,11 @@ def _build_extended_quest_chain() -> List[Quest]:
         )
         if index > 40:
             arc_tag = "postwar_continuation"
-        branch_outcomes = dict(spec.get("branch_outcomes", {})) or _build_structured_branch_outcomes(spec)
+        branch_outcomes = (
+            dict(spec.get("branch_outcomes", {}))
+            or _build_remaining_seeded_branch_outcomes(spec)
+            or _build_structured_branch_outcomes(spec)
+        )
         extended_quests.append(
             Quest(
                 quest_id=spec["quest_id"],
@@ -4548,6 +4552,83 @@ def _build_extended_quest_chain() -> List[Quest]:
             )
         )
     return extended_quests
+
+
+REMAINING_SEEDED_QUEST_BRANCH_FOCUS: Dict[str, str] = {
+    "Q21": "neutralize the shrine false-flag and keep sacred spaces outside faction revenge cycles",
+    "Q22": "rebuild trusted courier channels before isolated villages collapse into panic",
+    "Q23": "turn the Fifth Mask network from chaos engine into controlled leverage",
+    "Q24": "stop famine sabotage while deciding who receives first protection under scarcity",
+    "Q25": "secure caravan lifelines and decide whether commerce stays free, taxed, or manipulated",
+    "Q26": "restore or rewrite Kage command legitimacy during forged-order collapse",
+    "Q27": "contain the poisoned river crisis without triggering retaliatory purges",
+    "Q28": "recover conscripted students and choose whether truth becomes reform or buried scandal",
+    "Q29": "stabilize the summit ambush aftermath before peace leadership fractures",
+    "Q30": "end the five-banner war with enforceable authority and a durable power model",
+    "Q31": "define the regency boundary between emergency stability and permanent tyranny",
+    "Q32": "settle chakra ore control without turning labor unrest into another war front",
+    "Q33": "protect bloodline identity records from weaponized lineage politics",
+    "Q34": "restore winter signal defenses while deciding the traitor's political value",
+    "Q35": "break envoy poison extortion and control antidote trust networks",
+    "Q36": "resolve the Ninth Oath with legitimacy that can survive postwar scrutiny",
+    "Q37": "contain the Bone Orchard before summoned remnants become faction weapons",
+    "Q38": "lock treaty legitimacy before forged terms hard-code future conflict",
+    "Q39": "triage collapsing fronts while preserving long-term governing credibility",
+    "Q40": "seal final succession terms that can survive both idealism and opportunism",
+    "Q41": "hold the winter ceasefire line while hunting relief-camp saboteurs",
+    "Q42": "recover the Sixth Bell and break the ritual assassination signal chain",
+    "Q43": "free coerced child couriers and dismantle handler incentives at the source",
+    "Q44": "resolve Daimyo debt manipulation before finance reignites proxy war",
+    "Q45": "end false-flag atrocities tied to your banner without legitimizing vengeance spirals",
+    "Q46": "decide who controls forbidden jutsu circulation after the night market shock",
+    "Q47": "restore border map authority before cartographic fraud becomes legal war",
+    "Q48": "protect memorial truth so grief cannot be repurposed as recruitment fuel",
+    "Q49": "settle the heir claim with enough legitimacy to prevent endless succession coups",
+    "Q50": "finalize a postwar legacy framework that balances justice, deterrence, and stability",
+}
+
+
+def _build_remaining_seeded_branch_outcomes(spec: Dict[str, Any]) -> Dict[str, str]:
+    quest_id = spec.get("quest_id", "")
+    focus = REMAINING_SEEDED_QUEST_BRANCH_FOCUS.get(quest_id)
+    if not focus:
+        return {}
+
+    title = spec["title"]
+    objective = spec["objective"]
+    return {
+        "exiled_heir": (
+            f"Your bloodline claim frames {title} as lawful intervention, letting you {focus} with formal mandate."
+        ),
+        "street_ghost": (
+            f"Your underworld channels thread through {title}, helping you {focus} through covert influence."
+        ),
+        "wandering_monk": (
+            f"You anchor {title} in restraint and service, allowing you to {focus} without feeding blood debt."
+        ),
+        "nonlethal_path": (
+            f"You resolve {title} through stealth, charm, and evasion so you can {focus} without executions."
+        ),
+        "stealth_path": (
+            f"You run {title} as a stealth-first operation and {focus} before open retaliation can form."
+        ),
+        "charm_path": (
+            f"You use diplomacy and social leverage during {title} to {focus} through temporary coalition-building."
+        ),
+        "evasion_path": (
+            f"You keep your force mobile during {title}, evading decisive clashes while you {focus}."
+        ),
+        "kill_path": (
+            f"You push {title} into decisive eliminations to {focus} through shock and fear."
+        ),
+        "heroic_path": (
+            f"Your heroic standing turns public trust into momentum during {title}, helping you {focus} in the open."
+        ),
+        "rogue_path": (
+            f"Your rogue reputation weaponizes rumor and favors in {title}, forcing rivals to let you {focus}."
+        ),
+        "default": f"You execute the core objective directly: {objective}",
+    }
 
 
 def _build_structured_branch_outcomes(spec: Dict[str, Any]) -> Dict[str, str]:

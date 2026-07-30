@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -686,6 +687,8 @@ class Region:
     climate: str = "temperate"
     terrain_profile: Tuple[str, ...] = field(default_factory=tuple)
     strategic_value: str = ""
+    minimum_level: int = 1
+    assassin_hunter_name: str = "Regional Assassin Cell"
     travel_nodes: List[str] = field(default_factory=list)
     points_of_interest: List[PointOfInterest] = field(default_factory=list)
     tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
@@ -2310,6 +2313,27 @@ class NinjaWorld:
         encounter_pool = region.encounter_table if region.encounter_table else region.enemies
         if not encounter_pool:
             raise ValueError(f'Region "{region_name}" has no encounters configured.')
+        level_gap = max(region.minimum_level - player.stats.level, 0)
+        unauthorized_region = level_gap > 0
+        if unauthorized_region:
+            hunt_chance = min(0.2 + (0.15 * level_gap), 0.95)
+            if random.random() < hunt_chance:
+                encounter_count = player.record_region_encounter(region_name)
+                assassin_strength = max(region.minimum_level, player.stats.level + level_gap * 2)
+                return {
+                    "region": region_name,
+                    "encounter": region.assassin_hunter_name,
+                    "encounter_index": None,
+                    "times_seen": encounter_count,
+                    "unauthorized_region": True,
+                    "recommended_level": region.minimum_level,
+                    "player_level": player.stats.level,
+                    "level_gap": level_gap,
+                    "assassin_hunt_triggered": True,
+                    "assassin_strength": assassin_strength,
+                    "outcome": "killed",
+                    "player_survived": False,
+                }
         encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
         encounter = encounter_pool[encounter_index]
         encounter_count = player.record_region_encounter(region_name)
@@ -2318,6 +2342,12 @@ class NinjaWorld:
             "encounter": encounter,
             "encounter_index": encounter_index,
             "times_seen": encounter_count,
+            "unauthorized_region": unauthorized_region,
+            "recommended_level": region.minimum_level,
+            "player_level": player.stats.level,
+            "level_gap": level_gap,
+            "assassin_hunt_triggered": False,
+            "player_survived": True,
         }
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -2655,6 +2685,8 @@ class NinjaWorld:
                     "climate": region.climate,
                     "terrain_profile": list(region.terrain_profile),
                     "strategic_value": region.strategic_value,
+                    "minimum_level": region.minimum_level,
+                    "assassin_hunter_name": region.assassin_hunter_name,
                     "travel_nodes": list(region.travel_nodes),
                     "points_of_interest": [
                         {
@@ -2858,6 +2890,8 @@ class NinjaWorld:
                         "climate": region.climate,
                         "terrain_profile": list(region.terrain_profile),
                         "strategic_value": region.strategic_value,
+                        "minimum_level": region.minimum_level,
+                        "assassin_hunter_name": region.assassin_hunter_name,
                         "travel_nodes": list(region.travel_nodes),
                         "points_of_interest": [
                             {
@@ -3043,6 +3077,8 @@ class NinjaWorld:
                 climate=item.get("climate", "temperate"),
                 terrain_profile=tuple(item.get("terrain_profile", [])),
                 strategic_value=item.get("strategic_value", ""),
+                minimum_level=int(item.get("minimum_level", 1)),
+                assassin_hunter_name=item.get("assassin_hunter_name", "Regional Assassin Cell"),
                 travel_nodes=list(item.get("travel_nodes", [])),
                 points_of_interest=[
                     PointOfInterest(
@@ -3977,6 +4013,8 @@ def _seed_regions() -> List[Region]:
             climate="humid forest frontier",
             terrain_profile=("old-growth canopy", "river switchbacks", "stone terraces"),
             strategic_value="Controls grain roads and courier channels between interior clans and the capital",
+            minimum_level=1,
+            assassin_hunter_name="Whisperroot Blade Circle",
             travel_nodes=[
                 "Leafrise Village",
                 "Whisperroot Crossing",
@@ -4039,6 +4077,8 @@ def _seed_regions() -> List[Region]:
             climate="volcanic dry heat",
             terrain_profile=("slag fields", "lava channels", "ash dunes"),
             strategic_value="Primary smelting corridor and munitions route for the fracture-front war machine",
+            minimum_level=4,
+            assassin_hunter_name="Ashen Cinder Assassins",
             travel_nodes=[
                 "Cinder Port",
                 "Furnace Mile",
@@ -4101,6 +4141,8 @@ def _seed_regions() -> List[Region]:
             climate="monsoon coastal",
             terrain_profile=("flood terraces", "reef canals", "salt flats"),
             strategic_value="Secures medical imports and sea access needed for post-war stabilization",
+            minimum_level=7,
+            assassin_hunter_name="Reefshade Stalker Syndicate",
             travel_nodes=[
                 "Azure Rest",
                 "Shimmerlock Pier",
@@ -4168,6 +4210,8 @@ def _seed_regions() -> List[Region]:
             climate="alpine thunder belt",
             terrain_profile=("knife ridgelines", "floating scree fields", "lightning spires"),
             strategic_value="Highland relay for long-range signaling and anti-air control over three border provinces",
+            minimum_level=10,
+            assassin_hunter_name="Stormwall Talon Assassins",
             travel_nodes=[
                 "Crestfall Outpost",
                 "Tempest Watchline",
@@ -4236,6 +4280,8 @@ def _seed_regions() -> List[Region]:
             climate="subterranean toxic",
             terrain_profile=("collapsed caverns", "fungal sinkholes", "obsidian catacombs"),
             strategic_value="Hidden ore vault and relic lattice that can destabilize every surface alliance if seized",
+            minimum_level=14,
+            assassin_hunter_name="Hollow Veil Executioners",
             travel_nodes=[
                 "Dusk Refuge",
                 "Mire Lantern Warrens",

@@ -2,6 +2,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from shinobi_rpg.core import (
     Affinity,
@@ -205,6 +206,10 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(world_map["region_count"], len(world.regions))
         self.assertEqual(len(world_map["regions"]), len(world.regions))
         for region in world_map["regions"]:
+            self.assertIn("minimum_level", region)
+            self.assertIn("assassin_hunter_name", region)
+            self.assertGreaterEqual(region["minimum_level"], 1)
+            self.assertTrue(region["assassin_hunter_name"])
             self.assertGreaterEqual(len(region["points_of_interest"]), 4)
             self.assertTrue(region["strategic_value"])
             self.assertGreaterEqual(len(region["travel_nodes"]), 4)
@@ -625,6 +630,29 @@ class CoreSystemTests(unittest.TestCase):
         second = world.resolve_region_encounter(player, "Verdant Gate")
         self.assertNotEqual(first["encounter"], second["encounter"])
         self.assertEqual(player.encounter_history["Verdant Gate"], 2)
+        self.assertFalse(first["assassin_hunt_triggered"])
+        self.assertFalse(second["assassin_hunt_triggered"])
+
+    def test_resolve_region_encounter_can_trigger_assassin_hunt_in_high_level_region(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        with patch("shinobi_rpg.core.random.random", return_value=0.0):
+            result = world.resolve_region_encounter(player, "Sunken Hollow")
+        self.assertTrue(result["unauthorized_region"])
+        self.assertTrue(result["assassin_hunt_triggered"])
+        self.assertEqual(result["outcome"], "killed")
+        self.assertFalse(result["player_survived"])
+        self.assertEqual(player.encounter_history["Sunken Hollow"], 1)
+
+    def test_resolve_region_encounter_out_of_band_can_avoid_assassin_hunt(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        with patch("shinobi_rpg.core.random.random", return_value=0.99):
+            result = world.resolve_region_encounter(player, "Sunken Hollow")
+        region = self._get_region(world, "Sunken Hollow")
+        self.assertTrue(result["unauthorized_region"])
+        self.assertFalse(result["assassin_hunt_triggered"])
+        self.assertIn(result["encounter"], region.encounter_table)
+        self.assertTrue(result["player_survived"])
+        self.assertEqual(player.encounter_history["Sunken Hollow"], 1)
 
     def test_shop_inventory_respects_black_market_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

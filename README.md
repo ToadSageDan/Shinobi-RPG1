@@ -57,6 +57,7 @@ The bootstrap command outputs a JSON summary of the seeded player setup, support
 - **Villain relationship arcs** in summary — dormant/active/rival/nemesis/reformed per villain
 - Playthrough summary report including backstory, trophies, reputation, and villain stances
 - NPC evil-threshold evolution and intel event systems
+- Canon world codex in [`LORE_DUMP.md`](LORE_DUMP.md) plus programmatic `generate_lore_dump()` output
 
 ## Run tests
 

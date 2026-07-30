@@ -238,6 +238,20 @@ class CoreSystemTests(unittest.TestCase):
                 self.assertTrue(poi["summary"])
                 self.assertGreaterEqual(len(poi["connected_nodes"]), 1)
 
+    def test_lore_dump_covers_country_factions_and_content_catalogs(self):
+        world, _ = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        lore = world.generate_lore_dump()
+        self.assertIn("country", lore)
+        self.assertIn("allies", lore)
+        self.assertIn("villains", lore)
+        self.assertIn("points_of_interest", lore)
+        self.assertIn("legendary_weapons", lore)
+        self.assertIn("summons", lore)
+        self.assertEqual(len(lore["villains"]), len(world.villains))
+        self.assertGreaterEqual(len(lore["allies"]), DEFAULT_ALLY_MIN_COUNT)
+        self.assertGreaterEqual(len(lore["points_of_interest"]), 20)
+        self.assertGreaterEqual(len(lore["summons"]), 12)
+
     def test_region_clear_reward_unlocks_fast_travel(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         reward = world.clear_region(player, "Verdant Gate", "weapon")
@@ -1188,6 +1202,13 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for villain in world.villains:
             villain.defeated = True
+        world.evaluate_trophies(player)
+        self.assertIn("villain_slayer", player.trophies)
+
+    def test_villain_slayer_trophy_tracks_red_bar_targets_only(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for villain in world.villains:
+            villain.defeated = villain.health_bar_color.lower() == "red"
         world.evaluate_trophies(player)
         self.assertIn("villain_slayer", player.trophies)
 

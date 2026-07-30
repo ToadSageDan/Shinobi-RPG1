@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+shinobi_rpg/__init__.py
+shinobi_rpg/core.py
+shinobi_rpg.egg-info/PKG-INFO
+shinobi_rpg.egg-info/SOURCES.txt
+shinobi_rpg.egg-info/dependency_links.txt
+shinobi_rpg.egg-info/top_level.txt
+tests/test_core.py

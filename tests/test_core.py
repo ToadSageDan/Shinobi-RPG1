@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from tempfile import TemporaryDirectory
 
 from shinobi_rpg.core import (
@@ -21,6 +23,8 @@ from shinobi_rpg.core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from shinobi_rpg.framework import framework_overview_json, get_framework_overview
+from shinobi_rpg.__main__ import main
 
 
 class CoreSystemTests(unittest.TestCase):
@@ -155,6 +159,23 @@ class CoreSystemTests(unittest.TestCase):
     def test_assign_affinity_from_choices_rejects_unknown_choice(self):
         with self.assertRaisesRegex(ValueError, 'Unknown affinity choice "lightning".'):
             assign_affinity_from_choices(["lightning"])
+
+    def test_framework_overview_exposes_build_ready_content(self):
+        overview = get_framework_overview()
+        self.assertEqual(overview["project"], "Shinobi-RPG1")
+        self.assertEqual(overview["player_bootstrap"]["name"], "Dan")
+        self.assertIn(overview["player_bootstrap"]["affinity"], overview["framework"]["affinities"])
+        self.assertEqual(overview["development"]["entrypoint"], "python -m shinobi_rpg")
+        self.assertGreaterEqual(overview["seeded_content"]["allies"], DEFAULT_ALLY_MIN_COUNT)
+        self.assertGreaterEqual(overview["seeded_content"]["regions"], 1)
+
+    def test_cli_main_prints_framework_overview_json(self):
+        buffer = StringIO()
+        with redirect_stdout(buffer):
+            exit_code = main()
+        output = buffer.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(output.strip(), framework_overview_json())
 
     def test_rogue_reputation_unlocks_black_market(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)

@@ -33,6 +33,7 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 - Region/boss-specific villain behavior rules by stance
 - Expanded balanced shared move pool (12 per category) for reusable combat design
 - Villain kit design with one signature move plus skinned shared move loadouts
+- Creative direction packet for cosmetics, 100 skill concepts, 50 ultimate concepts, map render briefs, and villain pitches
 - **Status effects accumulate stacks** up to the band cap, duration refreshes on re-application
 - Combat physics output for moves (impact/knockback/stagger window) with blood intensity tracking
 - Combo resolution helper with status-affinity synergy bonuses
@@ -100,3 +101,9 @@ reward = world.clear_region(player, "Verdant Gate", "move")
 print(player.affinity.value, reward)
 ```
 
+```python
+from shinobi_rpg import build_creative_brainstorm
+
+packet = build_creative_brainstorm()
+print(len(packet["skills"]), len(packet["ultimates"]))
+```

@@ -30,6 +30,7 @@ from .core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from .creative_direction import build_creative_brainstorm
 
 __all__ = [
     "__version__",
@@ -56,6 +57,7 @@ __all__ = [
     "WeaponType",
     "assign_affinity_from_choices",
     "build_mvp_world",
+    "build_creative_brainstorm",
     "load_world_snapshot",
     "resolve_affinity_minigame",
     "save_world_snapshot",

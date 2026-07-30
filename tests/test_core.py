@@ -29,6 +29,7 @@ from shinobi_rpg.core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from shinobi_rpg.creative_direction import build_creative_brainstorm
 
 
 class CoreSystemTests(unittest.TestCase):
@@ -726,6 +727,40 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("villain_kits", summary)
         self.assertGreaterEqual(len(summary["villain_kits"]), 15)
         self.assertIn("skill_physics", preview)
+
+    def test_creative_brainstorm_packet_meets_issue_counts(self):
+        packet = build_creative_brainstorm()
+        self.assertEqual(len(packet["skills"]), 100)
+        self.assertEqual(len(packet["ultimates"]), 50)
+        self.assertEqual(len(packet["compiled_moves"]), 150)
+        skill_categories = {}
+        for entry in packet["skills"]:
+            skill_categories[entry["category"]] = skill_categories.get(entry["category"], 0) + 1
+        self.assertEqual(
+            skill_categories,
+            {"escape": 25, "attack": 25, "defense": 25, "summon": 25},
+        )
+        self.assertEqual(
+            len({entry["name"] for entry in packet["compiled_moves"]}),
+            len(packet["compiled_moves"]),
+        )
+
+    def test_creative_brainstorm_packet_includes_map_cosmetics_and_villains(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        packet = build_creative_brainstorm()
+        self.assertIn("heroic_characters", packet["cosmetics"])
+        self.assertIn("villain_characters", packet["cosmetics"])
+        self.assertGreaterEqual(len(packet["cosmetics"]["heroic_characters"]), 4)
+        self.assertGreaterEqual(len(packet["cosmetics"]["villain_characters"]), 4)
+        self.assertIn("regions", packet["map_rendering"])
+        self.assertEqual(
+            {region["name"] for region in packet["map_rendering"]["regions"]},
+            {region.name for region in world.regions},
+        )
+        self.assertEqual(
+            {villain["name"] for villain in packet["villains"]},
+            {villain.name for villain in world.villains},
+        )
 
     def test_snapshot_load_supports_legacy_trophies_without_tier(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

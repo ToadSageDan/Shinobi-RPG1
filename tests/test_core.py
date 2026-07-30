@@ -73,6 +73,9 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "attack")
         self.assertEqual(result["damage"], 10)
         self.assertIn("combat_physics", result)
+        self.assertIn("combat_targeting", result)
+        self.assertEqual(result["combat_targeting"]["mode"], "straight_line")
+        self.assertFalse(result["combat_targeting"]["tracking_required"])
         self.assertEqual(result["combat_physics"]["blood_intensity"], "none")
 
     def test_execute_defense_move_scales_with_defense(self):
@@ -135,6 +138,20 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "summon")
         self.assertEqual(result["summon_type"], TechniqueType.SUMMONING.value)
         self.assertEqual(result["summon_power"], 20)
+
+    def test_lock_on_enables_tracking_for_targeted_attacks(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.execute_move("Pressure Knot Strike", target_name="Kage Renda", lock_on=True)
+        self.assertEqual(player.locked_on_target, "Kage Renda")
+        self.assertEqual(result["combat_targeting"]["mode"], "tracking")
+        self.assertTrue(result["combat_targeting"]["tracking_required"])
+        self.assertTrue(result["combat_targeting"]["tracking_applied"])
+        self.assertEqual(result["combat_targeting"]["target"], "Kage Renda")
+
+    def test_lock_on_requires_target_when_unset(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        with self.assertRaisesRegex(ValueError, "Lock-on requires a target name"):
+            player.execute_move("Pressure Knot Strike", lock_on=True)
 
     def test_execute_move_rejects_unknown_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -204,6 +221,9 @@ class CoreSystemTests(unittest.TestCase):
         world, _ = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
         world_map = world.build_world_map()
         self.assertEqual(world_map["region_count"], len(world.regions))
+        self.assertIn("environment", world_map)
+        self.assertIn(world_map["environment"]["time_of_day"], {"dawn", "day", "dusk", "night"})
+        self.assertIn(world_map["environment"]["weather"], {"clear", "breezy", "rain", "storm", "fog"})
         self.assertEqual(len(world_map["regions"]), len(world.regions))
         for region in world_map["regions"]:
             self.assertIn("minimum_level", region)
@@ -348,9 +368,12 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_world_event_updates_state_and_logs_cause_effect(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        baseline = world.get_environment_state()
         event = world.trigger_world_event(player, event_key="tornado", causes=["test_driver"])
         self.assertEqual(event["event_key"], "tornado")
         self.assertEqual(event["causes"], ["test_driver"])
+        self.assertIn("environment", event)
+        self.assertNotEqual(event["environment"]["time_of_day"], baseline["time_of_day"])
         self.assertTrue(world.world_event_history)
         tapestry_entry = world.active_run_tapestry[-1]
         self.assertEqual(tapestry_entry["event_type"], "world_event")
@@ -580,6 +603,7 @@ class CoreSystemTests(unittest.TestCase):
     def test_save_and_load_snapshot_restores_world_and_player_state(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "kill")
+        player.execute_move("Pressure Knot Strike", target_name="Kage Renda", lock_on=True)
         world.trigger_external_pressure_event(player, event_key="forbidden_scroll_auction")
         world.discover_world_intel(player, channel="newspaper", stealth_probe=True)
         world.clear_region(player, "Verdant Gate", "weapon")
@@ -594,6 +618,8 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(restored_player.quest_log["Q1"], QuestStatus.COMPLETED)
         self.assertEqual(restored_world.villains[0].decision_memory.get("kill"), 1)
         self.assertEqual(restored_player.red_bar_power_claims.get("Kage Renda"), "Rending Spiral")
+        self.assertEqual(restored_player.locked_on_target, "Kage Renda")
+        self.assertGreaterEqual(restored_world.environment_cycle_step, world.environment_cycle_step)
         self.assertTrue(restored_world.npc_evil_profiles)
         self.assertTrue(restored_world.external_pressure_history)
         self.assertTrue(restored_world.intel_discovery_log)

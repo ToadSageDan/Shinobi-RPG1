@@ -98,6 +98,10 @@ QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
+DAY_NIGHT_CYCLE = ("dawn", "day", "dusk", "night")
+WEATHER_CYCLE = ("clear", "breezy", "rain", "storm", "fog")
+AOE_TARGETING_TERMS = ("nova", "storm", "maelstrom", "cyclone", "burst", "eruption", "field", "convergence")
+STRAIGHT_LINE_TARGETING_TERMS = ("line", "lance", "spear", "arc", "bolt", "shot", "slice", "current")
 OUTCOME_BRANCH_PATH_KEYS = {
     "kill": "kill_path",
     "charm": "charm_path",
@@ -754,6 +758,7 @@ class PlayerProfile:
     encounter_history: Dict[str, int] = field(default_factory=dict)
     credits: int = 100
     active_status_effects: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    locked_on_target: str | None = None
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -862,7 +867,60 @@ class PlayerProfile:
             "combo_bonus": applied_bonus["label"],
         }
 
-    def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, Any]:
+    def set_lock_on_target(self, target_name: str) -> str:
+        target = target_name.strip()
+        if not target:
+            raise ValueError("Lock-on target cannot be empty.")
+        self.locked_on_target = target
+        return target
+
+    def clear_lock_on_target(self) -> None:
+        self.locked_on_target = None
+
+    def _resolve_targeting_profile(
+        self,
+        move: Move,
+        *,
+        target_name: str | None,
+        lock_on: bool,
+    ) -> Dict[str, Any]:
+        if move.category in {MoveCategory.DEFENSE, MoveCategory.ESCAPE}:
+            mode = "self"
+        else:
+            lowered_name = move.name.lower()
+            if any(term in lowered_name for term in AOE_TARGETING_TERMS):
+                mode = "aoe"
+            elif any(term in lowered_name for term in STRAIGHT_LINE_TARGETING_TERMS):
+                mode = "straight_line"
+            else:
+                mode = "tracking"
+
+        tracking_required = move.category in {MoveCategory.ATTACK, MoveCategory.ULTIMATE} and mode == "tracking"
+        selected_target = target_name.strip() if target_name is not None and target_name.strip() else None
+
+        if lock_on:
+            if selected_target is not None:
+                self.set_lock_on_target(selected_target)
+            elif self.locked_on_target is None:
+                raise ValueError("Lock-on requires a target name when no lock target is currently set.")
+        current_target = self.locked_on_target if lock_on else selected_target
+
+        return {
+            "mode": mode,
+            "tracking_required": tracking_required,
+            "target": current_target,
+            "lock_on_active": lock_on and self.locked_on_target is not None,
+            "tracking_applied": tracking_required and current_target is not None,
+        }
+
+    def execute_move(
+        self,
+        move_name: str,
+        *,
+        escape_difficulty: int = 6,
+        target_name: str | None = None,
+        lock_on: bool = False,
+    ) -> Dict[str, Any]:
         """Execute an unlocked move and return deterministic MVP combat output.
 
         ``escape_difficulty`` is only used for Escape moves and ignored for
@@ -872,6 +930,7 @@ class PlayerProfile:
         if move.status_effects:
             self.apply_status_effects(move.status_effects)
         combat_physics = self._build_combat_physics(move)
+        combat_targeting = self._resolve_targeting_profile(move, target_name=target_name, lock_on=lock_on)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
             return {
@@ -880,6 +939,7 @@ class PlayerProfile:
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.DEFENSE:
             guard = int(self.stats.defense * move.power_scale)
@@ -889,6 +949,7 @@ class PlayerProfile:
                 "guard": guard,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.ESCAPE:
             escape_score = int(self.stats.agility * move.power_scale)
@@ -900,6 +961,7 @@ class PlayerProfile:
                 "escaped": escaped,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.ULTIMATE:
             damage = int((self.stats.power + self.stats.focus) * move.power_scale)
@@ -909,6 +971,7 @@ class PlayerProfile:
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.SUMMON:
             summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
@@ -919,6 +982,7 @@ class PlayerProfile:
                 "summon_type": move.technique_type.value,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 
@@ -1099,6 +1163,7 @@ class PlayerProfile:
             "ally_loyalty": dict(self.ally_loyalty),
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
+            "locked_on_target": self.locked_on_target,
             "active_status_effects": {
                 effect_name: {
                     "duration": int(payload.get("duration", 0)),
@@ -1147,6 +1212,9 @@ class NinjaWorld:
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
     memory_store: Dict[str, List[str]] = field(default_factory=dict)
+    time_cycle_index: int = 0
+    weather_cycle_index: int = 0
+    environment_cycle_step: int = 0
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -1179,6 +1247,8 @@ class NinjaWorld:
             self.dynamic_region_chain = [region.name for region in self.regions]
         if not self.npc_evil_profiles:
             self.npc_evil_profiles = self._seed_npc_evil_profiles()
+        self.time_cycle_index = self.time_cycle_index % len(DAY_NIGHT_CYCLE)
+        self.weather_cycle_index = self.weather_cycle_index % len(WEATHER_CYCLE)
 
     def _current_era(self) -> Dict[str, Any]:
         timeline = self.era_timeline or _seed_era_timeline()
@@ -1230,6 +1300,22 @@ class NinjaWorld:
             arc_pressure[arc_key] = arc_pressure.get(arc_key, 0) + pressure - recovery
         if arc_pressure:
             self.current_arc_key = sorted(arc_pressure.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    def get_environment_state(self) -> Dict[str, Any]:
+        return {
+            "time_of_day": DAY_NIGHT_CYCLE[self.time_cycle_index % len(DAY_NIGHT_CYCLE)],
+            "weather": WEATHER_CYCLE[self.weather_cycle_index % len(WEATHER_CYCLE)],
+            "cycle_step": self.environment_cycle_step,
+        }
+
+    def advance_environment_cycle(self, steps: int = 1) -> Dict[str, Any]:
+        if steps <= 0:
+            raise ValueError("Environment cycle steps must be greater than zero.")
+        self.environment_cycle_step += steps
+        self.time_cycle_index = (self.time_cycle_index + steps) % len(DAY_NIGHT_CYCLE)
+        # Weather advances at half-speed to avoid overly frequent weather changes.
+        self.weather_cycle_index = (self.weather_cycle_index + max(1, steps // 2)) % len(WEATHER_CYCLE)
+        return self.get_environment_state()
 
     def _penalty_for_recent_boss_chain(self, chain: Sequence[str]) -> int:
         if not self.recent_boss_chains:
@@ -1400,6 +1486,7 @@ class NinjaWorld:
         event_key: str | None = None,
         causes: Sequence[str] | None = None,
     ) -> Dict[str, Any]:
+        environment_state = self.advance_environment_cycle()
         if event_key is None:
             keys = sorted(EXTERNAL_PRESSURE_EVENT_LIBRARY.keys())
             # Blend run progression (history length), world drift (recovery score),
@@ -1684,6 +1771,7 @@ class NinjaWorld:
             "label": event["label"],
             "region": target_region,
             "causes": list(causes or []),
+            "environment": environment_state,
             "effects": {
                 "region_pressure": int(event.get("region_pressure", 0)),
                 "recovery_delta": int(event.get("recovery_delta", 0)),
@@ -1732,6 +1820,7 @@ class NinjaWorld:
         region_name: str,
         reward_choice: str,
     ) -> str:
+        self.advance_environment_cycle()
         self._schedule_dynamic_regions(player)
         region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), -1)
         if region_index == -1:
@@ -2327,6 +2416,7 @@ class NinjaWorld:
         return self._resolve_final_antagonist()
 
     def resolve_region_encounter(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        environment_state = self.advance_environment_cycle()
         region = self._find_region(region_name)
         encounter_pool = region.encounter_table if region.encounter_table else region.enemies
         if not encounter_pool:
@@ -2351,6 +2441,7 @@ class NinjaWorld:
                     "assassin_strength": assassin_strength,
                     "outcome": "killed",
                     "player_survived": False,
+                    "environment": environment_state,
                 }
         encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
         encounter = encounter_pool[encounter_index]
@@ -2366,6 +2457,7 @@ class NinjaWorld:
             "level_gap": level_gap,
             "assassin_hunt_triggered": False,
             "player_survived": True,
+            "environment": environment_state,
         }
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -2695,6 +2787,7 @@ class NinjaWorld:
     def build_world_map(self) -> Dict[str, Any]:
         return {
             "region_count": len(self.regions),
+            "environment": self.get_environment_state(),
             "regions": [
                 {
                     "name": region.name,
@@ -2820,6 +2913,7 @@ class NinjaWorld:
                 "delta_vs_prior_runs": self.get_living_tapestry_delta()["event_differences"],
             },
             "world_events": [dict(entry) for entry in self.world_event_history],
+            "environment": self.get_environment_state(),
             "final_antagonist": dict(final_antagonist),
             "run_signature_preview": self.generate_run_signature(player),
         }
@@ -3078,6 +3172,9 @@ class NinjaWorld:
                     subject: [str(entry) for entry in entries]
                     for subject, entries in self.memory_store.items()
                 },
+                "time_cycle_index": self.time_cycle_index,
+                "weather_cycle_index": self.weather_cycle_index,
+                "environment_cycle_step": self.environment_cycle_step,
             },
             "player": player.to_snapshot(),
         }
@@ -3300,6 +3397,9 @@ class NinjaWorld:
                 str(subject): [str(entry) for entry in entries]
                 for subject, entries in world_snapshot.get("memory_store", {}).items()
             },
+            time_cycle_index=int(world_snapshot.get("time_cycle_index", 0)),
+            weather_cycle_index=int(world_snapshot.get("weather_cycle_index", 0)),
+            environment_cycle_step=int(world_snapshot.get("environment_cycle_step", 0)),
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}
@@ -3356,6 +3456,7 @@ class NinjaWorld:
                 for region_name, value in player_snapshot.get("encounter_history", {}).items()
             },
             credits=int(player_snapshot.get("credits", 100)),
+            locked_on_target=player_snapshot.get("locked_on_target"),
             unlocked_move_names=set(player_snapshot.get("unlocked_move_names", [])),
             active_status_effects={
                 effect_name: {

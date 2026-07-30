@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -101,6 +102,10 @@ REGION_ENCOUNTER_XP_GUARD = 10
 REGION_ENCOUNTER_XP_ANIMAL = 8
 REGION_ENCOUNTER_XP_OTHER = 9
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
+DAY_NIGHT_CYCLE = ("dawn", "day", "dusk", "night")
+WEATHER_CYCLE = ("clear", "breezy", "rain", "storm", "fog")
+AOE_TARGETING_TERMS = ("nova", "storm", "maelstrom", "cyclone", "burst", "eruption", "field", "convergence")
+STRAIGHT_LINE_TARGETING_TERMS = ("line", "lance", "spear", "arc", "bolt", "shot", "slice", "current")
 OUTCOME_BRANCH_PATH_KEYS = {
     "kill": "kill_path",
     "charm": "charm_path",
@@ -738,6 +743,17 @@ class Quest:
 
 
 @dataclass
+class PointOfInterest:
+    name: str
+    poi_type: str
+    summary: str
+    control_faction: str = ""
+    threats: Tuple[str, ...] = field(default_factory=tuple)
+    services: Tuple[str, ...] = field(default_factory=tuple)
+    connected_nodes: Tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass
 class Region:
     name: str
     village_hub: str
@@ -746,6 +762,13 @@ class Region:
     boss: str
     boss_rewards: Dict[str, str]
     arc_key: str = "political_war"
+    climate: str = "temperate"
+    terrain_profile: Tuple[str, ...] = field(default_factory=tuple)
+    strategic_value: str = ""
+    minimum_level: int = 1
+    assassin_hunter_name: str = "Regional Assassin Cell"
+    travel_nodes: List[str] = field(default_factory=list)
+    points_of_interest: List[PointOfInterest] = field(default_factory=list)
     tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
     encounter_table: List[str] = field(default_factory=list)
     cleared: bool = False
@@ -811,6 +834,7 @@ class PlayerProfile:
     encounter_history: Dict[str, int] = field(default_factory=dict)
     credits: int = 100
     active_status_effects: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    locked_on_target: str | None = None
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -919,7 +943,60 @@ class PlayerProfile:
             "combo_bonus": applied_bonus["label"],
         }
 
-    def execute_move(self, move_name: str, *, escape_difficulty: int = 6) -> Dict[str, Any]:
+    def set_lock_on_target(self, target_name: str) -> str:
+        target = target_name.strip()
+        if not target:
+            raise ValueError("Lock-on target cannot be empty.")
+        self.locked_on_target = target
+        return target
+
+    def clear_lock_on_target(self) -> None:
+        self.locked_on_target = None
+
+    def _resolve_targeting_profile(
+        self,
+        move: Move,
+        *,
+        target_name: str | None,
+        lock_on: bool,
+    ) -> Dict[str, Any]:
+        if move.category in {MoveCategory.DEFENSE, MoveCategory.ESCAPE}:
+            mode = "self"
+        else:
+            lowered_name = move.name.lower()
+            if any(term in lowered_name for term in AOE_TARGETING_TERMS):
+                mode = "aoe"
+            elif any(term in lowered_name for term in STRAIGHT_LINE_TARGETING_TERMS):
+                mode = "straight_line"
+            else:
+                mode = "tracking"
+
+        tracking_required = move.category in {MoveCategory.ATTACK, MoveCategory.ULTIMATE} and mode == "tracking"
+        selected_target = target_name.strip() if target_name is not None and target_name.strip() else None
+
+        if lock_on:
+            if selected_target is not None:
+                self.set_lock_on_target(selected_target)
+            elif self.locked_on_target is None:
+                raise ValueError("Lock-on requires a target name when no lock target is currently set.")
+        current_target = self.locked_on_target if lock_on else selected_target
+
+        return {
+            "mode": mode,
+            "tracking_required": tracking_required,
+            "target": current_target,
+            "lock_on_active": lock_on and self.locked_on_target is not None,
+            "tracking_applied": tracking_required and current_target is not None,
+        }
+
+    def execute_move(
+        self,
+        move_name: str,
+        *,
+        escape_difficulty: int = 6,
+        target_name: str | None = None,
+        lock_on: bool = False,
+    ) -> Dict[str, Any]:
         """Execute an unlocked move and return deterministic MVP combat output.
 
         ``escape_difficulty`` is only used for Escape moves and ignored for
@@ -929,6 +1006,7 @@ class PlayerProfile:
         if move.status_effects:
             self.apply_status_effects(move.status_effects)
         combat_physics = self._build_combat_physics(move)
+        combat_targeting = self._resolve_targeting_profile(move, target_name=target_name, lock_on=lock_on)
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
             return {
@@ -937,6 +1015,7 @@ class PlayerProfile:
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.DEFENSE:
             guard = int(self.stats.defense * move.power_scale)
@@ -946,6 +1025,7 @@ class PlayerProfile:
                 "guard": guard,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.ESCAPE:
             escape_score = int(self.stats.agility * move.power_scale)
@@ -957,6 +1037,7 @@ class PlayerProfile:
                 "escaped": escaped,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.ULTIMATE:
             damage = int((self.stats.power + self.stats.focus) * move.power_scale)
@@ -966,6 +1047,7 @@ class PlayerProfile:
                 "damage": damage,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         if move.category == MoveCategory.SUMMON:
             summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
@@ -976,6 +1058,7 @@ class PlayerProfile:
                 "summon_type": move.technique_type.value,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
+                "combat_targeting": combat_targeting,
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 
@@ -1206,6 +1289,7 @@ class PlayerProfile:
             "ally_loyalty": dict(self.ally_loyalty),
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
+            "locked_on_target": self.locked_on_target,
             "active_status_effects": {
                 effect_name: {
                     "duration": int(payload.get("duration", 0)),
@@ -1254,6 +1338,10 @@ class NinjaWorld:
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
     arc_transition_history: List[Dict[str, Any]] = field(default_factory=list)
+    memory_store: Dict[str, List[str]] = field(default_factory=dict)
+    time_cycle_index: int = 0
+    weather_cycle_index: int = 0
+    environment_cycle_step: int = 0
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -1286,6 +1374,8 @@ class NinjaWorld:
             self.dynamic_region_chain = [region.name for region in self.regions]
         if not self.npc_evil_profiles:
             self.npc_evil_profiles = self._seed_npc_evil_profiles()
+        self.time_cycle_index = self.time_cycle_index % len(DAY_NIGHT_CYCLE)
+        self.weather_cycle_index = self.weather_cycle_index % len(WEATHER_CYCLE)
 
     def _current_era(self) -> Dict[str, Any]:
         timeline = self.era_timeline or _seed_era_timeline()
@@ -1425,6 +1515,22 @@ class NinjaWorld:
                 previous_arc_key=previous_arc_key,
                 previous_era_key=previous_era_key,
             )
+
+    def get_environment_state(self) -> Dict[str, Any]:
+        return {
+            "time_of_day": DAY_NIGHT_CYCLE[self.time_cycle_index % len(DAY_NIGHT_CYCLE)],
+            "weather": WEATHER_CYCLE[self.weather_cycle_index % len(WEATHER_CYCLE)],
+            "cycle_step": self.environment_cycle_step,
+        }
+
+    def advance_environment_cycle(self, steps: int = 1) -> Dict[str, Any]:
+        if steps <= 0:
+            raise ValueError("Environment cycle steps must be greater than zero.")
+        self.environment_cycle_step += steps
+        self.time_cycle_index = (self.time_cycle_index + steps) % len(DAY_NIGHT_CYCLE)
+        # Weather advances at half-speed to avoid overly frequent weather changes.
+        self.weather_cycle_index = (self.weather_cycle_index + max(1, steps // 2)) % len(WEATHER_CYCLE)
+        return self.get_environment_state()
 
     def _penalty_for_recent_boss_chain(self, chain: Sequence[str]) -> int:
         if not self.recent_boss_chains:
@@ -1848,6 +1954,7 @@ class NinjaWorld:
         event_key: str | None = None,
         causes: Sequence[str] | None = None,
     ) -> Dict[str, Any]:
+        environment_state = self.advance_environment_cycle()
         if event_key is None:
             keys = sorted(WORLD_EVENT_LIBRARY.keys())
             index = (len(self.world_event_history) + player.nonlethal_action_count() + abs(player.reputation)) % len(keys)
@@ -1879,6 +1986,7 @@ class NinjaWorld:
             "label": event["label"],
             "region": target_region,
             "causes": list(causes or []),
+            "environment": environment_state,
             "effects": {
                 "region_pressure": int(event.get("region_pressure", 0)),
                 "recovery_delta": int(event.get("recovery_delta", 0)),
@@ -1927,6 +2035,7 @@ class NinjaWorld:
         region_name: str,
         reward_choice: str,
     ) -> str:
+        self.advance_environment_cycle()
         self._schedule_dynamic_regions(player)
         region_index = next((idx for idx, r in enumerate(self.regions) if r.name == region_name), -1)
         if region_index == -1:
@@ -2018,6 +2127,23 @@ class NinjaWorld:
             meta_entry["run_id"] = self.run_counter
             self.vault_meta_tapestry.append(meta_entry)
         self.active_run_tapestry = []
+
+    def store_memory(self, subject: str, memory: str) -> int:
+        normalized_subject = subject.strip()
+        normalized_memory = memory.strip()
+        if not normalized_subject:
+            raise ValueError("Memory subject cannot be empty.")
+        if not normalized_memory:
+            raise ValueError("Memory value cannot be empty.")
+        entries = self.memory_store.setdefault(normalized_subject, [])
+        entries.append(normalized_memory)
+        return len(entries)
+
+    def get_memory_store(self, subject: str) -> List[str]:
+        normalized_subject = subject.strip()
+        if not normalized_subject:
+            raise ValueError("Memory subject cannot be empty.")
+        return list(self.memory_store.get(normalized_subject, []))
 
     def get_player_vault_history(self, player_name: str) -> List[Dict[str, Any]]:
         normalized_name = player_name.strip()
@@ -2609,10 +2735,33 @@ class NinjaWorld:
         return self._resolve_final_antagonist()
 
     def resolve_region_encounter(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        environment_state = self.advance_environment_cycle()
         region = self._find_region(region_name)
         encounter_pool = region.encounter_table if region.encounter_table else region.enemies
         if not encounter_pool:
             raise ValueError(f'Region "{region_name}" has no encounters configured.')
+        level_gap = max(region.minimum_level - player.stats.level, 0)
+        unauthorized_region = level_gap > 0
+        if unauthorized_region:
+            hunt_chance = min(0.2 + (0.15 * level_gap), 0.95)
+            if random.random() < hunt_chance:
+                encounter_count = player.record_region_encounter(region_name)
+                assassin_strength = max(region.minimum_level, player.stats.level + level_gap * 2)
+                return {
+                    "region": region_name,
+                    "encounter": region.assassin_hunter_name,
+                    "encounter_index": None,
+                    "times_seen": encounter_count,
+                    "unauthorized_region": True,
+                    "recommended_level": region.minimum_level,
+                    "player_level": player.stats.level,
+                    "level_gap": level_gap,
+                    "assassin_hunt_triggered": True,
+                    "assassin_strength": assassin_strength,
+                    "outcome": "killed",
+                    "player_survived": False,
+                    "environment": environment_state,
+                }
         encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
         encounter = encounter_pool[encounter_index]
         encounter_count = player.record_region_encounter(region_name)
@@ -2633,6 +2782,13 @@ class NinjaWorld:
             "level": player.stats.level,
             "enemy_exclusive_move": enemy_exclusive_move_name,
             "enemy_exclusive_move_unlocked": enemy_exclusive_move_unlocked,
+            "unauthorized_region": unauthorized_region,
+            "recommended_level": region.minimum_level,
+            "player_level": player.stats.level,
+            "level_gap": level_gap,
+            "assassin_hunt_triggered": False,
+            "player_survived": True,
+            "environment": environment_state,
         }
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -2962,6 +3118,38 @@ class NinjaWorld:
             _check(TROPHY_WIND_DANCER, outcomes["evasion"], NONLETHAL_EVASION_MASTER_THRESHOLD, "nonlethal evasion encounters")
         return near_miss
 
+    def build_world_map(self) -> Dict[str, Any]:
+        return {
+            "region_count": len(self.regions),
+            "environment": self.get_environment_state(),
+            "regions": [
+                {
+                    "name": region.name,
+                    "village_hub": region.village_hub,
+                    "arc_key": region.arc_key,
+                    "climate": region.climate,
+                    "terrain_profile": list(region.terrain_profile),
+                    "strategic_value": region.strategic_value,
+                    "minimum_level": region.minimum_level,
+                    "assassin_hunter_name": region.assassin_hunter_name,
+                    "travel_nodes": list(region.travel_nodes),
+                    "points_of_interest": [
+                        {
+                            "name": poi.name,
+                            "type": poi.poi_type,
+                            "summary": poi.summary,
+                            "control_faction": poi.control_faction,
+                            "threats": list(poi.threats),
+                            "services": list(poi.services),
+                            "connected_nodes": list(poi.connected_nodes),
+                        }
+                        for poi in region.points_of_interest
+                    ],
+                }
+                for region in self.regions
+            ],
+        }
+
     def generate_playthrough_summary(self, player: PlayerProfile) -> Dict[str, Any]:
         self._refresh_arc_and_era()
         self._schedule_dynamic_regions(player)
@@ -3082,6 +3270,7 @@ class NinjaWorld:
             "npc_evil_profiles": {name: dict(profile) for name, profile in self.npc_evil_profiles.items()},
             "external_pressure_history": [dict(entry) for entry in self.external_pressure_history[-20:]],
             "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log[-20:]],
+            "world_map": self.build_world_map(),
             "arc_state": {
                 "current_arc_key": self.current_arc_key,
                 "scheduled_regions": list(self.dynamic_region_chain),
@@ -3095,6 +3284,7 @@ class NinjaWorld:
                 "delta_vs_prior_runs": self.get_living_tapestry_delta()["event_differences"],
             },
             "world_events": [dict(entry) for entry in self.world_event_history],
+            "environment": self.get_environment_state(),
             "final_antagonist": dict(final_antagonist),
             "run_signature_preview": self.generate_run_signature(player),
         }
@@ -3180,6 +3370,24 @@ class NinjaWorld:
                         "boss": region.boss,
                         "boss_rewards": dict(region.boss_rewards),
                         "arc_key": region.arc_key,
+                        "climate": region.climate,
+                        "terrain_profile": list(region.terrain_profile),
+                        "strategic_value": region.strategic_value,
+                        "minimum_level": region.minimum_level,
+                        "assassin_hunter_name": region.assassin_hunter_name,
+                        "travel_nodes": list(region.travel_nodes),
+                        "points_of_interest": [
+                            {
+                                "name": poi.name,
+                                "poi_type": poi.poi_type,
+                                "summary": poi.summary,
+                                "control_faction": poi.control_faction,
+                                "threats": list(poi.threats),
+                                "services": list(poi.services),
+                                "connected_nodes": list(poi.connected_nodes),
+                            }
+                            for poi in region.points_of_interest
+                        ],
                         "tutorial_mechanics": list(region.tutorial_mechanics),
                         "encounter_table": list(region.encounter_table),
                         "cleared": region.cleared,
@@ -3335,6 +3543,13 @@ class NinjaWorld:
                 },
                 "external_pressure_history": [dict(entry) for entry in self.external_pressure_history],
                 "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log],
+                "memory_store": {
+                    subject: [str(entry) for entry in entries]
+                    for subject, entries in self.memory_store.items()
+                },
+                "time_cycle_index": self.time_cycle_index,
+                "weather_cycle_index": self.weather_cycle_index,
+                "environment_cycle_step": self.environment_cycle_step,
             },
             "player": player.to_snapshot(),
         }
@@ -3353,6 +3568,25 @@ class NinjaWorld:
                 boss=item["boss"],
                 boss_rewards=dict(item["boss_rewards"]),
                 arc_key=item.get("arc_key", "political_war"),
+                climate=item.get("climate", "temperate"),
+                terrain_profile=tuple(item.get("terrain_profile", [])),
+                strategic_value=item.get("strategic_value", ""),
+                minimum_level=int(item.get("minimum_level", 1)),
+                assassin_hunter_name=item.get("assassin_hunter_name", "Regional Assassin Cell"),
+                travel_nodes=list(item.get("travel_nodes", [])),
+                points_of_interest=[
+                    PointOfInterest(
+                        name=poi.get("name", ""),
+                        poi_type=poi.get("poi_type", poi.get("type", "landmark")),
+                        summary=poi.get("summary", ""),
+                        control_faction=poi.get("control_faction", ""),
+                        threats=tuple(poi.get("threats", [])),
+                        services=tuple(poi.get("services", [])),
+                        connected_nodes=tuple(poi.get("connected_nodes", [])),
+                    )
+                    for poi in item.get("points_of_interest", [])
+                    if poi.get("name")
+                ],
                 tutorial_mechanics=tuple(item.get("tutorial_mechanics", [])),
                 encounter_table=list(item.get("encounter_table", [])),
                 cleared=item.get("cleared", False),
@@ -3538,6 +3772,13 @@ class NinjaWorld:
             },
             external_pressure_history=list(world_snapshot.get("external_pressure_history", [])),
             intel_discovery_log=list(world_snapshot.get("intel_discovery_log", [])),
+            memory_store={
+                str(subject): [str(entry) for entry in entries]
+                for subject, entries in world_snapshot.get("memory_store", {}).items()
+            },
+            time_cycle_index=int(world_snapshot.get("time_cycle_index", 0)),
+            weather_cycle_index=int(world_snapshot.get("weather_cycle_index", 0)),
+            environment_cycle_step=int(world_snapshot.get("environment_cycle_step", 0)),
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}
@@ -3602,6 +3843,7 @@ class NinjaWorld:
                 for region_name, value in player_snapshot.get("encounter_history", {}).items()
             },
             credits=int(player_snapshot.get("credits", 100)),
+            locked_on_target=player_snapshot.get("locked_on_target"),
             unlocked_move_names=set(player_snapshot.get("unlocked_move_names", [])),
             active_status_effects={
                 effect_name: {
@@ -4308,6 +4550,55 @@ def _seed_regions() -> List[Region]:
                 "move": "Razorwind Spiral",
             },
             arc_key="political_war",
+            climate="humid forest frontier",
+            terrain_profile=("old-growth canopy", "river switchbacks", "stone terraces"),
+            strategic_value="Controls grain roads and courier channels between interior clans and the capital",
+            minimum_level=1,
+            assassin_hunter_name="Whisperroot Blade Circle",
+            travel_nodes=[
+                "Leafrise Village",
+                "Whisperroot Crossing",
+                "Saffron Relay Fort",
+                "Renda Skybridge",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Leafrise Village",
+                    poi_type="hub",
+                    summary="Trade-and-training village with gate towers that monitor every road into Verdant Gate.",
+                    control_faction="Leafrise Council",
+                    threats=("sleeper bandit scouts",),
+                    services=("smithy", "healer", "mission board", "fast_travel_node"),
+                    connected_nodes=("Whisperroot Crossing", "Saffron Relay Fort"),
+                ),
+                PointOfInterest(
+                    name="Whisperroot Crossing",
+                    poi_type="chokepoint",
+                    summary="A fog-dense bridge network where Mist Ronin ambush caravans under false crest banners.",
+                    control_faction="Contested",
+                    threats=("Mist Ronin", "trapwire cells"),
+                    services=("intel_cache",),
+                    connected_nodes=("Leafrise Village", "Renda Skybridge"),
+                ),
+                PointOfInterest(
+                    name="Saffron Relay Fort",
+                    poi_type="fortification",
+                    summary="Courier stronghold with coded signal drums that can lock down regional supply lanes in minutes.",
+                    control_faction="Leafrise Council",
+                    threats=("root-stalker tunnels", "insider sabotage"),
+                    services=("armory", "scouting_contracts"),
+                    connected_nodes=("Leafrise Village", "Renda Skybridge"),
+                ),
+                PointOfInterest(
+                    name="Renda Skybridge",
+                    poi_type="boss_arena",
+                    summary="Wind-carved cliff span where Kage Renda stages formal duels to decide route ownership.",
+                    control_faction="Kage Renda",
+                    threats=("Kage Renda", "shearwind updrafts"),
+                    services=("boss_gate", "vista_recon"),
+                    connected_nodes=("Whisperroot Crossing", "Saffron Relay Fort"),
+                ),
+            ],
             tutorial_mechanics=("blocking", "substitution"),
         ),
         Region(
@@ -4330,6 +4621,55 @@ def _seed_regions() -> List[Region]:
                 "move": "Inferno Vortex",
             },
             arc_key="fracture_front",
+            climate="volcanic dry heat",
+            terrain_profile=("slag fields", "lava channels", "ash dunes"),
+            strategic_value="Primary smelting corridor and munitions route for the fracture-front war machine",
+            minimum_level=4,
+            assassin_hunter_name="Ashen Cinder Assassins",
+            travel_nodes=[
+                "Cinder Port",
+                "Furnace Mile",
+                "Voln Barricade Line",
+                "Ember Crown Crucible",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Cinder Port",
+                    poi_type="hub",
+                    summary="Black-glass harbor that moves ore, mercenaries, and ration caravans under rotating curfews.",
+                    control_faction="Port Syndicates",
+                    threats=("dock extortion crews",),
+                    services=("weapon_vendor", "forge_upgrades", "fast_travel_node"),
+                    connected_nodes=("Furnace Mile", "Voln Barricade Line"),
+                ),
+                PointOfInterest(
+                    name="Furnace Mile",
+                    poi_type="industrial_corridor",
+                    summary="Kiln avenue where Ember Raiders skim fuel convoys and trigger chain blasts during raids.",
+                    control_faction="Contested",
+                    threats=("Ember Raiders", "slag eruptions"),
+                    services=("resource_salvage",),
+                    connected_nodes=("Cinder Port", "Ember Crown Crucible"),
+                ),
+                PointOfInterest(
+                    name="Voln Barricade Line",
+                    poi_type="warfront",
+                    summary="Layered trench-and-shield wall where General Voln drills attrition tactics with ash mercenaries.",
+                    control_faction="General Voln Legion",
+                    threats=("Ash Mercenaries", "incendiary mortars"),
+                    services=("tactical_trials", "supply_restock"),
+                    connected_nodes=("Cinder Port", "Ember Crown Crucible"),
+                ),
+                PointOfInterest(
+                    name="Ember Crown Crucible",
+                    poi_type="boss_arena",
+                    summary="Collapsed caldera ring where Voln channels magma vents into sustained battlefield pressure.",
+                    control_faction="General Voln",
+                    threats=("General Voln", "lava burst cycles"),
+                    services=("boss_gate", "heat_resistance_trial"),
+                    connected_nodes=("Furnace Mile", "Voln Barricade Line"),
+                ),
+            ],
             tutorial_mechanics=("aoe_attacks",),
         ),
         Region(
@@ -4352,6 +4692,55 @@ def _seed_regions() -> List[Region]:
                 "move": "Maelstrom Guard",
             },
             arc_key="recovery_mandate",
+            climate="monsoon coastal",
+            terrain_profile=("flood terraces", "reef canals", "salt flats"),
+            strategic_value="Secures medical imports and sea access needed for post-war stabilization",
+            minimum_level=7,
+            assassin_hunter_name="Reefshade Stalker Syndicate",
+            travel_nodes=[
+                "Azure Rest",
+                "Shimmerlock Pier",
+                "Coral Intake Channels",
+                "Neris Tidal Court",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Azure Rest",
+                    poi_type="hub",
+                    summary="Recovery port where healers, refugees, and tide guards coordinate basin reconstruction.",
+                    control_faction="Recovery Mandate Wardens",
+                    threats=("corsair infiltrators",),
+                    services=("clinic", "supply_exchange", "fast_travel_node"),
+                    connected_nodes=("Shimmerlock Pier", "Coral Intake Channels"),
+                ),
+                PointOfInterest(
+                    name="Shimmerlock Pier",
+                    poi_type="trade_route",
+                    summary="Stilted dock lattice with submerged smuggler shafts used by Tide Hunters at high rain tide.",
+                    control_faction="Contested",
+                    threats=("Tide Hunters", "undertow traps"),
+                    services=("fishing_contracts", "intel_drop"),
+                    connected_nodes=("Azure Rest", "Neris Tidal Court"),
+                ),
+                PointOfInterest(
+                    name="Coral Intake Channels",
+                    poi_type="infrastructure",
+                    summary="Flood-control gates that determine whether inland farms receive clean water or salt ruin.",
+                    control_faction="Basin Engineers",
+                    threats=("Reef Assassins", "gate overload"),
+                    services=("water_route_switches", "defense_simulator"),
+                    connected_nodes=("Azure Rest", "Neris Tidal Court"),
+                ),
+                PointOfInterest(
+                    name="Neris Tidal Court",
+                    poi_type="boss_arena",
+                    summary="Spiral amphitheater below sea level where Admiral Neris manipulates current walls in combat.",
+                    control_faction="Admiral Neris",
+                    threats=("Admiral Neris", "pressure-wave surges"),
+                    services=("boss_gate", "water_affinity_trial"),
+                    connected_nodes=("Shimmerlock Pier", "Coral Intake Channels"),
+                ),
+            ],
         ),
         Region(
             name="Stormwall Ridge",
@@ -4374,6 +4763,55 @@ def _seed_regions() -> List[Region]:
                 "move": "Cyclone Throne Shatter",
             },
             arc_key="rebellion_wave",
+            climate="alpine thunder belt",
+            terrain_profile=("knife ridgelines", "floating scree fields", "lightning spires"),
+            strategic_value="Highland relay for long-range signaling and anti-air control over three border provinces",
+            minimum_level=10,
+            assassin_hunter_name="Stormwall Talon Assassins",
+            travel_nodes=[
+                "Crestfall Outpost",
+                "Tempest Watchline",
+                "Monk Echo Cloister",
+                "Tyrant Crown Mesa",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Crestfall Outpost",
+                    poi_type="hub",
+                    summary="Windbreak bastion anchoring all ridge ascents with rotating storm alarms.",
+                    control_faction="Ridge Wardens",
+                    threats=("raider scouts",),
+                    services=("gear_repair", "altitude_training", "fast_travel_node"),
+                    connected_nodes=("Tempest Watchline", "Monk Echo Cloister"),
+                ),
+                PointOfInterest(
+                    name="Tempest Watchline",
+                    poi_type="chokepoint",
+                    summary="Chain of lightning rods and ballista nests repeatedly seized by Windcutter raider flights.",
+                    control_faction="Contested",
+                    threats=("Windcutter Raiders", "stormcaller barrages"),
+                    services=("sniper_post",),
+                    connected_nodes=("Crestfall Outpost", "Tyrant Crown Mesa"),
+                ),
+                PointOfInterest(
+                    name="Monk Echo Cloister",
+                    poi_type="sanctum",
+                    summary="Suspended monastery where Gale Monks encode weather prophecy into defensive chants.",
+                    control_faction="Gale Monks",
+                    threats=("ritual backlash", "ridge wolves"),
+                    services=("wind_seal_training", "meditation_buff"),
+                    connected_nodes=("Crestfall Outpost", "Tyrant Crown Mesa"),
+                ),
+                PointOfInterest(
+                    name="Tyrant Crown Mesa",
+                    poi_type="boss_arena",
+                    summary="Split-plateau throne where the Zephyr Tyrant weaponizes jet streams and falling debris.",
+                    control_faction="Zephyr Tyrant",
+                    threats=("Zephyr Tyrant", "cyclone bursts"),
+                    services=("boss_gate", "aerial_duel_trial"),
+                    connected_nodes=("Tempest Watchline", "Monk Echo Cloister"),
+                ),
+            ],
             tutorial_mechanics=("wind_resistance", "aerial_dodge"),
         ),
         Region(
@@ -4398,6 +4836,55 @@ def _seed_regions() -> List[Region]:
                 "move": "Subterranean Collapse",
             },
             arc_key="fracture_front",
+            climate="subterranean toxic",
+            terrain_profile=("collapsed caverns", "fungal sinkholes", "obsidian catacombs"),
+            strategic_value="Hidden ore vault and relic lattice that can destabilize every surface alliance if seized",
+            minimum_level=14,
+            assassin_hunter_name="Hollow Veil Executioners",
+            travel_nodes=[
+                "Dusk Refuge",
+                "Mire Lantern Warrens",
+                "Poison Loom Galleries",
+                "Monarch Deep Vault",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Dusk Refuge",
+                    poi_type="hub",
+                    summary="Last stable cavern settlement using glowstone beacons to map safe descent corridors.",
+                    control_faction="Refuge Keepers",
+                    threats=("surface raider incursions",),
+                    services=("antidote_shop", "route_mapping", "fast_travel_node"),
+                    connected_nodes=("Mire Lantern Warrens", "Poison Loom Galleries"),
+                ),
+                PointOfInterest(
+                    name="Mire Lantern Warrens",
+                    poi_type="maze",
+                    summary="Bioluminescent tunnel web where Cave Stalkers erase tracks and isolate patrol teams.",
+                    control_faction="Contested",
+                    threats=("Cave Stalkers", "sink gas pockets"),
+                    services=("stealth_trial", "hidden_cache"),
+                    connected_nodes=("Dusk Refuge", "Monarch Deep Vault"),
+                ),
+                PointOfInterest(
+                    name="Poison Loom Galleries",
+                    poi_type="laboratory",
+                    summary="Broken alchemy halls where Poison Adepts weave airborne toxins into mineral fog.",
+                    control_faction="Poison Adepts",
+                    threats=("venom pressure traps", "Hollow Wraiths"),
+                    services=("resistance_crafting", "hazard_research"),
+                    connected_nodes=("Dusk Refuge", "Monarch Deep Vault"),
+                ),
+                PointOfInterest(
+                    name="Monarch Deep Vault",
+                    poi_type="boss_arena",
+                    summary="Ancient fracture chamber where the Ashen Monarch channels seismic pulses through relic pillars.",
+                    control_faction="Ashen Monarch",
+                    threats=("Ashen Monarch", "collapse shockwaves"),
+                    services=("boss_gate", "earthbreaker_trial"),
+                    connected_nodes=("Mire Lantern Warrens", "Poison Loom Galleries"),
+                ),
+            ],
             tutorial_mechanics=("underground_navigation", "poison_resistance"),
         ),
     ]
@@ -4475,6 +4962,9 @@ def _seed_quests() -> List[Quest]:
                 "exiled_heir": "A hidden oath marker grants passage, and old sentries stand down at your approach.",
                 "street_ghost": "Your underworld contacts open a tunnel route into the watchpost.",
                 "wandering_monk": "You walk the patrol rhythm and slip through blind spots without raising alarm.",
+                "nonlethal_path": "You rotate stealth feints and silent takedowns, securing the clan records without casualties.",
+                "heroic_path": "Your earlier rescues inspire the watchpost sentries to clear a lawful route to the archive room.",
+                "rogue_path": "You bribe a black-market quartermaster for guard rotations and slip in before the shift change.",
                 "infiltration": "You bypass the front line by scaling hidden cliff routes.",
                 "default": "You infiltrate through the drainage channel under moonlight.",
             },
@@ -4489,6 +4979,9 @@ def _seed_quests() -> List[Quest]:
                 "exiled_heir": "Old clan loyalists reveal a safe path and reinforce your escort line.",
                 "street_ghost": "You reroute the caravan through smuggler trails and avoid the heaviest trap lines.",
                 "wandering_monk": "Your calm mediation de-escalates the ambush, turning a standoff into safe passage.",
+                "nonlethal_path": "You redirect every ambush through decoy lanterns and pressure-point disarms until Dan reaches cover safely.",
+                "heroic_path": "Your reputation unites frightened scouts into a defensive cordon that walks Dan through the forest alive.",
+                "rogue_path": "You cut a deal with rival outriders, trading intel for a corridor that keeps Dan beyond arrow range.",
                 "honor_bound": "You challenge the ambushers openly, earning their retreat.",
                 "default": "You hold the line and protect Dan until dawn.",
             },
@@ -4503,6 +4996,9 @@ def _seed_quests() -> List[Quest]:
                 "exiled_heir": "You invoke a legacy challenge and force Kage Renda into a formal duel for the gate.",
                 "street_ghost": "You cut supply lines and spring a precision trap before Renda can form a full defense.",
                 "wandering_monk": "Through restraint and focus, you disarm Kage Renda without a killing blow.",
+                "nonlethal_path": "You disable Renda's strike teams with smoke, binds, and evasion, forcing a surrender at Verdant Gate.",
+                "heroic_path": "Your stand at the gate rallies defenders into a coordinated shield line that breaks Renda's advance cleanly.",
+                "rogue_path": "You sabotage Renda's command drums and turn his lieutenants with leverage before the final clash begins.",
                 "pacifism": "You force a surrender and secure the gate through discipline.",
                 "default": "You overpower Kage Renda in a direct final clash.",
             },

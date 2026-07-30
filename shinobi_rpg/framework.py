@@ -35,6 +35,7 @@ def get_framework_overview(
         },
         "seeded_content": {
             "regions": len(world.regions),
+            "points_of_interest": sum(len(region.points_of_interest) for region in world.regions),
             "quests": len(world.quests),
             "allies": len(world.allies),
             "weapons": len(world.weapons),

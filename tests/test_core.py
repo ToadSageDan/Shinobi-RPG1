@@ -176,6 +176,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(overview["development"]["entrypoint"], "python -m shinobi_rpg")
         self.assertGreaterEqual(overview["seeded_content"]["allies"], DEFAULT_ALLY_MIN_COUNT)
         self.assertGreaterEqual(overview["seeded_content"]["regions"], 1)
+        self.assertGreaterEqual(overview["seeded_content"]["points_of_interest"], 20)
 
     def test_cli_main_prints_framework_overview_json(self):
         buffer = StringIO()
@@ -197,6 +198,20 @@ class CoreSystemTests(unittest.TestCase):
         self.assertFalse(
             any(name.startswith("AutoNinja-") for name in world.allies[:DEFAULT_ALLY_MIN_COUNT])
         )
+
+    def test_world_map_has_detailed_regions_and_points_of_interest(self):
+        world, _ = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
+        world_map = world.build_world_map()
+        self.assertEqual(world_map["region_count"], len(world.regions))
+        self.assertEqual(len(world_map["regions"]), len(world.regions))
+        for region in world_map["regions"]:
+            self.assertGreaterEqual(len(region["points_of_interest"]), 4)
+            self.assertTrue(region["strategic_value"])
+            self.assertGreaterEqual(len(region["travel_nodes"]), 4)
+            for poi in region["points_of_interest"]:
+                self.assertTrue(poi["name"])
+                self.assertTrue(poi["summary"])
+                self.assertGreaterEqual(len(poi["connected_nodes"]), 1)
 
     def test_region_clear_reward_unlocks_fast_travel(self):
         world, player = build_mvp_world("TestPlayer", [2, 4, 1, 3, 5])
@@ -781,6 +796,21 @@ class CoreSystemTests(unittest.TestCase):
             restored_world.trophy_catalog["ghost_step"].tier,
             TrophyTier.EARLY,
         )
+
+    def test_snapshot_roundtrip_preserves_region_points_of_interest(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        snapshot = world.to_snapshot(player)
+        restored_world, _ = world.from_snapshot(snapshot)
+        original = world.build_world_map()["regions"]
+        restored = restored_world.build_world_map()["regions"]
+        self.assertEqual(len(original), len(restored))
+        for original_region, restored_region in zip(original, restored):
+            self.assertEqual(original_region["name"], restored_region["name"])
+            self.assertEqual(original_region["travel_nodes"], restored_region["travel_nodes"])
+            self.assertEqual(
+                [poi["name"] for poi in original_region["points_of_interest"]],
+                [poi["name"] for poi in restored_region["points_of_interest"]],
+            )
 
     # ------------------------------------------------------------------
     # Q6-Q15 quest branching tests

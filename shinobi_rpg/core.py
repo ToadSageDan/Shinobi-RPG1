@@ -664,6 +664,17 @@ class Quest:
 
 
 @dataclass
+class PointOfInterest:
+    name: str
+    poi_type: str
+    summary: str
+    control_faction: str = ""
+    threats: Tuple[str, ...] = field(default_factory=tuple)
+    services: Tuple[str, ...] = field(default_factory=tuple)
+    connected_nodes: Tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass
 class Region:
     name: str
     village_hub: str
@@ -672,6 +683,11 @@ class Region:
     boss: str
     boss_rewards: Dict[str, str]
     arc_key: str = "political_war"
+    climate: str = "temperate"
+    terrain_profile: Tuple[str, ...] = field(default_factory=tuple)
+    strategic_value: str = ""
+    travel_nodes: List[str] = field(default_factory=list)
+    points_of_interest: List[PointOfInterest] = field(default_factory=list)
     tutorial_mechanics: Tuple[str, ...] = field(default_factory=tuple)
     encounter_table: List[str] = field(default_factory=list)
     cleared: bool = False
@@ -2628,6 +2644,35 @@ class NinjaWorld:
             _check(TROPHY_WIND_DANCER, outcomes["evasion"], NONLETHAL_EVASION_MASTER_THRESHOLD, "nonlethal evasion encounters")
         return near_miss
 
+    def build_world_map(self) -> Dict[str, Any]:
+        return {
+            "region_count": len(self.regions),
+            "regions": [
+                {
+                    "name": region.name,
+                    "village_hub": region.village_hub,
+                    "arc_key": region.arc_key,
+                    "climate": region.climate,
+                    "terrain_profile": list(region.terrain_profile),
+                    "strategic_value": region.strategic_value,
+                    "travel_nodes": list(region.travel_nodes),
+                    "points_of_interest": [
+                        {
+                            "name": poi.name,
+                            "type": poi.poi_type,
+                            "summary": poi.summary,
+                            "control_faction": poi.control_faction,
+                            "threats": list(poi.threats),
+                            "services": list(poi.services),
+                            "connected_nodes": list(poi.connected_nodes),
+                        }
+                        for poi in region.points_of_interest
+                    ],
+                }
+                for region in self.regions
+            ],
+        }
+
     def generate_playthrough_summary(self, player: PlayerProfile) -> Dict[str, Any]:
         self._refresh_arc_and_era()
         self._schedule_dynamic_regions(player)
@@ -2712,6 +2757,7 @@ class NinjaWorld:
             "npc_evil_profiles": {name: dict(profile) for name, profile in self.npc_evil_profiles.items()},
             "external_pressure_history": [dict(entry) for entry in self.external_pressure_history[-20:]],
             "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log[-20:]],
+            "world_map": self.build_world_map(),
             "arc_state": {
                 "current_arc_key": self.current_arc_key,
                 "scheduled_regions": list(self.dynamic_region_chain),
@@ -2809,6 +2855,22 @@ class NinjaWorld:
                         "boss": region.boss,
                         "boss_rewards": dict(region.boss_rewards),
                         "arc_key": region.arc_key,
+                        "climate": region.climate,
+                        "terrain_profile": list(region.terrain_profile),
+                        "strategic_value": region.strategic_value,
+                        "travel_nodes": list(region.travel_nodes),
+                        "points_of_interest": [
+                            {
+                                "name": poi.name,
+                                "poi_type": poi.poi_type,
+                                "summary": poi.summary,
+                                "control_faction": poi.control_faction,
+                                "threats": list(poi.threats),
+                                "services": list(poi.services),
+                                "connected_nodes": list(poi.connected_nodes),
+                            }
+                            for poi in region.points_of_interest
+                        ],
                         "tutorial_mechanics": list(region.tutorial_mechanics),
                         "encounter_table": list(region.encounter_table),
                         "cleared": region.cleared,
@@ -2978,6 +3040,23 @@ class NinjaWorld:
                 boss=item["boss"],
                 boss_rewards=dict(item["boss_rewards"]),
                 arc_key=item.get("arc_key", "political_war"),
+                climate=item.get("climate", "temperate"),
+                terrain_profile=tuple(item.get("terrain_profile", [])),
+                strategic_value=item.get("strategic_value", ""),
+                travel_nodes=list(item.get("travel_nodes", [])),
+                points_of_interest=[
+                    PointOfInterest(
+                        name=poi.get("name", ""),
+                        poi_type=poi.get("poi_type", poi.get("type", "landmark")),
+                        summary=poi.get("summary", ""),
+                        control_faction=poi.get("control_faction", ""),
+                        threats=tuple(poi.get("threats", [])),
+                        services=tuple(poi.get("services", [])),
+                        connected_nodes=tuple(poi.get("connected_nodes", [])),
+                    )
+                    for poi in item.get("points_of_interest", [])
+                    if poi.get("name")
+                ],
                 tutorial_mechanics=tuple(item.get("tutorial_mechanics", [])),
                 encounter_table=list(item.get("encounter_table", [])),
                 cleared=item.get("cleared", False),
@@ -3895,6 +3974,53 @@ def _seed_regions() -> List[Region]:
                 "move": "Razorwind Spiral",
             },
             arc_key="political_war",
+            climate="humid forest frontier",
+            terrain_profile=("old-growth canopy", "river switchbacks", "stone terraces"),
+            strategic_value="Controls grain roads and courier channels between interior clans and the capital",
+            travel_nodes=[
+                "Leafrise Village",
+                "Whisperroot Crossing",
+                "Saffron Relay Fort",
+                "Renda Skybridge",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Leafrise Village",
+                    poi_type="hub",
+                    summary="Trade-and-training village with gate towers that monitor every road into Verdant Gate.",
+                    control_faction="Leafrise Council",
+                    threats=("sleeper bandit scouts",),
+                    services=("smithy", "healer", "mission board", "fast_travel_node"),
+                    connected_nodes=("Whisperroot Crossing", "Saffron Relay Fort"),
+                ),
+                PointOfInterest(
+                    name="Whisperroot Crossing",
+                    poi_type="chokepoint",
+                    summary="A fog-dense bridge network where Mist Ronin ambush caravans under false crest banners.",
+                    control_faction="Contested",
+                    threats=("Mist Ronin", "trapwire cells"),
+                    services=("intel_cache",),
+                    connected_nodes=("Leafrise Village", "Renda Skybridge"),
+                ),
+                PointOfInterest(
+                    name="Saffron Relay Fort",
+                    poi_type="fortification",
+                    summary="Courier stronghold with coded signal drums that can lock down regional supply lanes in minutes.",
+                    control_faction="Leafrise Council",
+                    threats=("root-stalker tunnels", "insider sabotage"),
+                    services=("armory", "scouting_contracts"),
+                    connected_nodes=("Leafrise Village", "Renda Skybridge"),
+                ),
+                PointOfInterest(
+                    name="Renda Skybridge",
+                    poi_type="boss_arena",
+                    summary="Wind-carved cliff span where Kage Renda stages formal duels to decide route ownership.",
+                    control_faction="Kage Renda",
+                    threats=("Kage Renda", "shearwind updrafts"),
+                    services=("boss_gate", "vista_recon"),
+                    connected_nodes=("Whisperroot Crossing", "Saffron Relay Fort"),
+                ),
+            ],
             tutorial_mechanics=("blocking", "substitution"),
         ),
         Region(
@@ -3910,6 +4036,53 @@ def _seed_regions() -> List[Region]:
                 "move": "Inferno Vortex",
             },
             arc_key="fracture_front",
+            climate="volcanic dry heat",
+            terrain_profile=("slag fields", "lava channels", "ash dunes"),
+            strategic_value="Primary smelting corridor and munitions route for the fracture-front war machine",
+            travel_nodes=[
+                "Cinder Port",
+                "Furnace Mile",
+                "Voln Barricade Line",
+                "Ember Crown Crucible",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Cinder Port",
+                    poi_type="hub",
+                    summary="Black-glass harbor that moves ore, mercenaries, and ration caravans under rotating curfews.",
+                    control_faction="Port Syndicates",
+                    threats=("dock extortion crews",),
+                    services=("weapon_vendor", "forge_upgrades", "fast_travel_node"),
+                    connected_nodes=("Furnace Mile", "Voln Barricade Line"),
+                ),
+                PointOfInterest(
+                    name="Furnace Mile",
+                    poi_type="industrial_corridor",
+                    summary="Kiln avenue where Ember Raiders skim fuel convoys and trigger chain blasts during raids.",
+                    control_faction="Contested",
+                    threats=("Ember Raiders", "slag eruptions"),
+                    services=("resource_salvage",),
+                    connected_nodes=("Cinder Port", "Ember Crown Crucible"),
+                ),
+                PointOfInterest(
+                    name="Voln Barricade Line",
+                    poi_type="warfront",
+                    summary="Layered trench-and-shield wall where General Voln drills attrition tactics with ash mercenaries.",
+                    control_faction="General Voln Legion",
+                    threats=("Ash Mercenaries", "incendiary mortars"),
+                    services=("tactical_trials", "supply_restock"),
+                    connected_nodes=("Cinder Port", "Ember Crown Crucible"),
+                ),
+                PointOfInterest(
+                    name="Ember Crown Crucible",
+                    poi_type="boss_arena",
+                    summary="Collapsed caldera ring where Voln channels magma vents into sustained battlefield pressure.",
+                    control_faction="General Voln",
+                    threats=("General Voln", "lava burst cycles"),
+                    services=("boss_gate", "heat_resistance_trial"),
+                    connected_nodes=("Furnace Mile", "Voln Barricade Line"),
+                ),
+            ],
             tutorial_mechanics=("aoe_attacks",),
         ),
         Region(
@@ -3925,6 +4098,53 @@ def _seed_regions() -> List[Region]:
                 "move": "Maelstrom Guard",
             },
             arc_key="recovery_mandate",
+            climate="monsoon coastal",
+            terrain_profile=("flood terraces", "reef canals", "salt flats"),
+            strategic_value="Secures medical imports and sea access needed for post-war stabilization",
+            travel_nodes=[
+                "Azure Rest",
+                "Shimmerlock Pier",
+                "Coral Intake Channels",
+                "Neris Tidal Court",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Azure Rest",
+                    poi_type="hub",
+                    summary="Recovery port where healers, refugees, and tide guards coordinate basin reconstruction.",
+                    control_faction="Recovery Mandate Wardens",
+                    threats=("corsair infiltrators",),
+                    services=("clinic", "supply_exchange", "fast_travel_node"),
+                    connected_nodes=("Shimmerlock Pier", "Coral Intake Channels"),
+                ),
+                PointOfInterest(
+                    name="Shimmerlock Pier",
+                    poi_type="trade_route",
+                    summary="Stilted dock lattice with submerged smuggler shafts used by Tide Hunters at high rain tide.",
+                    control_faction="Contested",
+                    threats=("Tide Hunters", "undertow traps"),
+                    services=("fishing_contracts", "intel_drop"),
+                    connected_nodes=("Azure Rest", "Neris Tidal Court"),
+                ),
+                PointOfInterest(
+                    name="Coral Intake Channels",
+                    poi_type="infrastructure",
+                    summary="Flood-control gates that determine whether inland farms receive clean water or salt ruin.",
+                    control_faction="Basin Engineers",
+                    threats=("Reef Assassins", "gate overload"),
+                    services=("water_route_switches", "defense_simulator"),
+                    connected_nodes=("Azure Rest", "Neris Tidal Court"),
+                ),
+                PointOfInterest(
+                    name="Neris Tidal Court",
+                    poi_type="boss_arena",
+                    summary="Spiral amphitheater below sea level where Admiral Neris manipulates current walls in combat.",
+                    control_faction="Admiral Neris",
+                    threats=("Admiral Neris", "pressure-wave surges"),
+                    services=("boss_gate", "water_affinity_trial"),
+                    connected_nodes=("Shimmerlock Pier", "Coral Intake Channels"),
+                ),
+            ],
         ),
         Region(
             name="Stormwall Ridge",
@@ -3945,6 +4165,53 @@ def _seed_regions() -> List[Region]:
                 "move": "Cyclone Throne Shatter",
             },
             arc_key="rebellion_wave",
+            climate="alpine thunder belt",
+            terrain_profile=("knife ridgelines", "floating scree fields", "lightning spires"),
+            strategic_value="Highland relay for long-range signaling and anti-air control over three border provinces",
+            travel_nodes=[
+                "Crestfall Outpost",
+                "Tempest Watchline",
+                "Monk Echo Cloister",
+                "Tyrant Crown Mesa",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Crestfall Outpost",
+                    poi_type="hub",
+                    summary="Windbreak bastion anchoring all ridge ascents with rotating storm alarms.",
+                    control_faction="Ridge Wardens",
+                    threats=("raider scouts",),
+                    services=("gear_repair", "altitude_training", "fast_travel_node"),
+                    connected_nodes=("Tempest Watchline", "Monk Echo Cloister"),
+                ),
+                PointOfInterest(
+                    name="Tempest Watchline",
+                    poi_type="chokepoint",
+                    summary="Chain of lightning rods and ballista nests repeatedly seized by Windcutter raider flights.",
+                    control_faction="Contested",
+                    threats=("Windcutter Raiders", "stormcaller barrages"),
+                    services=("sniper_post",),
+                    connected_nodes=("Crestfall Outpost", "Tyrant Crown Mesa"),
+                ),
+                PointOfInterest(
+                    name="Monk Echo Cloister",
+                    poi_type="sanctum",
+                    summary="Suspended monastery where Gale Monks encode weather prophecy into defensive chants.",
+                    control_faction="Gale Monks",
+                    threats=("ritual backlash", "ridge wolves"),
+                    services=("wind_seal_training", "meditation_buff"),
+                    connected_nodes=("Crestfall Outpost", "Tyrant Crown Mesa"),
+                ),
+                PointOfInterest(
+                    name="Tyrant Crown Mesa",
+                    poi_type="boss_arena",
+                    summary="Split-plateau throne where the Zephyr Tyrant weaponizes jet streams and falling debris.",
+                    control_faction="Zephyr Tyrant",
+                    threats=("Zephyr Tyrant", "cyclone bursts"),
+                    services=("boss_gate", "aerial_duel_trial"),
+                    connected_nodes=("Tempest Watchline", "Monk Echo Cloister"),
+                ),
+            ],
             tutorial_mechanics=("wind_resistance", "aerial_dodge"),
         ),
         Region(
@@ -3966,6 +4233,53 @@ def _seed_regions() -> List[Region]:
                 "move": "Subterranean Collapse",
             },
             arc_key="fracture_front",
+            climate="subterranean toxic",
+            terrain_profile=("collapsed caverns", "fungal sinkholes", "obsidian catacombs"),
+            strategic_value="Hidden ore vault and relic lattice that can destabilize every surface alliance if seized",
+            travel_nodes=[
+                "Dusk Refuge",
+                "Mire Lantern Warrens",
+                "Poison Loom Galleries",
+                "Monarch Deep Vault",
+            ],
+            points_of_interest=[
+                PointOfInterest(
+                    name="Dusk Refuge",
+                    poi_type="hub",
+                    summary="Last stable cavern settlement using glowstone beacons to map safe descent corridors.",
+                    control_faction="Refuge Keepers",
+                    threats=("surface raider incursions",),
+                    services=("antidote_shop", "route_mapping", "fast_travel_node"),
+                    connected_nodes=("Mire Lantern Warrens", "Poison Loom Galleries"),
+                ),
+                PointOfInterest(
+                    name="Mire Lantern Warrens",
+                    poi_type="maze",
+                    summary="Bioluminescent tunnel web where Cave Stalkers erase tracks and isolate patrol teams.",
+                    control_faction="Contested",
+                    threats=("Cave Stalkers", "sink gas pockets"),
+                    services=("stealth_trial", "hidden_cache"),
+                    connected_nodes=("Dusk Refuge", "Monarch Deep Vault"),
+                ),
+                PointOfInterest(
+                    name="Poison Loom Galleries",
+                    poi_type="laboratory",
+                    summary="Broken alchemy halls where Poison Adepts weave airborne toxins into mineral fog.",
+                    control_faction="Poison Adepts",
+                    threats=("venom pressure traps", "Hollow Wraiths"),
+                    services=("resistance_crafting", "hazard_research"),
+                    connected_nodes=("Dusk Refuge", "Monarch Deep Vault"),
+                ),
+                PointOfInterest(
+                    name="Monarch Deep Vault",
+                    poi_type="boss_arena",
+                    summary="Ancient fracture chamber where the Ashen Monarch channels seismic pulses through relic pillars.",
+                    control_faction="Ashen Monarch",
+                    threats=("Ashen Monarch", "collapse shockwaves"),
+                    services=("boss_gate", "earthbreaker_trial"),
+                    connected_nodes=("Mire Lantern Warrens", "Poison Loom Galleries"),
+                ),
+            ],
             tutorial_mechanics=("underground_navigation", "poison_resistance"),
         ),
     ]

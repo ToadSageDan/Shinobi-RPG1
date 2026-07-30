@@ -141,7 +141,7 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_lock_on_enables_tracking_for_targeted_attacks(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
-        result = player.execute_move("Pressure Knot Strike", target_name="Kage Renda", lock_on=True)
+        result = player.execute_move("Ash Fang Drive", target_name="Kage Renda", lock_on=True)
         self.assertEqual(player.locked_on_target, "Kage Renda")
         self.assertEqual(result["combat_targeting"]["mode"], "tracking")
         self.assertTrue(result["combat_targeting"]["tracking_required"])
@@ -151,7 +151,7 @@ class CoreSystemTests(unittest.TestCase):
     def test_lock_on_requires_target_when_unset(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         with self.assertRaisesRegex(ValueError, "Lock-on requires a target name"):
-            player.execute_move("Pressure Knot Strike", lock_on=True)
+            player.execute_move("Ash Fang Drive", lock_on=True)
 
     def test_execute_move_rejects_unknown_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -603,7 +603,8 @@ class CoreSystemTests(unittest.TestCase):
     def test_save_and_load_snapshot_restores_world_and_player_state(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "kill")
-        player.execute_move("Pressure Knot Strike", target_name="Kage Renda", lock_on=True)
+        attack_name = player.moves_by_set[MoveCategory.ATTACK][0].name
+        player.execute_move(attack_name, target_name="Kage Renda", lock_on=True)
         world.trigger_external_pressure_event(player, event_key="forbidden_scroll_auction")
         world.discover_world_intel(player, channel="newspaper", stealth_probe=True)
         world.clear_region(player, "Verdant Gate", "weapon")

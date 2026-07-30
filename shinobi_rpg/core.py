@@ -1486,7 +1486,6 @@ class NinjaWorld:
         event_key: str | None = None,
         causes: Sequence[str] | None = None,
     ) -> Dict[str, Any]:
-        environment_state = self.advance_environment_cycle()
         if event_key is None:
             keys = sorted(EXTERNAL_PRESSURE_EVENT_LIBRARY.keys())
             # Blend run progression (history length), world drift (recovery score),
@@ -1740,6 +1739,7 @@ class NinjaWorld:
         event_key: str | None = None,
         causes: Sequence[str] | None = None,
     ) -> Dict[str, Any]:
+        environment_state = self.advance_environment_cycle()
         if event_key is None:
             keys = sorted(WORLD_EVENT_LIBRARY.keys())
             index = (len(self.world_event_history) + player.nonlethal_action_count() + abs(player.reputation)) % len(keys)

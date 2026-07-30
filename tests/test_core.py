@@ -8,7 +8,7 @@ from shinobi_rpg.core import (
     Backstory,
     DEFAULT_ALLY_MIN_COUNT,
     HEROIC_THRESHOLD_MIN,
-    JutsuType,
+    TechniqueType,
     Move,
     MoveCategory,
     NONLETHAL_CHARM_MASTER_THRESHOLD,
@@ -132,7 +132,7 @@ class CoreSystemTests(unittest.TestCase):
         summon_name = player.moves_by_set[MoveCategory.SUMMON][0].name
         result = player.execute_move(summon_name)
         self.assertEqual(result["category"], "summon")
-        self.assertEqual(result["summon_type"], JutsuType.SUMMONING.value)
+        self.assertEqual(result["summon_type"], TechniqueType.SUMMONING.value)
         self.assertEqual(result["summon_power"], 20)
 
     def test_execute_move_rejects_unknown_move(self):
@@ -651,18 +651,16 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for decision in ["stealth", "charm", "evasion"]:
             world.apply_player_decision(player, decision)
-        world.clear_region(player, "Verdant Gate", "weapon")
-        world.clear_region(player, "Ashen Cradle", "weapon")
-        world.clear_region(player, "Tideglass Basin", "weapon")
+        for region in world.regions:
+            world.clear_region(player, region.name, "weapon")
         self.assertIn("silent_legend", player.trophies)
 
     def test_silent_legend_blocked_if_kill_occurs(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "kill")
         world.apply_player_decision(player, "stealth")
-        world.clear_region(player, "Verdant Gate", "weapon")
-        world.clear_region(player, "Ashen Cradle", "weapon")
-        world.clear_region(player, "Tideglass Basin", "weapon")
+        for region in world.regions:
+            world.clear_region(player, region.name, "weapon")
         self.assertNotIn("silent_legend", player.trophies)
 
     def test_playthrough_summary_includes_new_tracking_fields(self):
@@ -705,17 +703,18 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_ninjutsu_catalog_offers_diverse_affinity_and_summon_paths(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
-        self.assertGreaterEqual(len(world.ninjutsu_library), 20)
-        summon_catalog = world.get_ninjutsu_catalog(jutsu_type=JutsuType.SUMMONING)
+        self.assertGreaterEqual(len(world.technique_library), 20)
+        summon_catalog = world.get_technique_catalog(technique_type=TechniqueType.SUMMONING)
         self.assertTrue(summon_catalog)
         self.assertTrue(any(item["category"] == MoveCategory.SUMMON.value for item in summon_catalog))
 
     def test_shared_move_pool_is_evenly_represented(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         counts = {category: 0 for category in MoveCategory}
-        for move in world.ninjutsu_library:
+        for move in world.technique_library:
             counts[move.category] += 1
-        self.assertTrue(all(count == 12 for count in counts.values()))
+        # Each base category has at least 12 moves; enemy-exclusive moves add to attack/defense/escape
+        self.assertTrue(all(count >= 12 for count in counts.values()))
 
     def test_execute_move_applies_status_effects(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -727,7 +726,7 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_combo_resolution_applies_status_synergy_bonus(self):
         world, player = build_mvp_world("TestPlayer", [1, 5, 1, 1])
-        skyline = next(move for move in world.ninjutsu_library if move.name == "Skyline Covenant")
+        skyline = next(move for move in world.technique_library if move.name == "Skyline Covenant")
         player.add_move(skyline, allow_cross_affinity=True)
         combo = player.resolve_combo("Undertow Slice", "Tidal Blink", "Skyline Covenant")
         self.assertEqual(combo["combo_bonus"], "storm_burst")

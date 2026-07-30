@@ -788,6 +788,7 @@ class PlayerProfile:
         default_factory=lambda: {"weapon": [], "clothing": [], "move": []}
     )
     red_bar_power_claims: Dict[str, str] = field(default_factory=dict)
+    enemy_move_claims: Dict[str, str] = field(default_factory=dict)
     moves_by_set: Dict[MoveCategory, List[Move]] = field(
         default_factory=lambda: {
             MoveCategory.ESCAPE: [],
@@ -1149,6 +1150,15 @@ class PlayerProfile:
         if move.name not in self.unlocked_move_names:
             self.add_move(move, allow_cross_affinity=True)
 
+    def claim_enemy_exclusive_move(self, enemy_name: str, move: Move) -> bool:
+        """Claim an important enemy's exclusive move on first defeat."""
+        if enemy_name in self.enemy_move_claims:
+            return False
+        self.enemy_move_claims[enemy_name] = move.name
+        if move.name not in self.unlocked_move_names:
+            self.add_move(move, allow_cross_affinity=True)
+        return True
+
     def to_snapshot(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -1168,6 +1178,7 @@ class PlayerProfile:
             "weapons": [weapon.name for weapon in self.weapons],
             "reward_inventory": {key: list(values) for key, values in self.reward_inventory.items()},
             "red_bar_power_claims": dict(self.red_bar_power_claims),
+            "enemy_move_claims": dict(self.enemy_move_claims),
             "moves_by_set": {
                 category.value: [
                     {
@@ -1998,6 +2009,8 @@ class NinjaWorld:
                 "credits": player.credits,
                 "run_signature": run_signature,
                 "living_tapestry": archived_tapestry,
+                "enemy_move_claims": dict(player.enemy_move_claims),
+                "enemy_exclusive_moves": sorted(set(player.enemy_move_claims.values())),
             }
         )
         for entry in archived_tapestry:
@@ -2605,6 +2618,11 @@ class NinjaWorld:
         encounter_count = player.record_region_encounter(region_name)
         reward_xp = _region_encounter_xp_reward(encounter)
         levels_gained = player.stats.gain_xp(reward_xp)
+        enemy_exclusive_move = enemy_exclusive_move_for(encounter)
+        enemy_exclusive_move_name = enemy_exclusive_move.name if enemy_exclusive_move else None
+        enemy_exclusive_move_unlocked = None
+        if enemy_exclusive_move and player.claim_enemy_exclusive_move(encounter, enemy_exclusive_move):
+            enemy_exclusive_move_unlocked = enemy_exclusive_move.name
         return {
             "region": region_name,
             "encounter": encounter,
@@ -2613,6 +2631,8 @@ class NinjaWorld:
             "reward_xp": reward_xp,
             "levels_gained": levels_gained,
             "level": player.stats.level,
+            "enemy_exclusive_move": enemy_exclusive_move_name,
+            "enemy_exclusive_move_unlocked": enemy_exclusive_move_unlocked,
         }
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -3025,6 +3045,12 @@ class NinjaWorld:
                 for villain in self.villains
             },
             "red_bar_power_claims": dict(player.red_bar_power_claims),
+            "enemy_move_claims": dict(player.enemy_move_claims),
+            "enemy_exclusive_moves_unlocked": sorted(set(player.enemy_move_claims.values())),
+            "enemy_exclusive_move_progress": {
+                "unlocked": len(player.enemy_move_claims),
+                "total": len(ENEMY_EXCLUSIVE_MOVE_SPECS),
+            },
             "red_bar_progress": red_bar_progress,
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
             "quest_resolution_state": {
@@ -3546,6 +3572,10 @@ class NinjaWorld:
                 villain_name: move_name
                 for villain_name, move_name in player_snapshot.get("red_bar_power_claims", {}).items()
             },
+            enemy_move_claims={
+                enemy_name: move_name
+                for enemy_name, move_name in player_snapshot.get("enemy_move_claims", {}).items()
+            },
             selected_backstory=backstory_by_key.get(player_snapshot.get("selected_backstory")),
             narrative_tags=set(player_snapshot.get("narrative_tags", [])),
             encounter_outcomes=dict(
@@ -3600,6 +3630,14 @@ class NinjaWorld:
         if not player.unlocked_move_names:
             player.unlocked_move_names = {
                 move.name for move_set in player.moves_by_set.values() for move in move_set
+            }
+        if not player.enemy_move_claims:
+            move_to_enemy = {spec["name"]: enemy for enemy, spec in ENEMY_EXCLUSIVE_MOVE_SPECS.items()}
+            player.enemy_move_claims = {
+                enemy_name: move_name
+                for move_name in player.unlocked_move_names
+                for enemy_name in [move_to_enemy.get(move_name)]
+                if enemy_name
             }
 
         if not player.quest_log:

@@ -27,6 +27,7 @@ from shinobi_rpg.core import (
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
+    get_learnable_enemy_moves,
     load_world_snapshot,
     resolve_affinity_minigame,
     save_world_snapshot,
@@ -288,12 +289,18 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_vault_archives_historic_ninja(self):
         world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         world.archive_historic_ninja(player)
         archive = world.vault_historic_ninjas[0]
         self.assertEqual(archive["name"], "Dot")
         self.assertEqual(archive["affinity"], player.affinity.value)
         self.assertEqual(archive["level"], player.stats.level)
         self.assertEqual(archive["reputation"], player.reputation)
+        self.assertIn("enemy_move_claims", archive)
+        self.assertIn("enemy_exclusive_moves", archive)
+        self.assertTrue(archive["enemy_exclusive_moves"])
 
     def test_vault_replay_summary_defaults_when_no_runs(self):
         world, _ = build_mvp_world("Dot", [1, 3, 5, 2, 1])
@@ -625,6 +632,37 @@ class CoreSystemTests(unittest.TestCase):
             world.resolve_region_encounter(player, "Verdant Gate")
         self.assertGreater(player.stats.level, initial_level)
 
+    def test_region_encounter_unlocks_enemy_exclusive_move_once(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        learnable = get_learnable_enemy_moves()
+        region = self._get_region(world, "Verdant Gate")
+        target_enemy = next(enemy for enemy in region.encounter_table if enemy in learnable)
+        target_move = learnable[target_enemy]
+
+        first_unlock = None
+        for _ in range(len(region.encounter_table)):
+            result = world.resolve_region_encounter(player, "Verdant Gate")
+            if result["encounter"] == target_enemy:
+                first_unlock = result
+                break
+
+        self.assertIsNotNone(first_unlock)
+        self.assertEqual(first_unlock["enemy_exclusive_move"], target_move)
+        self.assertEqual(first_unlock["enemy_exclusive_move_unlocked"], target_move)
+        self.assertIn(target_move, self._get_unlocked_move_names(player))
+        self.assertEqual(player.enemy_move_claims[target_enemy], target_move)
+
+        repeat_unlock = None
+        for _ in range(len(region.encounter_table)):
+            result = world.resolve_region_encounter(player, "Verdant Gate")
+            if result["encounter"] == target_enemy:
+                repeat_unlock = result
+                break
+
+        self.assertIsNotNone(repeat_unlock)
+        self.assertEqual(repeat_unlock["enemy_exclusive_move"], target_move)
+        self.assertIsNone(repeat_unlock["enemy_exclusive_move_unlocked"])
+
     def test_seeded_encounter_tables_include_shinobi_guards_and_animals(self):
         world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         encounter_names = [
@@ -747,9 +785,15 @@ class CoreSystemTests(unittest.TestCase):
     def test_playthrough_summary_includes_new_tracking_fields(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world.apply_player_decision(player, "charm")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         summary = world.generate_playthrough_summary(player)
         self.assertIn("villain_decision_memory", summary)
         self.assertIn("red_bar_power_claims", summary)
+        self.assertIn("enemy_move_claims", summary)
+        self.assertIn("enemy_exclusive_moves_unlocked", summary)
+        self.assertIn("enemy_exclusive_move_progress", summary)
         self.assertIn("red_bar_progress", summary)
         self.assertIn("quest_log", summary)
         self.assertIn("ally_loyalty", summary)
@@ -761,6 +805,7 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("external_pressure_history", summary)
         self.assertIn("intel_discovery_log", summary)
         self.assertEqual(summary["kill_counter"]["total_kills"], 0)
+        self.assertGreaterEqual(summary["enemy_exclusive_move_progress"]["total"], 1)
 
     def test_villain_evolution_checkpoints_escalate_with_pressure(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -1617,15 +1662,20 @@ class Issue4ReplaySummaryTests(unittest.TestCase):
         world, player = self._world_and_player()
         for _ in range(3):
             world.apply_player_decision(player, "stealth")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
+        world.resolve_region_encounter(player, "Verdant Gate")
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
             save_world_snapshot(world, player, path)
             world2, player2 = load_world_snapshot(path)
             self.assertEqual(player2.encounter_outcomes["stealth"], 3)
+            self.assertTrue(player2.enemy_move_claims)
             summary = world2.generate_playthrough_summary(player2)
             self.assertIn("playstyle_summary", summary)
             self.assertIn("trophy_near_miss", summary)
+            self.assertIn("enemy_move_claims", summary)
         finally:
             os.unlink(path)
 

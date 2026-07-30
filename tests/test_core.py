@@ -900,6 +900,28 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["branch_key"], "kill_path")
         self.assertIn("brutal conclusion", result["outcome"])
 
+    def test_q16_branching_uses_nonlethal_path(self):
+        world, player = build_mvp_world("PacifistMain", [3, 1, 2, 4])
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q16")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+        self.assertIn("without executions", result["outcome"])
+
+    def test_q18_branching_uses_heroic_path(self):
+        world, player = build_mvp_world("HeroMain", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q18")
+        self.assertEqual(result["branch_key"], "heroic_path")
+        self.assertIn("public support", result["outcome"])
+
+    def test_q19_branching_uses_wandering_monk_backstory(self):
+        world, player = build_mvp_world("MonkMain", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[2])  # wandering_monk
+        result = world.resolve_quest_branch(player, "Q19")
+        self.assertEqual(result["branch_key"], "wandering_monk")
+        self.assertIn("restraint", result["outcome"])
+
     def test_backstory_branching_still_overrides_tactical_path(self):
         world, player = build_mvp_world("GhostMain", [3, 1, 2, 4])
         player.choose_backstory(world.player_backstories[1])  # street_ghost
@@ -907,6 +929,38 @@ class CoreSystemTests(unittest.TestCase):
             world.apply_player_decision(player, "stealth")
         result = world.resolve_quest_branch(player, "Q20")
         self.assertEqual(result["branch_key"], "street_ghost")
+
+    def test_q21_branching_uses_remaining_seeded_focus_outcomes(self):
+        world, player = build_mvp_world("GhostFocus", [3, 1, 2, 4])
+        player.choose_backstory(world.player_backstories[1])  # street_ghost
+        result = world.resolve_quest_branch(player, "Q21")
+        self.assertEqual(result["branch_key"], "street_ghost")
+        self.assertIn("sacred spaces outside faction revenge cycles", result["outcome"])
+
+    def test_q50_branching_uses_remaining_seeded_focus_outcomes(self):
+        world, player = build_mvp_world("HeroFocus", [3, 1, 2, 4])
+        player.update_reputation(60)
+        result = world.resolve_quest_branch(player, "Q50")
+        self.assertEqual(result["branch_key"], "heroic_path")
+        self.assertIn("balances justice, deterrence, and stability", result["outcome"])
+
+    def test_remaining_seeded_quests_include_tactical_and_reputation_branches(self):
+        world, player = build_mvp_world("Coverage", [3, 1, 2, 4])
+        required_keys = {
+            "stealth_path",
+            "charm_path",
+            "evasion_path",
+            "kill_path",
+            "heroic_path",
+            "rogue_path",
+        }
+        remaining = [
+            quest for quest in world.quests if quest.quest_id.startswith("Q") and int(quest.quest_id[1:]) >= 21
+        ]
+        self.assertEqual(len(remaining), 30)
+        for quest in remaining:
+            with self.subTest(quest_id=quest.quest_id):
+                self.assertTrue(required_keys.issubset(set(quest.branch_outcomes.keys())))
 
     def test_seeded_world_extends_quest_chain_to_q50(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

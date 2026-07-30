@@ -6385,7 +6385,8 @@ def _seed_villains() -> List[VillainProfile]:
                 "Verdant Gate highlands and spent five years drilling wind-edge techniques in "
                 "isolation, transforming his shame into surgical lethality. He returned not to "
                 "reclaim his post, but to fill the power vacuum the council's collapse created — "
-                "on his own terms."
+                "on his own terms. More than revenge, he wants political control over the region's "
+                "next order so no council can discard him again."
             ),
             signature_power=_make_move(
                 "Rending Spiral",
@@ -6604,7 +6605,8 @@ def _seed_villains() -> List[VillainProfile]:
                 "in exchange for a generation of protection contracts. She was the only "
                 "one who got out of the ambush. She didn't rebuild the guild. She became "
                 "freelance, operating by a principle of chosen loyalty: she'll still take "
-                "the job, but she decides who bleeds. The toxic fog she uses is partly "
+                "the job, but she decides who bleeds. She now treats stealth as a personal "
+                "creed as much as a battlefield method. The toxic fog she uses is partly "
                 "tactical, partly personal — she prefers battlefields where she controls "
                 "who can see."
             ),
@@ -6970,7 +6972,9 @@ def _seed_villains() -> List[VillainProfile]:
                 "by being offsite. He returned to find the stage burned and his company "
                 "scattered. His fire-illusion techniques — designed for awe and wonder — "
                 "were retooled over the next three years into weapons of psychological "
-                "collapse. He stages performances now. The audience doesn't leave the same."
+                "collapse. He stages performances now. The audience doesn't leave the same. "
+                "Beneath the revenge sits a naked lust for adoration: he wants every room "
+                "to love him, fear him, or both."
             ),
             signature_power=_make_move(
                 "Red Night Mandala",
@@ -7192,7 +7196,8 @@ def _seed_villains() -> List[VillainProfile]:
                 "experimental leap and her binding rites anchored to living subjects "
                 "instead of spirit conduits. Three colleagues became permanent marionettes. "
                 "She couldn't reverse it. The institute expelled her. She kept researching, "
-                "convinced that the reversal is theoretically achievable. She keeps "
+                "convinced that the reversal is theoretically achievable. She now treats her "
+                "summoning arrays as forbidden technology that can still be perfected. She keeps "
                 "funding the research through work that uses the same technique that "
                 "started the problem."
             ),
@@ -7269,7 +7274,8 @@ def _seed_villains() -> List[VillainProfile]:
                 "game was already burning, he would be the one holding the torch. He "
                 "now controls black-market supply routes through fire threat and "
                 "manufactured scarcity, having become exactly what destroyed him — "
-                "and knowing it."
+                "and knowing it. His end goal is simple and ugly: money, enough of it to "
+                "buy every route, judge, and warehouse that once shut him out."
             ),
             signature_power=_make_move(
                 "Black Market Inferno",
@@ -7347,7 +7353,8 @@ def _seed_villains() -> List[VillainProfile]:
                 "He walked away the day the ruling was issued. His vow-seal didn't "
                 "release. He still carries it, burning in his chest, and duels to "
                 "discharge what he cannot dissolve, fighting by an oath that has no "
-                "recipient left."
+                "recipient left. In practice he moves through the world like a last ronin, "
+                "answering to a code after losing the house that code once served."
             ),
             signature_power=_make_move(
                 "Oathbreaker Radiance",

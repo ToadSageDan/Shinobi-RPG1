@@ -1644,6 +1644,19 @@ class VillainBackstoryAndTieInTests(unittest.TestCase):
     def _world(self) -> tuple:
         return build_mvp_world("TestPlayer", [3, 1, 2, 4])
 
+    def _villain_text(self, villain) -> str:
+        parts = [
+            villain.backstory,
+            villain.power_origin,
+            villain.role,
+            villain.signature_power.name,
+            villain.signature_power.technique_type.value,
+            villain.signature_power.category.value,
+            " ".join(villain.skinned_move_names.values()),
+            " ".join(villain.player_backstory_hooks.values()),
+        ]
+        return " ".join(parts).lower()
+
     # ------------------------------------------------------------------
     # power_origin field
     # ------------------------------------------------------------------
@@ -1778,6 +1791,28 @@ class VillainBackstoryAndTieInTests(unittest.TestCase):
         monarch = next(v for v in world.villains if v.name == "Ashen Monarch")
         hook = monarch.player_backstory_hooks["wandering_monk"]
         self.assertIn("seal", hook.lower())
+
+    def test_villain_roster_covers_requested_personality_and_end_goal_themes(self):
+        world, _ = self._world()
+        villains = {villain.name: villain for villain in world.villains}
+
+        themed_expectations = {
+            "Kage Renda": ("political",),
+            "Silent Bell": ("shrine", "theological"),
+            "Torch Baron": ("money",),
+            "Crimson Lantern": ("lust",),
+            "Vanta Puppetmaster": ("technology", "summoning"),
+            "Mist Widow": ("stealth",),
+            "Dusk Paladin": ("last ronin",),
+            "Bone Weaver": ("medical",),
+            "Storm Needle": ("long range",),
+        }
+
+        for villain_name, expected_terms in themed_expectations.items():
+            with self.subTest(villain=villain_name):
+                text = self._villain_text(villains[villain_name])
+                for term in expected_terms:
+                    self.assertIn(term, text)
 
     # ------------------------------------------------------------------
     # get_villain_backstory_profile method

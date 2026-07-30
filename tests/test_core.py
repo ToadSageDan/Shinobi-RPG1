@@ -747,6 +747,14 @@ class CoreSystemTests(unittest.TestCase):
         self.assertGreaterEqual(len(summary["villain_kits"]), 15)
         self.assertIn("skill_physics", preview)
 
+    def test_dual_affinity_animation_preview_blends_both_affinity_signatures(self):
+        world, _ = self._world()
+        preview = world.get_move_animation_preview("Tempest Throne Collapse")
+        self.assertIn("compressed air ring gathers", preview["animation_profile"]["startup"])
+        self.assertIn("seal stamp with rising rock plates", preview["animation_profile"]["startup"])
+        self.assertIn("pressure ripple cross-cut", preview["animation_profile"]["hit"])
+        self.assertIn("fissure burst and heavy camera thud", preview["animation_profile"]["hit"])
+
     def test_snapshot_load_supports_legacy_trophies_without_tier(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         snapshot = world.to_snapshot(player)
@@ -1828,9 +1836,20 @@ class VillainBackstoryAndTieInTests(unittest.TestCase):
         self.assertIn("player_backstory_hooks", profile)
         self.assertIn("signature_power", profile)
         self.assertIn("primary_affinity", profile)
+        self.assertIn("secondary_affinities", profile)
+        self.assertIn("affinities", profile)
+        self.assertIn("ultimate_affinities", profile)
         self.assertIn("role", profile)
         self.assertIn("stance", profile)
         self.assertIn("relationship_arc", profile)
+
+    def test_get_villain_backstory_profile_tracks_dual_affinity_villains(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Zephyr Tyrant")
+        self.assertEqual(profile["primary_affinity"], Affinity.WIND.value)
+        self.assertEqual(profile["secondary_affinities"], [Affinity.EARTH.value])
+        self.assertEqual(profile["affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+        self.assertEqual(profile["ultimate_affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
 
     def test_get_villain_backstory_profile_raises_for_unknown_villain(self):
         world, _ = self._world()
@@ -1885,8 +1904,19 @@ class VillainBackstoryAndTieInTests(unittest.TestCase):
             with self.subTest(villain=name):
                 self.assertIn("backstory", data)
                 self.assertIn("power_origin", data)
+                self.assertIn("affinities", data)
+                self.assertIn("secondary_affinities", data)
                 self.assertIn("arc_ties", data)
                 self.assertIn("player_backstory_hooks", data)
+
+    def test_villain_kits_include_secondary_affinities_for_dual_affinity_villains(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        zephyr_kit = next(item for item in summary["villain_kits"] if item["name"] == "Zephyr Tyrant")
+        self.assertEqual(zephyr_kit["primary_affinity"], Affinity.WIND.value)
+        self.assertEqual(zephyr_kit["secondary_affinities"], [Affinity.EARTH.value])
+        self.assertEqual(zephyr_kit["affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
+        self.assertEqual(zephyr_kit["ultimate_affinities"], [Affinity.WIND.value, Affinity.EARTH.value])
 
     # ------------------------------------------------------------------
     # Snapshot round-trip

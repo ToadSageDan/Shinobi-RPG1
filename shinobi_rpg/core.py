@@ -569,6 +569,10 @@ def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
 
 
+def _ordered_unique_affinities(affinities: Sequence[Affinity]) -> Tuple[Affinity, ...]:
+    return tuple(dict.fromkeys(affinities))
+
+
 def _reputation_tier_for(reputation: int) -> ReputationTier:
     if reputation <= ROGUE_THRESHOLD_MIN:
         return ReputationTier.ROGUE
@@ -2187,12 +2191,19 @@ class NinjaWorld:
     def get_villain_backstory_profile(self, villain_name: str) -> Dict[str, Any]:
         """Return the full backstory, power origin, arc ties, and player hooks for a villain."""
         villain = self._find_villain(villain_name)
+        villain_affinities = self._villain_affinity_loadout(villain)
         return {
             "name": villain.name,
             "backstory": villain.backstory,
             "power_origin": villain.power_origin,
             "signature_power": villain.signature_power.name,
             "primary_affinity": villain.primary_affinity.value,
+            "secondary_affinities": [affinity.value for affinity in villain_affinities[1:]],
+            "affinities": [affinity.value for affinity in villain_affinities],
+            "signature_affinities": [affinity.value for affinity in villain.signature_power.affinities],
+            "ultimate_affinities": [
+                affinity.value for affinity in self._move_affinities_by_name(villain.ultimate_skin_name)
+            ],
             "role": villain.role,
             "arc_ties": list(villain.arc_ties),
             "player_backstory_hooks": dict(villain.player_backstory_hooks),
@@ -2206,6 +2217,26 @@ class NinjaWorld:
                 "dormant",
             ),
         }
+
+    def _move_affinities_by_name(self, move_name: str) -> Tuple[Affinity, ...]:
+        if not move_name:
+            return ()
+        for move in self.technique_library:
+            if move.name == move_name:
+                return move.affinities
+        for spec in BOSS_EXCLUSIVE_MOVE_SPECS.values():
+            if spec["name"] == move_name:
+                return tuple(spec["affinities"])
+        return ()
+
+    def _villain_affinity_loadout(self, villain: VillainProfile) -> Tuple[Affinity, ...]:
+        return _ordered_unique_affinities(
+            (
+                villain.primary_affinity,
+                *villain.signature_power.affinities,
+                *self._move_affinities_by_name(villain.ultimate_skin_name),
+            )
+        )
 
     def _find_villain(self, name: str) -> VillainProfile:
         villain = next((v for v in self.villains if v.name == name), None)
@@ -2926,9 +2957,21 @@ class NinjaWorld:
                     "name": villain.name,
                     "role": villain.role,
                     "primary_affinity": villain.primary_affinity.value,
+                    "secondary_affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)[1:]
+                    ],
+                    "affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)
+                    ],
                     "signature": villain.signature_power.name,
+                    "signature_affinities": [
+                        affinity.value for affinity in villain.signature_power.affinities
+                    ],
                     "skinned_moves": dict(villain.skinned_move_names),
                     "ultimate_skin": villain.ultimate_skin_name,
+                    "ultimate_affinities": [
+                        affinity.value for affinity in self._move_affinities_by_name(villain.ultimate_skin_name)
+                    ],
                 }
                 for villain in self.villains
             ],
@@ -2936,6 +2979,12 @@ class NinjaWorld:
                 villain.name: {
                     "backstory": villain.backstory,
                     "power_origin": villain.power_origin,
+                    "affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)
+                    ],
+                    "secondary_affinities": [
+                        affinity.value for affinity in self._villain_affinity_loadout(villain)[1:]
+                    ],
                     "arc_ties": list(villain.arc_ties),
                     "player_backstory_hooks": dict(villain.player_backstory_hooks),
                 }
@@ -3636,8 +3685,17 @@ def _seed_weapons() -> List[Weapon]:
     ]
 
 
-def _affinity_animation_profile(affinity: Affinity, category: MoveCategory) -> Dict[str, str]:
-    style = {
+def _blend_animation_beats(descriptions: Sequence[str]) -> str:
+    unique_descriptions = list(dict.fromkeys(descriptions))
+    if len(unique_descriptions) == 1:
+        return unique_descriptions[0]
+    if len(unique_descriptions) == 2:
+        return f"{unique_descriptions[0]} fused with {unique_descriptions[1]}"
+    return f'{", ".join(unique_descriptions[:-1])}, and {unique_descriptions[-1]}'
+
+
+def _affinity_animation_profile(affinities: Sequence[Affinity], category: MoveCategory) -> Dict[str, str]:
+    styles = {
         Affinity.FIRE: {
             "startup": "embers flare at shoulders",
             "travel": "corkscrew flame lane",
@@ -3662,12 +3720,14 @@ def _affinity_animation_profile(affinity: Affinity, category: MoveCategory) -> D
             "hit": "pressure ripple cross-cut",
             "recovery": "feather-light afterimage fade",
         },
-    }[affinity]
+    }
+    ordered_affinities = _ordered_unique_affinities(affinities)
+    animation_styles = [styles[affinity] for affinity in ordered_affinities]
     return {
-        "startup": style["startup"],
-        "travel": style["travel"],
-        "hit": f'{style["hit"]} ({category.value})',
-        "recovery": style["recovery"],
+        "startup": _blend_animation_beats([style["startup"] for style in animation_styles]),
+        "travel": _blend_animation_beats([style["travel"] for style in animation_styles]),
+        "hit": f'{_blend_animation_beats([style["hit"] for style in animation_styles])} ({category.value})',
+        "recovery": _blend_animation_beats([style["recovery"] for style in animation_styles]),
     }
 
 
@@ -3679,7 +3739,6 @@ def _make_move(
     technique_type: TechniqueType,
     status_effects: Tuple[StatusEffectType, ...] = (),
 ) -> Move:
-    primary = affinities[0]
     return Move(
         name=name,
         category=category,
@@ -3687,7 +3746,7 @@ def _make_move(
         power_scale=power_scale,
         technique_type=technique_type,
         status_effects=status_effects,
-        animation_profile=_affinity_animation_profile(primary, category),
+        animation_profile=_affinity_animation_profile(affinities, category),
     )
 
 

@@ -140,6 +140,108 @@ ROLE_STANCE_BIAS = {
     "support_denial": -1,
     "summoner": -1,
 }
+COUNTRY_LORE = {
+    "name": "The Quiet Steel Confederacy",
+    "former_name": "The Five Banner Marches",
+    "identity": (
+        "A war-scarred shinobi confederacy rebuilt from fractured clan provinces, "
+        "trade ports, and highland fortress lines."
+    ),
+    "founding_wound": (
+        "A century of treaty collapses, proxy assassinations, and succession coups turned "
+        "every border road into a political fault line."
+    ),
+    "present_conflict": (
+        "Peace is real but unstable: courier sabotage, forged decrees, shrine manipulation, "
+        "and cartel pressure test whether reconstruction can survive."
+    ),
+}
+ALLY_LORE_PROFILES: Dict[str, Dict[str, str]] = {
+    "Dan": {
+        "title": "Route Warden of Verdant Gate",
+        "backstory": (
+            "Dan rose from relay scout to corridor commander after saving Leafrise convoys during "
+            "the gate wars."
+        ),
+        "hook": "Acts as the player's first field anchor and witness to opening arc decisions.",
+    },
+    "Moon": {
+        "title": "Signal-Master of Ashen Cradle",
+        "backstory": (
+            "Moon kept furnace-city beacon lines alive through siege blackouts and now oversees "
+            "ceasefire logistics."
+        ),
+        "hook": "Connects military attrition quests to reconstruction strategy.",
+    },
+    "Sleep": {
+        "title": "Vault-Medic of Sunken Hollow",
+        "backstory": (
+            "Sleep learned toxin medicine in collapsed cave wards and built antidote routes no "
+            "faction can fully control."
+        ),
+        "hook": "Links poison crises, envoy diplomacy, and postwar trust mechanics.",
+    },
+    "Dot": {
+        "title": "Archivist of Tideglass",
+        "backstory": (
+            "Dot curates flood ledgers, tribunal transcripts, and lineage seals stolen during the "
+            "war years."
+        ),
+        "hook": "Feeds identity, treaty, and succession quests with verifiable records.",
+    },
+    "Porter": {
+        "title": "Quartermaster of Azure Rest",
+        "backstory": (
+            "Porter rebuilt basin supply chains by balancing refugee relief with anti-smuggling "
+            "enforcement."
+        ),
+        "hook": "Bridges civilian survival stakes with black-market pressure systems.",
+    },
+    "Ren": {
+        "title": "Cartographer of Broken Borders",
+        "backstory": "Ren maps disputed lines to prevent legal map-forgery wars.",
+        "hook": "Supports territorial and memorial truth arcs.",
+    },
+    "Kaida": {
+        "title": "Shrine Liaison of the Sixth Bell",
+        "backstory": "Kaida mediates shrine custodians, bell couriers, and ritual security patrols.",
+        "hook": "Ties sacred-site quests to assassination-counterintel threads.",
+    },
+    "Shiro": {
+        "title": "Marshal of Winter Relief",
+        "backstory": "Shiro commands cold-route evacuations and camp hardening teams.",
+        "hook": "Anchors postwar sabotage and ceasefire integrity content.",
+    },
+    "Emi": {
+        "title": "Debt Auditor of the Daimyo Court",
+        "backstory": "Emi traces war finance ledgers hidden behind private tribute systems.",
+        "hook": "Connects macro-economy quests to legitimacy outcomes.",
+    },
+    "Toma": {
+        "title": "Keeper of Quiet Steel Protocol",
+        "backstory": "Toma drafts succession constraints that limit emergency rule abuse.",
+        "hook": "Threads final governance and heir-claim resolution arcs.",
+    },
+}
+VILLAIN_HOOK_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "Kage Renda": {"arc_tie": "political_war", "hook_quests": ("Q3", "Q26")},
+    "General Voln": {"arc_tie": "fracture_front", "hook_quests": ("Q4", "Q16")},
+    "Admiral Neris": {"arc_tie": "recovery_mandate", "hook_quests": ("Q5", "Q22")},
+    "Mist Widow": {"arc_tie": "rebellion_wave", "hook_quests": ("Q12", "Q42")},
+    "Iron Lotus": {"arc_tie": "political_war", "hook_quests": ("Q13", "Q36")},
+    "Stone Maw": {"arc_tie": "fracture_front", "hook_quests": ("Q32", "Q37")},
+    "Storm Needle": {"arc_tie": "highland_reckoning", "hook_quests": ("Q29", "Q47")},
+    "Bone Weaver": {"arc_tie": "depths_awakening", "hook_quests": ("Q35", "Q37")},
+    "Crimson Lantern": {"arc_tie": "rebellion_wave", "hook_quests": ("Q23", "Q45")},
+    "Silent Bell": {"arc_tie": "recovery_mandate", "hook_quests": ("Q21", "Q42")},
+    "Frost Viper": {"arc_tie": "fracture_front", "hook_quests": ("Q27", "Q34")},
+    "Vanta Puppetmaster": {"arc_tie": "rebellion_wave", "hook_quests": ("Q23", "Q43")},
+    "Torch Baron": {"arc_tie": "fracture_front", "hook_quests": ("Q24", "Q46")},
+    "Dusk Paladin": {"arc_tie": "highland_reckoning", "hook_quests": ("Q19", "Q30")},
+    "Eclipse Maw": {"arc_tie": "depths_awakening", "hook_quests": ("Q17", "Q31")},
+    "Zephyr Tyrant": {"arc_tie": "highland_reckoning", "hook_quests": ("Q20", "Q40")},
+    "Ashen Monarch": {"arc_tie": "depths_awakening", "hook_quests": ("Q32", "Q41")},
+}
 STEALTH_TROPHY_BASE_THRESHOLD = 3
 STEALTH_TROPHY_ADVANCED_THRESHOLD = 5
 CHARM_TROPHY_BASE_THRESHOLD = 3
@@ -2931,7 +3033,8 @@ class NinjaWorld:
             _award(TROPHY_LOYAL_BONDS)
 
         # Villain slayer: all red-bar villains defeated
-        if self.villains and all(villain.defeated for villain in self.villains):
+        red_bar_villains = [villain for villain in self.villains if villain.health_bar_color.lower() == "red"]
+        if red_bar_villains and all(villain.defeated for villain in red_bar_villains):
             _award(TROPHY_VILLAIN_SLAYER)
 
         # Quest master: complete all quests (any run style)
@@ -3147,6 +3250,104 @@ class NinjaWorld:
                     ],
                 }
                 for region in self.regions
+            ],
+        }
+
+    def generate_lore_dump(self) -> Dict[str, Any]:
+        region_by_boss = {region.boss: region for region in self.regions}
+        points_of_interest = [
+            {
+                "region": region.name,
+                "name": poi.name,
+                "type": poi.poi_type,
+                "control_faction": poi.control_faction,
+                "summary": poi.summary,
+                "threats": list(poi.threats),
+                "services": list(poi.services),
+            }
+            for region in self.regions
+            for poi in region.points_of_interest
+        ]
+        summon_catalog = sorted(
+            {
+                (
+                    move.name,
+                    move.affinities[0].value if move.affinities else "unknown",
+                    ", ".join(effect.value for effect in move.status_effects) or "none",
+                )
+                for move in self.technique_library
+                if move.category == MoveCategory.SUMMON
+            }
+        )
+        villain_records = []
+        for villain in self.villains:
+            region = region_by_boss.get(villain.name)
+            hook_data = VILLAIN_HOOK_REGISTRY.get(villain.name, {})
+            villain_records.append(
+                {
+                    "name": villain.name,
+                    "role": villain.role,
+                    "primary_affinity": villain.primary_affinity.value,
+                    "backstory": villain.backstory,
+                    "arc_tie": hook_data.get("arc_tie", region.arc_key if region else "free_agent"),
+                    "hook_quests": list(hook_data.get("hook_quests", ())),
+                    "region_anchor": region.name if region else None,
+                    "signature_power": villain.signature_power.name,
+                    "summon_skin": villain.skinned_move_names.get("summon_skin"),
+                }
+            )
+
+        return {
+            "country": dict(COUNTRY_LORE),
+            "allies": [
+                {
+                    "name": ally_name,
+                    "title": ALLY_LORE_PROFILES.get(ally_name, {}).get("title", "Field Operative"),
+                    "backstory": ALLY_LORE_PROFILES.get(ally_name, {}).get(
+                        "backstory",
+                        "A skilled operative supporting local stabilization efforts.",
+                    ),
+                    "hook": ALLY_LORE_PROFILES.get(ally_name, {}).get(
+                        "hook",
+                        "Supports player progression and regional continuity.",
+                    ),
+                }
+                for ally_name in self.allies
+            ],
+            "villains": villain_records,
+            "points_of_interest": points_of_interest,
+            "legendary_weapons": [
+                {
+                    "name": weapon.name,
+                    "type": weapon.weapon_type.value,
+                    "play_style": weapon.play_style,
+                    "status_effects": [effect.value for effect in weapon.status_effects],
+                }
+                for weapon in self.weapons
+            ]
+            + [
+                {
+                    "name": region.boss_rewards["weapon"],
+                    "type": "boss_relic",
+                    "region": region.name,
+                    "boss": region.boss,
+                }
+                for region in self.regions
+            ],
+            "summons": [
+                {"name": name, "affinity": affinity, "status_signature": status}
+                for name, affinity, status in summon_catalog
+            ],
+            "arc_manifest": [
+                {
+                    "key": arc.key,
+                    "title": arc.title,
+                    "tone": arc.tone,
+                    "stakes": arc.stakes,
+                    "regions": list(arc.regions),
+                    "era_band": arc.era_band,
+                }
+                for arc in self.arcs
             ],
         }
 
@@ -4762,7 +4963,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Stormweave Mantle",
                 "move": "Cyclone Throne Shatter",
             },
-            arc_key="rebellion_wave",
+            arc_key="highland_reckoning",
             climate="alpine thunder belt",
             terrain_profile=("knife ridgelines", "floating scree fields", "lightning spires"),
             strategic_value="Highland relay for long-range signaling and anti-air control over three border provinces",
@@ -4835,7 +5036,7 @@ def _seed_regions() -> List[Region]:
                 "clothing": "Ashbone Shroud",
                 "move": "Subterranean Collapse",
             },
-            arc_key="fracture_front",
+            arc_key="depths_awakening",
             climate="subterranean toxic",
             terrain_profile=("collapsed caverns", "fungal sinkholes", "obsidian catacombs"),
             strategic_value="Hidden ore vault and relic lattice that can destabilize every surface alliance if seized",
@@ -7304,6 +7505,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Threadline Volley",
             ),
             ultimate_skin_name="Abyss Crown Rupture",
+            health_bar_color="amber",
             power_origin=(
                 "Widow Fog Domain was developed over years of field-testing assassination "
                 "corridors in Tideglass coastal terrain. The toxic fog is a water-affinity "
@@ -7374,6 +7576,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Faultline Jab",
             ),
             ultimate_skin_name="Worldroot Fracture",
+            health_bar_color="amber",
             power_origin=(
                 "Lotus Counter Bloom is the culmination of the Counter-Petal tradition — a "
                 "breath-perfect redirect that absorbs incoming momentum and returns it at "
@@ -7446,6 +7649,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Pressure Knot Strike",
             ),
             ultimate_skin_name="Worldroot Fracture",
+            health_bar_color="amber",
             power_origin=(
                 "Seismic Bite was first used unconsciously when Stone Maw tore himself free "
                 "of the mine collapse — a raw burst of earth affinity with no form and no "
@@ -7520,6 +7724,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Tempest Hook",
             ),
             ultimate_skin_name="Tempest Throne Collapse",
+            health_bar_color="amber",
             power_origin=(
                 "Rail Gale Shot developed from obsessive study of wind pressure and armor gap "
                 "physics. Storm Needle doesn't aim for the target — she aims for the specific "
@@ -7594,6 +7799,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Shadow Nail Burst",
             ),
             ultimate_skin_name="Fourfold Shinobi Oath",
+            health_bar_color="amber",
             power_origin=(
                 "Marrow Thread Prison started as a medical immobilization technique — "
                 "a lattice of earth-affinity threads that she could grow around a wound "
@@ -7670,6 +7876,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Ash Fang Drive",
             ),
             ultimate_skin_name="Ashen Moon Sever",
+            health_bar_color="amber",
             power_origin=(
                 "Red Night Mandala is a weaponized version of the grand finale seal he "
                 "used to end every festival performance. The original mandala flooded "
@@ -7746,6 +7953,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Shadow Nail Burst",
             ),
             ultimate_skin_name="Skyline Covenant",
+            health_bar_color="amber",
             power_origin=(
                 "Null Resonance is the exact frequency she calibrated against the "
                 "rebellion — a sub-audible wind-channel technique that disrupts the "
@@ -7819,6 +8027,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Undertow Slice",
             ),
             ultimate_skin_name="Leviathan Breakfall",
+            health_bar_color="amber",
             power_origin=(
                 "White Venom Coil was refined from hunting techniques Frost Viper developed "
                 "during his exile years in cold-climate terrain. He studied how predators "
@@ -7895,6 +8104,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Phantom Lantern Exit",
             ),
             ultimate_skin_name="Fourfold Shinobi Oath",
+            health_bar_color="amber",
             power_origin=(
                 "Funeral Marionette is the emergency containment measure she developed "
                 "after the incident — a multi-target binding array that pins subjects "
@@ -7971,6 +8181,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Pressure Knot Strike",
             ),
             ultimate_skin_name="Furnace Eclipse",
+            health_bar_color="amber",
             power_origin=(
                 "Black Market Inferno began as a trade route denial technique — a "
                 "controlled burn pattern he used to destroy rival convoys before "
@@ -8050,6 +8261,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Faultline Jab",
             ),
             ultimate_skin_name="Tidal Monolith Break",
+            health_bar_color="amber",
             power_origin=(
                 "Oathbreaker Radiance is the resonance pulse of a broken vow-seal — "
                 "an earth-affinity discharge that fires when the seal's tension exceeds "
@@ -8127,6 +8339,7 @@ def _seed_villains() -> List[VillainProfile]:
                 link="Tempest Hook",
             ),
             ultimate_skin_name="Tempest Throne Collapse",
+            health_bar_color="amber",
             power_origin=(
                 "Midnight Gravity Well uses focused wind pressure to collapse light and "
                 "spatial orientation simultaneously — a technique Eclipse Maw developed "

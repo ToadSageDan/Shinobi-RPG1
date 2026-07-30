@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Quest Q7 "Shattered Moon Accord" and Q8 "Dawn of the Hidden Age" with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q9 "Ashes Beneath the Banner" and Q10 "Veil of the Eternal Watch" to continue seeded quest progression with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q11 "Ashes of the Courier" through Q15 "Feast of Knives" now include handcrafted backstory, nonlethal, heroic, and rogue branch outcomes
+- **Handcrafted branch outcomes for Q16–Q50** — all 35 remaining extended quests now have narrative-specific `branch_outcomes` covering `exiled_heir`, `street_ghost`, `wandering_monk`, `nonlethal_path`, `heroic_path`, `rogue_path`, and `default` keys; Q20 also includes `stealth_path` and `kill_path` for tactical override resolution
 - Ten new trophies across combat, progression, social, and alignment categories:
   - **Battle Hardened** (combat/early) — 5 lethal kills
   - **War Veteran** (combat/mid) — 20 lethal kills
@@ -31,6 +32,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Two new combat trophies:
   - **Crimson Reaper** (combat/late) — 35 lethal kills
   - **Apex Predator** (combat/late) — 50 lethal kills
+- **Six new stance-evolution mastery trophies** (Issue 2):
+  - **Pacifier** (social/mid) — drive two or more villains to PASSIVE stance through charm/mercy/diplomacy
+  - **Terror** (combat/mid) — drive two or more villains to AGGRESSIVE stance through lethal/betrayal actions
+  - **Stance Breaker** (progression/late) — force three or more villains through multiple stance transitions
+  - **Shadow Whisperer** (stealth/late) — complete a kill-free run with 10 stealth outcomes
+  - **Silver Mask** (social/late) — complete a kill-free run with 10 charm outcomes
+  - **Wind Dancer** (stealth/late) — complete a kill-free run with 8 evasion outcomes
+- `get_villain_evolution_checkpoints()` now returns `relationship_arc` (dormant/active/rival/nemesis/reformed) and `active_triggers` list per villain checkpoint (Issue 2)
+- `generate_playthrough_summary()` now includes (Issue 4):
+  - `playstyle_summary` — dominant action, style label (Shadow Operative / Silver Diplomat / Wind Walker / Lethal Shinobi / Mixed Tactician), shift detection note
+  - `villain_relationship_arcs` — per-villain arc, phase, and active triggers
+  - `trophy_near_miss` — trophies within 3 actions of unlocking, with hints
+- `_build_playstyle_summary()` and `_build_trophy_near_miss()` helper methods
+- GitHub Actions `track_progress.yml` workflow — auto-labels PRs by changed files and keywords, posts backlog snapshot comment on PR open, marks NEXT_STEPS.md items complete when a relevant PR merges
+- Four issue templates under `.github/ISSUE_TEMPLATE/`: gameplay_feature, narrative_quest, balance_pass, testing
+- `scripts/setup_github_project.py` — one-time setup script to create labels, milestone v0.2.0, backfilled closed issues for all v0.1.0 work, and open issues for the v0.2.0 backlog
+- 31 new targeted tests across four new test classes (Issue 5): `Issue1QuestBranchOutcomesTests`, `Issue2VillainEvolutionTests`, `Issue3BalancePassTests`, `Issue4ReplaySummaryTests`
+
+### Changed
+
+- `apply_status_effects()` now **accumulates** stacks up to the band cap and refreshes duration to the higher value rather than replacing the existing effect (Issue 3 balance pass)
+- `apply_player_decision()` now grants incremental reputation deltas per decision type: `charm` +2, `stealth` +1, `evasion` +1, `kill` −1 — making nonlethal playstyles competitively viable for reaching Heroic tier (Issue 3)
+- NEXT_STEPS.md updated — all five v0.2.0 items marked complete; v0.3.0 horizon items added
 
 ---
 

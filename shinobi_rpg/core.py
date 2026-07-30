@@ -165,6 +165,25 @@ TROPHY_QUESTMASTER = "questmaster"
 TROPHY_SHADOW_HEIR = "shadow_heir"
 TROPHY_GHOST_SOVEREIGN = "ghost_sovereign"
 TROPHY_MONK_ASCENDANT = "monk_ascendant"
+# Stance evolution mastery trophies (Issue 2)
+TROPHY_PACIFIER = "pacifier"
+TROPHY_TERROR = "terror"
+TROPHY_SHADOW_WHISPERER = "shadow_whisperer"
+TROPHY_SILVER_MASK = "silver_mask"
+TROPHY_WIND_DANCER = "wind_dancer"
+TROPHY_STANCE_BREAKER = "stance_breaker"
+# Mastery threshold constants (Issue 2)
+VILLAIN_PASSIVE_TRIGGER_COUNT = 2
+VILLAIN_AGGRESSIVE_TRIGGER_COUNT = 2
+STANCE_BREAKER_VILLAIN_COUNT = 3
+NONLETHAL_CHARM_MASTER_THRESHOLD = 10
+NONLETHAL_STEALTH_MASTER_THRESHOLD = 10
+NONLETHAL_EVASION_MASTER_THRESHOLD = 8
+# Balance pass: nonlethal playstyle reputation gains (Issue 3)
+NONLETHAL_CHARM_REP_GAIN = 2
+NONLETHAL_STEALTH_REP_GAIN = 1
+NONLETHAL_EVASION_REP_GAIN = 1
+KILL_REP_LOSS = -1
 AFFINITY_ORDER = [Affinity.FIRE, Affinity.WATER, Affinity.EARTH, Affinity.WIND]
 AFFINITY_MINIGAME_CHOICES = {
     "fire": Affinity.FIRE,
@@ -667,7 +686,15 @@ class PlayerProfile:
     ) -> Dict[str, Dict[str, int]]:
         for effect in effects:
             clamped = self._clamp_status_effect(effect, duration=duration, stacks=stacks)
-            self.active_status_effects[effect.value] = clamped
+            existing = self.active_status_effects.get(effect.value)
+            if existing:
+                # Accumulate stacks up to the band cap; refresh duration to the higher value
+                band = STATUS_EFFECT_BANDS[effect]
+                new_stacks = min(existing["stacks"] + clamped["stacks"], band["max_stacks"])
+                new_duration = max(existing["duration"], clamped["duration"])
+                self.active_status_effects[effect.value] = {"duration": new_duration, "stacks": new_stacks}
+            else:
+                self.active_status_effects[effect.value] = clamped
         return dict(self.active_status_effects)
 
     def resolve_combo(
@@ -1768,6 +1795,36 @@ class NinjaWorld:
                 phase = "escalation"
             else:
                 phase = "opening"
+
+            # Build a list of named triggers that contributed to this villain's arc
+            active_triggers: List[str] = []
+            if villain.decision_memory.get("kill", 0) >= VILLAIN_AGGRESSIVE_TRIGGER_COUNT:
+                active_triggers.append("kill_pressure")
+            if villain.decision_memory.get("betray", 0) >= 1:
+                active_triggers.append("betrayal_memory")
+            if pacification_index >= VILLAIN_PASSIVE_TRIGGER_COUNT:
+                active_triggers.append("pacification_effort")
+            if villain.decision_memory.get("stealth", 0) >= 2:
+                active_triggers.append("stealth_encroachment")
+            if villain.decision_memory.get("evasion", 0) >= 2:
+                active_triggers.append("evasion_pattern")
+            if villain.stance == VillainStance.PASSIVE:
+                active_triggers.append("stance_pacified")
+            elif villain.stance == VillainStance.AGGRESSIVE:
+                active_triggers.append("stance_enraged")
+
+            # Relationship arc label derived from stance trajectory
+            if villain.stance == VillainStance.PASSIVE and pacification_index >= 3:
+                relationship_arc = "reformed"
+            elif villain.stance == VillainStance.AGGRESSIVE and pressure >= 8:
+                relationship_arc = "nemesis"
+            elif villain.stance == VillainStance.BALANCED and raw_pressure >= 4:
+                relationship_arc = "rival"
+            elif raw_pressure == 0:
+                relationship_arc = "dormant"
+            else:
+                relationship_arc = "active"
+
             checkpoints.append(
                 {
                     "villain": villain.name,
@@ -1776,6 +1833,8 @@ class NinjaWorld:
                     "raw_pressure": raw_pressure,
                     "pacification_index": pacification_index,
                     "stance": villain.stance.value,
+                    "relationship_arc": relationship_arc,
+                    "active_triggers": active_triggers,
                     "encounter_variant": self.villain_behavior_rules.get(villain.name, {}).get(villain.stance, ""),
                 }
             )
@@ -1795,6 +1854,16 @@ class NinjaWorld:
                 player.adjust_ally_loyalty(ally, loyalty_delta)
         if normalized in DECISION_OUTCOMES:
             player.record_encounter_outcome(normalized)
+        # Balance pass (Issue 3): nonlethal decisions grant incremental reputation gains
+        # to make stealth/charm/evasion playstyles competitively viable with lethal ones.
+        if normalized == "charm":
+            player.update_reputation(NONLETHAL_CHARM_REP_GAIN)
+        elif normalized == "stealth":
+            player.update_reputation(NONLETHAL_STEALTH_REP_GAIN)
+        elif normalized == "evasion":
+            player.update_reputation(NONLETHAL_EVASION_REP_GAIN)
+        elif normalized == "kill":
+            player.update_reputation(KILL_REP_LOSS)
         self._update_antagonist_scores(
             signal=f"decision:{normalized}",
             intensity=max(1, intensity),
@@ -2273,6 +2342,46 @@ class NinjaWorld:
             elif player.selected_backstory.key == "wandering_monk":
                 _award(TROPHY_MONK_ASCENDANT)
 
+        # --- Stance evolution mastery trophies (Issue 2) ---
+
+        # Pacifier: drive at least N villains to PASSIVE via charm/mercy/diplomacy
+        passive_count = sum(
+            1 for v in self.villains
+            if v.stance == VillainStance.PASSIVE
+            and sum(v.decision_memory.get(k, 0) for k in ("charm", "mercy", "diplomacy")) >= VILLAIN_PASSIVE_TRIGGER_COUNT
+        )
+        if passive_count >= VILLAIN_PASSIVE_TRIGGER_COUNT:
+            _award(TROPHY_PACIFIER)
+
+        # Terror: drive at least N villains to AGGRESSIVE via kill/betray
+        aggressive_count = sum(
+            1 for v in self.villains
+            if v.stance == VillainStance.AGGRESSIVE
+            and (v.decision_memory.get("kill", 0) + v.decision_memory.get("betray", 0)) >= VILLAIN_AGGRESSIVE_TRIGGER_COUNT
+        )
+        if aggressive_count >= VILLAIN_AGGRESSIVE_TRIGGER_COUNT:
+            _award(TROPHY_TERROR)
+
+        # Stance Breaker: shift at least N different villains through 2+ stances during the run
+        multi_stance_count = sum(
+            1 for v in self.villains
+            if sum(1 for k in ("kill", "charm", "stealth") if v.decision_memory.get(k, 0) > 0) >= 2
+        )
+        if multi_stance_count >= STANCE_BREAKER_VILLAIN_COUNT:
+            _award(TROPHY_STANCE_BREAKER)
+
+        # Shadow Whisperer: nonlethal run with stealth mastery
+        if player.is_nonlethal_path_active() and player.encounter_outcomes["stealth"] >= NONLETHAL_STEALTH_MASTER_THRESHOLD:
+            _award(TROPHY_SHADOW_WHISPERER)
+
+        # Silver Mask: nonlethal run with charm mastery
+        if player.is_nonlethal_path_active() and player.encounter_outcomes["charm"] >= NONLETHAL_CHARM_MASTER_THRESHOLD:
+            _award(TROPHY_SILVER_MASK)
+
+        # Wind Dancer: nonlethal run with evasion mastery
+        if player.is_nonlethal_path_active() and player.encounter_outcomes["evasion"] >= NONLETHAL_EVASION_MASTER_THRESHOLD:
+            _award(TROPHY_WIND_DANCER)
+
         return newly_awarded
 
     def get_living_tapestry_delta(self) -> Dict[str, Any]:
@@ -2323,6 +2432,85 @@ class NinjaWorld:
             "nonlethal_signature": player.is_nonlethal_path_active(),
         }
 
+    def _build_playstyle_summary(self, player: PlayerProfile) -> Dict[str, Any]:
+        """Return a human-readable playstyle breakdown for the summary (Issue 4)."""
+        outcomes = player.encounter_outcomes
+        total = sum(outcomes.values())
+        nonlethal_total = player.nonlethal_action_count()
+        if total == 0:
+            dominant = "none"
+            style_label = "No encounters recorded"
+        else:
+            dominant = max(outcomes, key=lambda k: (outcomes[k], k))
+            if player.is_nonlethal_path_active():
+                if outcomes.get("stealth", 0) >= max(outcomes.get("charm", 0), outcomes.get("evasion", 0)):
+                    style_label = "Shadow Operative — stealth-led nonlethal approach"
+                elif outcomes.get("charm", 0) >= max(outcomes.get("stealth", 0), outcomes.get("evasion", 0)):
+                    style_label = "Silver Diplomat — charm-led nonlethal approach"
+                else:
+                    style_label = "Wind Walker — evasion-led nonlethal approach"
+            elif outcomes.get("kill", 0) >= nonlethal_total:
+                style_label = "Lethal Shinobi — direct and decisive"
+            else:
+                style_label = "Mixed Tactician — blend of force and finesse"
+        # Playstyle shift detection: check if the dominant style changed mid-run
+        tapestry_kills = sum(
+            1 for e in self.active_run_tapestry
+            if "kill" in str(e.get("causes", []))
+        )
+        tapestry_nonlethal = sum(
+            1 for e in self.active_run_tapestry
+            if any(k in str(e.get("causes", [])) for k in ("charm", "stealth", "evasion"))
+        )
+        if tapestry_kills > 0 and tapestry_nonlethal > 0:
+            shift_detected = tapestry_kills > 0 and tapestry_nonlethal > tapestry_kills
+            shift_note = "Shifted toward nonlethal midway" if shift_detected else "Consistent playstyle throughout"
+        else:
+            shift_note = "Single playstyle throughout"
+        return {
+            "dominant_action": dominant,
+            "style_label": style_label,
+            "nonlethal_total": nonlethal_total,
+            "lethal_total": outcomes.get("kill", 0),
+            "playstyle_shift_note": shift_note,
+        }
+
+    def _build_trophy_near_miss(self, player: PlayerProfile) -> List[Dict[str, Any]]:
+        """Return a list of trophies that are close to unlocking (Issue 4)."""
+        near_miss: List[Dict[str, Any]] = []
+        outcomes = player.encounter_outcomes
+
+        def _check(trophy_key: str, current: int, target: int, label: str) -> None:
+            if trophy_key not in player.trophies:
+                remaining = target - current
+                if 0 < remaining <= 3:
+                    near_miss.append({
+                        "trophy_key": trophy_key,
+                        "name": self.trophy_catalog[trophy_key].name if trophy_key in self.trophy_catalog else trophy_key,
+                        "remaining": remaining,
+                        "hint": label,
+                    })
+
+        _check(TROPHY_GHOST_STEP, outcomes["stealth"], STEALTH_TROPHY_BASE_THRESHOLD, "stealth encounters")
+        _check(TROPHY_VEIL_MASTER, outcomes["stealth"], STEALTH_TROPHY_ADVANCED_THRESHOLD, "stealth encounters")
+        _check(TROPHY_PHANTOM_VEIL, outcomes["stealth"], STEALTH_TROPHY_MASTER_THRESHOLD, "stealth encounters")
+        _check(TROPHY_SILVER_TONGUE, outcomes["charm"], CHARM_TROPHY_BASE_THRESHOLD, "charm encounters")
+        _check(TROPHY_DIPLOMAT_SUPREME, outcomes["charm"], CHARM_TROPHY_ADVANCED_THRESHOLD, "charm encounters")
+        _check(TROPHY_HARMONY_VOICE, outcomes["charm"], CHARM_TROPHY_MASTER_THRESHOLD, "charm encounters")
+        _check(TROPHY_WINDWALK_SURVIVOR, outcomes["evasion"], EVASION_TROPHY_THRESHOLD, "evasion encounters")
+        _check(TROPHY_UNTOUCHABLE_GHOST, outcomes["evasion"], EVASION_TROPHY_MASTER_THRESHOLD, "evasion encounters")
+        _check(TROPHY_BATTLE_HARDENED, outcomes["kill"], KILL_TROPHY_BASE_THRESHOLD, "lethal encounters")
+        _check(TROPHY_WAR_VETERAN, outcomes["kill"], KILL_TROPHY_ADVANCED_THRESHOLD, "lethal encounters")
+        _check(TROPHY_CRIMSON_REAPER, outcomes["kill"], KILL_TROPHY_ELITE_THRESHOLD, "lethal encounters")
+        _check(TROPHY_APEX_PREDATOR, outcomes["kill"], KILL_TROPHY_MASTER_THRESHOLD, "lethal encounters")
+        _check(TROPHY_RISING_NINJA, player.stats.level, LEVEL_TROPHY_BASE_THRESHOLD, "levels to gain")
+        _check(TROPHY_SEASONED_NINJA, player.stats.level, LEVEL_TROPHY_ADVANCED_THRESHOLD, "levels to gain")
+        if player.is_nonlethal_path_active():
+            _check(TROPHY_SHADOW_WHISPERER, outcomes["stealth"], NONLETHAL_STEALTH_MASTER_THRESHOLD, "nonlethal stealth encounters")
+            _check(TROPHY_SILVER_MASK, outcomes["charm"], NONLETHAL_CHARM_MASTER_THRESHOLD, "nonlethal charm encounters")
+            _check(TROPHY_WIND_DANCER, outcomes["evasion"], NONLETHAL_EVASION_MASTER_THRESHOLD, "nonlethal evasion encounters")
+        return near_miss
+
     def generate_playthrough_summary(self, player: PlayerProfile) -> Dict[str, Any]:
         self._refresh_arc_and_era()
         self._schedule_dynamic_regions(player)
@@ -2355,9 +2543,18 @@ class NinjaWorld:
             "reputation_tier": player.current_reputation_tier().value,
             "nonlethal_path": player.is_nonlethal_path_active(),
             "encounter_outcomes": dict(player.encounter_outcomes),
+            "playstyle_summary": self._build_playstyle_summary(player),
             "cleared_regions": [region.name for region in self.regions if region.cleared],
             "villain_stances": villain_states,
             "villain_decision_memory": villain_memories,
+            "villain_relationship_arcs": {
+                cp["villain"]: {
+                    "arc": cp["relationship_arc"],
+                    "phase": cp["phase"],
+                    "active_triggers": cp["active_triggers"],
+                }
+                for cp in self.get_villain_evolution_checkpoints()
+            },
             "villain_kits": [
                 {
                     "name": villain.name,
@@ -2393,6 +2590,7 @@ class NinjaWorld:
             },
             "trophies": trophy_details,
             "trophy_progress": self.get_trophy_progress(player),
+            "trophy_near_miss": self._build_trophy_near_miss(player),
             "villain_evolution": self.get_villain_evolution_checkpoints(),
             "npc_evil_profiles": {name: dict(profile) for name, profile in self.npc_evil_profiles.items()},
             "external_pressure_history": [dict(entry) for entry in self.external_pressure_history[-20:]],
@@ -4031,6 +4229,7 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "military_command",
             "branch_outcomes": {
                 "exiled_heir": (
+<<<<<<< HEAD
                     "You invoke bloodline authority to unite fractured captains, fortifying Red Pass before the invasion column can deploy."
                 ),
                 "street_ghost": (
@@ -4061,6 +4260,35 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You sabotage payroll and rations, collapsing command loyalty and buying control of the battlefield."
                 ),
                 "default": "You stabilize Red Pass under pressure and deny the invasion its first decisive breach.",
+=======
+                    "You invoke ancestral garrison rights and rally the pass defenders under your clan seal, "
+                    "forcing rival commands to stand down before the first assault wave."
+                ),
+                "street_ghost": (
+                    "You slip behind both siege lines and detonate supply caches on each flank, "
+                    "collapsing the invasion timetable before it reaches the pass walls."
+                ),
+                "wandering_monk": (
+                    "You broker a temporary armistice at the pass gate, evacuating civilians "
+                    "under temple neutrality before either army can commit to bloodshed."
+                ),
+                "nonlethal_path": (
+                    "You disable command posts through stealth and evasion, leaving both assault "
+                    "forces leaderless and forcing a chaotic retreat without a single execution."
+                ),
+                "heroic_path": (
+                    "Your heroic reputation draws scattered defenders back to the walls; "
+                    "their unified stand breaks the invasion's momentum before dawn."
+                ),
+                "rogue_path": (
+                    "You sell rival command intelligence to both sides simultaneously, "
+                    "triggering mutual suspicion that stalls the invasion at the pass entrance."
+                ),
+                "default": (
+                    "You hold the pass through relentless counter-pressure, turning the border "
+                    "into a killing ground until the invasion force breaks and retreats."
+                ),
+>>>>>>> origin/main
             },
         },
         {
@@ -4073,6 +4301,7 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "summon_affinity",
             "branch_outcomes": {
                 "exiled_heir": (
+<<<<<<< HEAD
                     "You restore the ancestral pact seals and command the spirit to stand down under bloodline law."
                 ),
                 "street_ghost": (
@@ -4103,6 +4332,35 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You auction pact secrets between factions and enforce compliance through fear of spirit reprisal."
                 ),
                 "default": "You contain the summon crisis and close the pact breach before border towns collapse.",
+=======
+                    "Old clan pact scrolls in your lineage give you the binding sequence; "
+                    "you reseal the spirit under hereditary oath before it crosses the border."
+                ),
+                "street_ghost": (
+                    "You trace the pact broker through underground channels and blackmail them "
+                    "into supplying the release phrase, dissolving the spirit without combat."
+                ),
+                "wandering_monk": (
+                    "You approach the spirit unarmed and negotiate terms of release, "
+                    "guiding it to a willing sanctuary instead of a forced seal."
+                ),
+                "nonlethal_path": (
+                    "You lure the spirit into a containment circle through misdirection and "
+                    "charm, binding it without ever raising a weapon against its form."
+                ),
+                "heroic_path": (
+                    "Your reputation draws master-class summoners to your side; "
+                    "their combined expertise reseals the spirit before border towns take damage."
+                ),
+                "rogue_path": (
+                    "You bargain with the spirit directly, trading a rival faction's pact "
+                    "secrets for its cooperation and redirecting its fury away from your allies."
+                ),
+                "default": (
+                    "You fight the spirit across three summoning anchors, destroying each seal "
+                    "until the pact collapses and the spirit dissipates."
+                ),
+>>>>>>> origin/main
             },
         },
         {
@@ -4115,6 +4373,7 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "spy_network",
             "branch_outcomes": {
                 "exiled_heir": (
+<<<<<<< HEAD
                     "You use forgotten clan codes to enter the prison unchallenged and extract the witness before dawn."
                 ),
                 "street_ghost": (
@@ -4145,6 +4404,35 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You fake the prisoner's death records and sell silence to every official tied to the conspiracy."
                 ),
                 "default": "You pull off the prison operation and secure the witness without exposing your core network.",
+=======
+                    "Old warden contracts tied to your bloodline give you legitimate visitation "
+                    "rights; you walk the prisoner out through the official gate at midnight."
+                ),
+                "street_ghost": (
+                    "You map the prison through informant networks, then stage a false transfer "
+                    "order that moves the prisoner into your custody before anyone notices."
+                ),
+                "wandering_monk": (
+                    "You enter as a spiritual counselor and guide the prisoner out through a "
+                    "pre-arranged passage, leaving every guard unharmed and none the wiser."
+                ),
+                "nonlethal_path": (
+                    "You isolate guards through stealth diversions and charm distractions, "
+                    "slipping the prisoner free without triggering a single alarm."
+                ),
+                "heroic_path": (
+                    "You organize a public prisoner transfer petition backed by village witnesses, "
+                    "forcing the warden to release the prisoner under legal pressure."
+                ),
+                "rogue_path": (
+                    "You bribe the night warden and stage a convincing death record, "
+                    "letting the prisoner vanish into your network before morning roll call."
+                ),
+                "default": (
+                    "You breach the outer walls after dark, neutralize the cell block, "
+                    "and extract the prisoner through a route carved by force."
+                ),
+>>>>>>> origin/main
             },
         },
         {
@@ -4157,6 +4445,7 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "signature_technique",
             "branch_outcomes": {
                 "exiled_heir": (
+<<<<<<< HEAD
                     "You claim the first blade doctrine as rightful heir, binding legacy and command into one mandate."
                 ),
                 "street_ghost": (
@@ -4187,6 +4476,35 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You weaponize the doctrine as leverage, selling allegiance oaths to the highest bidder."
                 ),
                 "default": "You survive the ancestral duel and carry its verdict into the coming siege.",
+=======
+                    "The phantom recognizes your bloodline seal and yields mid-duel, "
+                    "transferring the legacy doctrine into your authority by right of succession."
+                ),
+                "street_ghost": (
+                    "You read the phantom's fighting pattern through underworld records "
+                    "and counter every inherited technique until it dissolves the doctrine at last."
+                ),
+                "wandering_monk": (
+                    "You refuse to draw first; the phantom, confronted with restraint, "
+                    "dissolves peacefully and leaves the doctrine open for reinterpretation."
+                ),
+                "nonlethal_path": (
+                    "You survive every phantom strike through evasion alone, exhausting "
+                    "the duel's aggression until the doctrine fractures and becomes yours to reshape."
+                ),
+                "heroic_path": (
+                    "Witnesses from your heroic past stand at the duel's edge; their testimony "
+                    "reshapes the legacy verdict in your favor before the final exchange."
+                ),
+                "rogue_path": (
+                    "You corrupt the duel's ritual seals mid-fight, forcing the phantom to "
+                    "accept your terms rather than risk complete dissolution."
+                ),
+                "default": (
+                    "You outfight the phantom blow for blow, breaking its final technique "
+                    "and claiming the doctrine through the oldest right: decisive victory."
+                ),
+>>>>>>> origin/main
             },
         },
         {
@@ -4199,6 +4517,7 @@ def _build_extended_quest_chain() -> List[Quest]:
             "reward_theme": "arc_transition",
             "branch_outcomes": {
                 "exiled_heir": (
+<<<<<<< HEAD
                     "You rally bloodline loyalists to hold the inner wall, establishing lawful command as dawn breaks."
                 ),
                 "street_ghost": (
@@ -4229,6 +4548,43 @@ def _build_extended_quest_chain() -> List[Quest]:
                     "You seize the gate's black ledgers and force every faction to bargain under your shadow rule."
                 ),
                 "default": "You break the siege at Shattered Gate and decide the opening terms of the next era.",
+=======
+                    "You reveal an ancestral gate key that grants you exclusive command authority; "
+                    "both sides stand down pending your ruling on who crosses first."
+                ),
+                "street_ghost": (
+                    "You compromise the siege's supply lines through hidden tunnels, "
+                    "forcing the attacking force to the table before the gate falls."
+                ),
+                "wandering_monk": (
+                    "You step between the assault lines unarmed at first light and invoke "
+                    "the gate's sanctuary status, buying a ceasefire that holds through dawn."
+                ),
+                "nonlethal_path": (
+                    "You disable siege engines through stealth and charm commanders away "
+                    "from their posts, ending the siege before a single wall stone is breached."
+                ),
+                "stealth_path": (
+                    "You center the siege resolution on stealth-first tactics, cutting "
+                    "enemy supply and communication lines before open conflict can form."
+                ),
+                "heroic_path": (
+                    "Defenders rally to your banner and hold the gate far past projected "
+                    "collapse, giving ceasefire envoys time to reach both command posts."
+                ),
+                "rogue_path": (
+                    "You feed each side false intelligence about the other's resolve, "
+                    "triggering mutual hesitation that lets you dictate the gate's final status."
+                ),
+                "kill_path": (
+                    "You drive the siege to a brutal conclusion, eliminating command "
+                    "targets on both sides to end resistance and claim the gate immediately."
+                ),
+                "default": (
+                    "You fight through the breach point, shatter the siege command, "
+                    "and declare the gate's fate by force before nightfall."
+                ),
+>>>>>>> origin/main
             },
         },
         {
@@ -4239,6 +4595,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("protect shrine neutrals", "publish proof", "coerce confessions"),
             "follow_up_hook": "Recovered tokens reveal a coordinated courier sabotage ring.",
             "reward_theme": "spiritual_favor",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan holds old patronage records for the shrine; you produce them "
+                    "to establish yourself as protector and force the true instigator out of hiding."
+                ),
+                "street_ghost": (
+                    "You trace the false accusation back through a courier chain and surface "
+                    "the instigator's payment records before either army responds."
+                ),
+                "wandering_monk": (
+                    "You interview each custodian in mediation, separating coerced testimony "
+                    "from genuine witness until the true instigator's role is undeniable."
+                ),
+                "nonlethal_path": (
+                    "You protect the shrine through silent vigil, neutralizing provocateurs "
+                    "without violence until the truth can be presented to both armies."
+                ),
+                "heroic_path": (
+                    "Village elders rally to your credibility; their joint statement "
+                    "redirects both armies' outrage toward the actual instigator."
+                ),
+                "rogue_path": (
+                    "You obtain the instigator's confession through private leverage "
+                    "and hold it as a deterrent that keeps both armies off the shrine indefinitely."
+                ),
+                "default": (
+                    "You confront the instigator directly, extract their confession by force, "
+                    "and present it to both armies before holy retaliation can ignite."
+                ),
+            },
         },
         {
             "quest_id": "Q22",
@@ -4248,6 +4634,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("restore old ciphers", "create new network", "trap interceptors"),
             "follow_up_hook": "Cipher metadata exposes the Fifth Mask syndicate.",
             "reward_theme": "intel_speed",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan's old cipher registry is still valid; you reactivate it under "
+                    "your seal, restoring message flow and locking interceptors out of the network."
+                ),
+                "street_ghost": (
+                    "You reroute the messenger network through safehouse relays your contacts "
+                    "already control, bypassing every interception point overnight."
+                ),
+                "wandering_monk": (
+                    "You visit each isolated village personally, carrying messages by hand "
+                    "until a new trusted courier network takes shape from community volunteers."
+                ),
+                "nonlethal_path": (
+                    "You identify interception nests through stealth and dismantle them without "
+                    "engagement, restoring message flow while leaving no trail of confrontation."
+                ),
+                "heroic_path": (
+                    "Your reputation draws loyal couriers out of retirement; "
+                    "their expertise reestablishes a clean cipher network within hours."
+                ),
+                "rogue_path": (
+                    "You capture the interceptor ring's codebook and use it to flood their "
+                    "network with false traffic, blinding them while real messages pass freely."
+                ),
+                "default": (
+                    "You hunt down the interception cells, neutralize each post, "
+                    "and rebuild the courier routes by force before the villages starve of news."
+                ),
+            },
         },
         {
             "quest_id": "Q23",
@@ -4257,6 +4673,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("recruit quietly", "public reveal", "erase all records"),
             "follow_up_hook": "Mask safehouses map directly to sabotaged farmlands.",
             "reward_theme": "covert_control",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Old lineage records name a bloodline tie to the Mask's identity; "
+                    "you use this leverage to force a private unmasking and binding arrangement."
+                ),
+                "street_ghost": (
+                    "You trace the Mask's handler network through underground dead drops "
+                    "and surface the real identity before their next move reaches any faction."
+                ),
+                "wandering_monk": (
+                    "You approach the Mask directly as a mediator, offering neutrality "
+                    "as the one thing their manipulation network cannot buy or fake."
+                ),
+                "nonlethal_path": (
+                    "You dismantle the Mask's courier infrastructure through stealth alone, "
+                    "isolating them from every faction until they have no play left but surrender."
+                ),
+                "heroic_path": (
+                    "Your public credibility forces the Mask's allied contacts to distance "
+                    "themselves; stripped of support, their identity becomes an open secret."
+                ),
+                "rogue_path": (
+                    "You acquire the Mask's true identity through a double agent and "
+                    "hold it as permanent leverage, turning a rival into a reluctant asset."
+                ),
+                "default": (
+                    "You run every lead to ground, confront the Mask at their inner sanctum, "
+                    "and end their influence through a direct and public unmasking."
+                ),
+            },
         },
         {
             "quest_id": "Q24",
@@ -4266,6 +4712,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("prioritize civilians", "secure war reserves", "split aid lines"),
             "follow_up_hook": "Supply caravan routes become immediate high-value targets.",
             "reward_theme": "civilian_trust",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan harvest records identify the poisoned plots exactly; "
+                    "you direct emergency relief grain from ancestral stores before famine spreads."
+                ),
+                "street_ghost": (
+                    "You trace the sabotage supply chain to a hidden depot and intercept "
+                    "the next poison shipment before it reaches a single field."
+                ),
+                "wandering_monk": (
+                    "You organize village cooperatives to share uncontaminated stores, "
+                    "building a civilian relief chain that outlasts the immediate crisis."
+                ),
+                "nonlethal_path": (
+                    "You capture the sabotage crews through stealth and turn them over "
+                    "to village elders for restitution work instead of execution."
+                ),
+                "heroic_path": (
+                    "Your reputation mobilizes regional merchants to donate emergency grain; "
+                    "the relief effort outpaces the sabotage before full famine sets in."
+                ),
+                "rogue_path": (
+                    "You seize the sponsor's private reserves through covert means "
+                    "and redirect them to the villages, making the saboteur fund the recovery."
+                ),
+                "default": (
+                    "You root out the sabotage cells by force, destroy their supply cache, "
+                    "and commandeer military rations for civilian distribution."
+                ),
+            },
         },
         {
             "quest_id": "Q25",
@@ -4275,6 +4751,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("escort caravans", "tax and redirect goods", "stage false raids"),
             "follow_up_hook": "Captured manifests contain forged Kage directives.",
             "reward_theme": "resource_pipeline",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Ancestral trade-route charters give you legal escort authority; "
+                    "you march with the caravans under clan flag and attackers stand aside."
+                ),
+                "street_ghost": (
+                    "You reroute the caravans through smuggler byways known only to your "
+                    "contacts, delivering goods without ever crossing an attacker's field of view."
+                ),
+                "wandering_monk": (
+                    "You broker a caravan neutrality agreement between faction captains, "
+                    "establishing safe passage without requiring a single armed escort."
+                ),
+                "nonlethal_path": (
+                    "You shadow the caravans in silence, neutralizing ambush scouts "
+                    "before they can signal their main force, leaving the route quietly clean."
+                ),
+                "heroic_path": (
+                    "Caravan merchants openly request your escort after your reputation "
+                    "reaches them; attackers pull back rather than face your known record."
+                ),
+                "rogue_path": (
+                    "You sell faction commanders advance caravan manifests in exchange "
+                    "for non-aggression, turning extortion into structured protection fees."
+                ),
+                "default": (
+                    "You intercept the raiding parties head-on, scatter their formations, "
+                    "and secure the caravan routes through direct elimination of the threat."
+                ),
+            },
         },
         {
             "quest_id": "Q26",
@@ -4284,6 +4790,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("validate chain of command", "install proxy leadership", "collapse both hierarchies"),
             "follow_up_hook": "Competing leaders hide evidence in poisoned waterways.",
             "reward_theme": "command_authority",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline archives hold the original command seals; "
+                    "you authenticate legitimate orders and invalidate the forgeries on the spot."
+                ),
+                "street_ghost": (
+                    "You trace the forged orders to a single scribe handler through "
+                    "dead-drop analysis and expose the entire fabrication chain quietly."
+                ),
+                "wandering_monk": (
+                    "You convene a neutral review panel and guide each commander through "
+                    "evidence reconciliation until a clear chain of command emerges peacefully."
+                ),
+                "nonlethal_path": (
+                    "You distribute authenticated counter-orders through stealth courier runs, "
+                    "dissolving the confusion without confronting a single ranking officer."
+                ),
+                "heroic_path": (
+                    "Commanders trust your judgment enough to suspend the contested orders "
+                    "pending your verification; your credibility stabilizes the rank structure."
+                ),
+                "rogue_path": (
+                    "You plant evidence that implicates a rival faction in the forgery "
+                    "and use the resulting purge to install a command structure you control."
+                ),
+                "default": (
+                    "You confront the forgery source directly, seize their operation, "
+                    "and broadcast authenticated orders to every command post by force."
+                ),
+            },
         },
         {
             "quest_id": "Q27",
@@ -4293,6 +4829,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("public trial", "quiet purge", "controlled cover-up"),
             "follow_up_hook": "Witnesses flee to an abandoned dojo linked to disappearances.",
             "reward_theme": "medical_network",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan water-rights records let you identify the contamination source legally; "
+                    "you bring it before a formal tribunal backed by ancestral authority."
+                ),
+                "street_ghost": (
+                    "You trace the toxin supply chain through underground broker records "
+                    "and neutralize the source before downstream villages can be alerted."
+                ),
+                "wandering_monk": (
+                    "You mobilize village healers to build a treatment network while you "
+                    "trace and peacefully dismantle the sabotage operation at its origin."
+                ),
+                "nonlethal_path": (
+                    "You dismantle the toxin distribution network through stealth infiltration, "
+                    "removing every operative without a single public confrontation."
+                ),
+                "heroic_path": (
+                    "Your standing draws witnesses forward who fear reprisal; "
+                    "their combined testimony breaks the cover-up and forces a public trial."
+                ),
+                "rogue_path": (
+                    "You gather enough evidence to hold the perpetrators in permanent leverage, "
+                    "using their guilt to fund village water restoration as quiet restitution."
+                ),
+                "default": (
+                    "You raid the contamination source directly, destroy the toxin stores, "
+                    "and haul the operators before a public tribunal without delay."
+                ),
+            },
         },
         {
             "quest_id": "Q28",
@@ -4302,6 +4868,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("free students", "weaponize training logs", "bury the scandal"),
             "follow_up_hook": "Recovered logs expose a summit ambush timetable.",
             "reward_theme": "advanced_training",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan patronage records bind the dojo to your lineage; "
+                    "you invoke that obligation to demand the students' release through legal channels."
+                ),
+                "street_ghost": (
+                    "You locate the conscription facility through safehouse informants "
+                    "and arrange a quiet transfer that leaves the operation's sponsors unaware."
+                ),
+                "wandering_monk": (
+                    "You enter the facility as a neutral mediator and negotiate student "
+                    "release terms that avoid retaliation while ensuring their safe return."
+                ),
+                "nonlethal_path": (
+                    "You infiltrate the conscription camp through stealth, freeing students "
+                    "in small groups over successive nights without triggering a single alarm."
+                ),
+                "heroic_path": (
+                    "Your reputation draws former dojo alumni who corroborate the scandal; "
+                    "their public testimony forces an official release and reform."
+                ),
+                "rogue_path": (
+                    "You acquire the training logs and hold them as leverage, trading "
+                    "student release for permanent silence from the program's sponsors."
+                ),
+                "default": (
+                    "You assault the conscription facility directly, extract the students "
+                    "by force, and expose the program in full to every allied faction."
+                ),
+            },
         },
         {
             "quest_id": "Q29",
@@ -4311,6 +4907,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("save delegates", "secure evidence first", "eliminate ambushers"),
             "follow_up_hook": "Summit survivors call for a total banner war.",
             "reward_theme": "faction_alignment",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline standing gives you summit authority; "
+                    "you organize a rapid extraction under clan protection that ambushers cannot legally override."
+                ),
+                "street_ghost": (
+                    "You had the summit mapped in advance through informants; "
+                    "you move delegates through pre-planned escape corridors before the ambush can converge."
+                ),
+                "wandering_monk": (
+                    "You position yourself between the ambushers and the delegates, "
+                    "using body language and restraint doctrine to buy time for a full evacuation."
+                ),
+                "nonlethal_path": (
+                    "You disable ambush team signals through stealth, preventing coordination "
+                    "between squads and extracting every delegate before the attack consolidates."
+                ),
+                "heroic_path": (
+                    "Summit guards rally around your presence; their coordinated response "
+                    "shields every delegate long enough for a full safe extraction."
+                ),
+                "rogue_path": (
+                    "You had ambush commanders pre-compromised through prior leverage; "
+                    "a single coded signal freezes their teams while delegates escape."
+                ),
+                "default": (
+                    "You fight through the ambush perimeter, clear the delegate extraction "
+                    "route by force, and secure every record before the summit hall falls."
+                ),
+            },
         },
         {
             "quest_id": "Q30",
@@ -4320,6 +4946,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("forge unity", "enforce rule", "rule from shadows"),
             "follow_up_hook": "Emergency succession powers activate after the banner collapse.",
             "reward_theme": "ending_lock",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline is the last recognized common ground between the five banners; "
+                    "you convene a final summit under hereditary mandate and lock in a unity accord."
+                ),
+                "street_ghost": (
+                    "You hold intelligence on every banner's hidden failures; "
+                    "the threat of mutual exposure forces all five into a negotiated collapse and reformation."
+                ),
+                "wandering_monk": (
+                    "You refuse to name a winner; instead you draft a restraint covenant "
+                    "that all five banners sign before their forces run out of ground to fight over."
+                ),
+                "nonlethal_path": (
+                    "You end each banner's campaign capacity through targeted stealth and "
+                    "charm without a final battle, leaving governance to whoever survives sober."
+                ),
+                "heroic_path": (
+                    "Your heroic record inspires a cross-banner ceasefire movement; "
+                    "the five banners dissolve into a single peacekeeping authority under your witness."
+                ),
+                "rogue_path": (
+                    "You play each banner against the others until only one remains standing, "
+                    "then install your preferred governance structure in the resulting vacuum."
+                ),
+                "default": (
+                    "You drive the decisive campaign yourself, breaking the last resistant "
+                    "banner and declaring the new order from the ruins of the old five."
+                ),
+            },
         },
         {
             "quest_id": "Q31",
@@ -4329,6 +4985,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("stabilize rule", "limit powers", "topple regency"),
             "follow_up_hook": "Regency decrees expose chakra ore seizure operations.",
             "reward_theme": "regime_control",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Succession law is your lineage's specialty; you insert legitimacy clauses "
+                    "into the regency charter that automatically expire its emergency powers."
+                ),
+                "street_ghost": (
+                    "You surface the regent's financial backers through covert investigation, "
+                    "exposing the power play and forcing a negotiated limits agreement."
+                ),
+                "wandering_monk": (
+                    "You mediate between the regent and opposition councils, drafting a "
+                    "power-sharing protocol that prevents emergency rule from becoming permanent."
+                ),
+                "nonlethal_path": (
+                    "You neutralize the regent's enforcement apparatus through stealth, "
+                    "leaving them with nominal authority but no means to exercise it abusively."
+                ),
+                "heroic_path": (
+                    "Your public credibility anchors a coalition that demands constitutional "
+                    "limits; the regent accepts rather than face a legitimacy crisis."
+                ),
+                "rogue_path": (
+                    "You compromise the regent's inner circle and redirect their loyalty, "
+                    "turning emergency powers into tools that serve your agenda instead."
+                ),
+                "default": (
+                    "You confront the regent's overreach directly, dismantle their enforcement "
+                    "apparatus, and force a transition of power through decisive pressure."
+                ),
+            },
         },
         {
             "quest_id": "Q32",
@@ -4338,6 +5024,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("retake by force", "broker labor pact", "cripple extraction"),
             "follow_up_hook": "Mine ledgers reveal identity theft operations on clan archives.",
             "reward_theme": "crafting_scale",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan's original mining charter is still filed in the central archive; "
+                    "you invoke it to reclaim ownership and eject wartime occupiers without combat."
+                ),
+                "street_ghost": (
+                    "You trace the ore distribution network to its black-market terminus "
+                    "and cut it off, making occupation economically worthless overnight."
+                ),
+                "wandering_monk": (
+                    "You negotiate directly with the workers, separating coerced laborers "
+                    "from occupying factions and brokering exit terms that empty the mines peacefully."
+                ),
+                "nonlethal_path": (
+                    "You disable the extraction equipment through stealth and redirect "
+                    "ore shipments, rendering the occupation unprofitable without a single fight."
+                ),
+                "heroic_path": (
+                    "Mine workers rally to your banner, refusing to continue labor under "
+                    "occupation; their strike collapses the extraction operation from within."
+                ),
+                "rogue_path": (
+                    "You forge transfer papers and divert ore shipments to your own "
+                    "channels, making the occupation fund your operations while you plan the eviction."
+                ),
+                "default": (
+                    "You assault the main extraction hub, drive out the occupying force, "
+                    "and secure the mine under your direct authority."
+                ),
+            },
         },
         {
             "quest_id": "Q33",
@@ -4347,6 +5063,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("restore full archives", "privatize key records", "burn bloodline lists"),
             "follow_up_hook": "Recovered aliases connect to frozen signal tower failures.",
             "reward_theme": "clan_loyalty",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline is the primary target in the stolen records; "
+                    "you trace the theft personally and recover every document by ancestral right."
+                ),
+                "street_ghost": (
+                    "You track the stolen records through underground information brokers "
+                    "and retrieve them before any faction can weaponize the lineage data."
+                ),
+                "wandering_monk": (
+                    "You work with every affected clan to restore records through community "
+                    "witness and oral registry, removing the thief's leverage entirely."
+                ),
+                "nonlethal_path": (
+                    "You infiltrate the thief's holding vault through stealth, recovering "
+                    "every stolen document without alerting the faction that commissioned the theft."
+                ),
+                "heroic_path": (
+                    "Affected clans trust your stewardship; they grant you joint custody "
+                    "of the recovered records with a mandate to return each document to its rightful family."
+                ),
+                "rogue_path": (
+                    "You recover the records and hold the most sensitive lineage data in "
+                    "private leverage, ensuring no faction can use bloodlines against you."
+                ),
+                "default": (
+                    "You hunt the thief to their safehouse, seize the stolen archive, "
+                    "and settle the lineage dispute on your terms by force."
+                ),
+            },
         },
         {
             "quest_id": "Q34",
@@ -4356,6 +5102,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("publicly expose traitor", "flip traitor as double-agent", "silent execution"),
             "follow_up_hook": "Traitor dispatches mention toxin vials in envoy circles.",
             "reward_theme": "early_warning",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan tower contracts name your lineage as the legitimate repair authority; "
+                    "you restore the defense chain under that mandate and expose the traitor legally."
+                ),
+                "street_ghost": (
+                    "You reroute the signal chain through safehouse relay mirrors before "
+                    "the traitor realizes the towers are already back online."
+                ),
+                "wandering_monk": (
+                    "You give the traitor a path to confession and restitution, "
+                    "relighting towers with their cooperation and sparing further bloodshed."
+                ),
+                "nonlethal_path": (
+                    "You restore each tower under cover of night and shadow the traitor "
+                    "back to their handlers, mapping the full network without a confrontation."
+                ),
+                "heroic_path": (
+                    "Your reputation draws volunteers to relight every tower in a single "
+                    "coordinated night; the traitor is exposed by the morning audit."
+                ),
+                "rogue_path": (
+                    "You flip the traitor into a double-agent through leverage before dawn, "
+                    "turning their handler network into a live intelligence feed."
+                ),
+                "default": (
+                    "You relight the towers yourself under fire, neutralize the traitor "
+                    "directly, and restore the defense chain before the raids consolidate."
+                ),
+            },
         },
         {
             "quest_id": "Q35",
@@ -4365,6 +5141,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("distribute antidotes", "control antidote access", "booby-trap toxin stocks"),
             "follow_up_hook": "Antidote brokers carry references to a forbidden oath ledger.",
             "reward_theme": "toxin_resistance",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan's herbalist lineage knows this compound; you compound the "
+                    "antidote from archive recipes and distribute it to envoys through official channels."
+                ),
+                "street_ghost": (
+                    "You trace the toxin broker through underground apothecary records "
+                    "and intercept the next delivery, reversing the poison pipeline entirely."
+                ),
+                "wandering_monk": (
+                    "You treat the dosed envoys personally using field medicine and convince "
+                    "all parties to pause diplomacy until a clean environment can be secured."
+                ),
+                "nonlethal_path": (
+                    "You locate the antidote cache through stealth reconnaissance and "
+                    "distribute it quietly, stabilizing every envoy without exposing your method."
+                ),
+                "heroic_path": (
+                    "Your credibility reassures the envoys that they will be protected; "
+                    "their trust gives you authority to audit every cup before negotiation resumes."
+                ),
+                "rogue_path": (
+                    "You acquire both the toxin and antidote supplies and use control of "
+                    "both to dictate the terms under which diplomacy can safely continue."
+                ),
+                "default": (
+                    "You raid the poisoner's operation, secure the antidote stores, "
+                    "and force their handlers into the open before the next round of talks."
+                ),
+            },
         },
         {
             "quest_id": "Q36",
@@ -4374,6 +5180,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("honor oath", "rewrite oath terms", "break and replace oath"),
             "follow_up_hook": "Oath chambers reveal coordinates for the Bone Orchard.",
             "reward_theme": "legacy_authority",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "The oath was sworn by your bloodline; only your authority can legally "
+                    "rewrite its terms, which you do before the assembled oath-witnesses."
+                ),
+                "street_ghost": (
+                    "You surface the oath's hidden codicils through archival investigation, "
+                    "finding a clause that lets you void its mission requirement without war."
+                ),
+                "wandering_monk": (
+                    "You convene the oath's original witness clans and guide them through "
+                    "a shared reinterpretation that preserves honor while preventing war."
+                ),
+                "nonlethal_path": (
+                    "You complete the oath's mission requirement through stealth and "
+                    "misdirection, satisfying its terms without any of the combat it implies."
+                ),
+                "heroic_path": (
+                    "Your standing allows you to call a public hearing on the oath's "
+                    "legitimacy; the assembled verdict grants a formal rewrite by consensus."
+                ),
+                "rogue_path": (
+                    "You falsify completion of the oath's mission through forged evidence "
+                    "and retire the obligation without ever triggering the dangerous clause."
+                ),
+                "default": (
+                    "You execute the oath's mission by force, fulfill every term to the "
+                    "letter, and then formally dissolve it before any faction can invoke it again."
+                ),
+            },
         },
         {
             "quest_id": "Q37",
@@ -4383,6 +5219,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("purify shrine", "bind remnants", "weaponize remnants"),
             "follow_up_hook": "Recovered relic shards point to a forged treaty draft.",
             "reward_theme": "summon_depth",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan holds burial rites for this Orchard; the remnants "
+                    "stand down at your ancestral command, letting you purify the site unopposed."
+                ),
+                "street_ghost": (
+                    "You map the Orchard's remnant patrol patterns through remote "
+                    "observation and navigate to the binding anchor without engaging a single spirit."
+                ),
+                "wandering_monk": (
+                    "You perform a full purification rite unarmed, releasing each remnant "
+                    "through ceremony rather than combat and restoring the Orchard to rest."
+                ),
+                "nonlethal_path": (
+                    "You guide each remnant through its dissolution ritual through charm "
+                    "and evasion alone, purifying the Orchard without raising a weapon."
+                ),
+                "heroic_path": (
+                    "Shrine guardians who trust your record assist in a coordinated "
+                    "multi-point purification that clears the Orchard in a single ceremony."
+                ),
+                "rogue_path": (
+                    "You bind the remnants to a containment vessel and hold them as "
+                    "a deterrent, keeping factions away from the Orchard through the threat of release."
+                ),
+                "default": (
+                    "You fight through every remnant manifestation, destroy the Orchard's "
+                    "anchoring relic, and leave nothing for any faction to weaponize."
+                ),
+            },
         },
         {
             "quest_id": "Q38",
@@ -4392,6 +5258,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("publish authentic treaty", "forge better terms", "hold treaty hostage"),
             "follow_up_hook": "Treaty dispute collapses into simultaneous fort uprisings.",
             "reward_theme": "diplomatic_lock",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your lineage witnessed the original signing; you produce authenticated "
+                    "records that invalidate the forgery and restore the legitimate treaty text."
+                ),
+                "street_ghost": (
+                    "You obtain the forger's source materials through underground contacts "
+                    "and replace the forgery with a version that serves your allies' interests."
+                ),
+                "wandering_monk": (
+                    "You convene every treaty signatory for a joint authentication review, "
+                    "exposing the forgery through transparent process rather than confrontation."
+                ),
+                "nonlethal_path": (
+                    "You recover the authentic treaty text through stealth archive work "
+                    "and circulate it quietly, letting the forgery collapse under comparison."
+                ),
+                "heroic_path": (
+                    "Your credibility accelerates the authentication process; signatories "
+                    "defer to your judgment and the forgery is formally voided within hours."
+                ),
+                "rogue_path": (
+                    "You hold both versions of the treaty and negotiate the final text "
+                    "privately, extracting concessions before releasing the authentic document."
+                ),
+                "default": (
+                    "You expose the forger publicly, force a full treaty renegotiation, "
+                    "and dictate the terms from a position of demonstrated factual authority."
+                ),
+            },
         },
         {
             "quest_id": "Q39",
@@ -4401,6 +5297,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("save civilians first", "save military core", "preserve archives first"),
             "follow_up_hook": "The final power vacuum opens the Quiet Steel succession.",
             "reward_theme": "ally_survival",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan defense protocols give you priority routing authority; "
+                    "you direct evacuation and reinforcement exactly where legacy doctrine demands."
+                ),
+                "street_ghost": (
+                    "Your pre-positioned contacts at each fortress give you real-time "
+                    "status; you triage by actual survival odds rather than political optics."
+                ),
+                "wandering_monk": (
+                    "You route every available resource to civilian extraction first, "
+                    "accepting military losses as the cost of preserving non-combatant lives."
+                ),
+                "nonlethal_path": (
+                    "You coordinate a full civilian-led evacuation through stealth corridors, "
+                    "emptying each fortress before any banner formally falls."
+                ),
+                "heroic_path": (
+                    "Your presence at the most critical fortress stabilizes its defenders "
+                    "long enough to execute a full withdrawal before total collapse."
+                ),
+                "rogue_path": (
+                    "You let the weakest fortresses fall strategically, consolidating "
+                    "surviving forces and resources into a position of maximum post-collapse leverage."
+                ),
+                "default": (
+                    "You triage by military necessity, committing every available asset "
+                    "to the fortresses with the highest survival probability."
+                ),
+            },
         },
         {
             "quest_id": "Q40",
@@ -4410,6 +5336,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("federal unity model", "centralized rule", "hidden arbitration network"),
             "follow_up_hook": "Winter relief collapses under sabotage despite formal victory.",
             "reward_theme": "true_ending",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline is the last legitimate succession claim; "
+                    "you convene the succession council and ratify a federal charter in your ancestral name."
+                ),
+                "street_ghost": (
+                    "You hold leverage over every surviving power broker; "
+                    "the new governance structure is negotiated from your hidden coordination center."
+                ),
+                "wandering_monk": (
+                    "You draft a governance model that distributes authority among villages "
+                    "rather than commanders, building a structure that outlasts any single leader."
+                ),
+                "nonlethal_path": (
+                    "You reach the succession moment with no blood debt; "
+                    "the council ratifies your governance model without opposition because no one fears your rule."
+                ),
+                "heroic_path": (
+                    "Your heroic record earns unanimous succession council support; "
+                    "the new governance structure is built around your proven values and alliances."
+                ),
+                "rogue_path": (
+                    "You architect a hidden arbitration network that lets you guide world "
+                    "governance from the shadows while a visible figurehead absorbs political risk."
+                ),
+                "default": (
+                    "You claim the succession directly, settle every rival's challenge "
+                    "by force, and establish world order on your own terms."
+                ),
+            },
         },
         {
             "quest_id": "Q41",
@@ -4419,6 +5375,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("defend camps", "trace saboteurs", "use ceasefire as trap"),
             "follow_up_hook": "Temple bells vanish from guarded sanctuaries overnight.",
             "reward_theme": "postwar_stability",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan winter-relief charters give you administrative access to every camp; "
+                    "you identify saboteurs through official audits without breaking ceasefire terms."
+                ),
+                "street_ghost": (
+                    "You shadow relief convoy routes through the snow and catch the "
+                    "saboteur cells mid-operation, neutralizing them before any camp burns."
+                ),
+                "wandering_monk": (
+                    "You integrate into relief work alongside camp volunteers, "
+                    "identifying saboteurs through behavioral observation without force."
+                ),
+                "nonlethal_path": (
+                    "You track and isolate each saboteur cell through stealth, removing "
+                    "them from camps one by one without ceasefire-breaking confrontation."
+                ),
+                "heroic_path": (
+                    "Camp residents trust you enough to report suspicious activity; "
+                    "their civilian intelligence network surfaces every saboteur before damage occurs."
+                ),
+                "rogue_path": (
+                    "You allow one sabotage attempt to proceed under observation, "
+                    "gathering enough evidence to expose the entire operation's sponsors."
+                ),
+                "default": (
+                    "You run active patrols through relief lines, confront saboteurs "
+                    "directly, and secure every camp by force before the next strike window opens."
+                ),
+            },
         },
         {
             "quest_id": "Q42",
@@ -4428,6 +5414,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("recover bell quietly", "publicly reveal list", "replace list with decoys"),
             "follow_up_hook": "Bell couriers connect to the Glass Sparrow network.",
             "reward_theme": "ritual_counterintel",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Temple custodians defer to your clan's patronage authority; "
+                    "you obtain the bell's last known routing and recover it through official channels."
+                ),
+                "street_ghost": (
+                    "You trace the bell's movements through underground courier logs "
+                    "and intercept it at its last transfer point before the next toll is struck."
+                ),
+                "wandering_monk": (
+                    "You visit each temple on the assassination routing pattern and "
+                    "quietly remove the bell's ritual markers before any target is reached."
+                ),
+                "nonlethal_path": (
+                    "You shadow the bell's courier network through stealth and recover "
+                    "it without alerting the assassination ring that their ritual has been disrupted."
+                ),
+                "heroic_path": (
+                    "Temple guards rally to your request and seal the bell's known "
+                    "transfer routes; you recover it before the next ritual window opens."
+                ),
+                "rogue_path": (
+                    "You decode the hit-list yourself and replace the real targets "
+                    "with decoys, turning the assassination ring's own ritual against its sponsors."
+                ),
+                "default": (
+                    "You track the bell to its handlers, seize it by force, and "
+                    "break the assassination ritual chain before any target is struck."
+                ),
+            },
         },
         {
             "quest_id": "Q43",
@@ -4437,6 +5453,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("rescue and relocate", "flip handlers", "burn entire network"),
             "follow_up_hook": "Courier testimonies expose the Daimyo debt archive.",
             "reward_theme": "ethical_intel",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan child-protection edicts give you legal authority to remove the "
+                    "couriers from handler custody and place them under your direct protection."
+                ),
+                "street_ghost": (
+                    "Your network has safehouse capacity for every courier; "
+                    "you extract them silently over three nights before any handler notices losses."
+                ),
+                "wandering_monk": (
+                    "You approach the handlers as a mediator offering the couriers' "
+                    "silence in exchange for their release, and every child is freed without exposure."
+                ),
+                "nonlethal_path": (
+                    "You escort each courier to safety through stealth routes, "
+                    "dismantling the network's operational capacity without confronting a single handler."
+                ),
+                "heroic_path": (
+                    "Your reputation draws sympathetic officials who provide legal cover "
+                    "for the extraction, making handler interference publicly untenable."
+                ),
+                "rogue_path": (
+                    "You flip the senior handler through leverage and use their authority "
+                    "to officially decommission the network from the inside."
+                ),
+                "default": (
+                    "You raid the handler operation directly, free every courier, and "
+                    "dismantle the network's infrastructure before it can reconstitute."
+                ),
+            },
         },
         {
             "quest_id": "Q44",
@@ -4446,6 +5492,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("forgive debt", "public exposure", "seize collateral"),
             "follow_up_hook": "Seized records prove staged atrocities under your banner.",
             "reward_theme": "macro_economy",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan treasury records corroborate the debt's origin; "
+                    "you leverage that knowledge to force the Daimyo into a binding public settlement."
+                ),
+                "street_ghost": (
+                    "You obtain the full ledger through underground financial contacts "
+                    "and use its contents to broker a private resolution on your terms."
+                ),
+                "wandering_monk": (
+                    "You propose a structured debt forgiveness program tied to "
+                    "civilian reparations, turning a war-funding scheme into a peace dividend."
+                ),
+                "nonlethal_path": (
+                    "You infiltrate the Daimyo's counting house through stealth and "
+                    "copy the ledger, giving you leverage to negotiate a resolution without confrontation."
+                ),
+                "heroic_path": (
+                    "You organize a public audit backed by community witnesses, "
+                    "forcing the Daimyo to acknowledge the debt in front of every affected faction."
+                ),
+                "rogue_path": (
+                    "You seize the debt collateral covertly and hold it until the "
+                    "Daimyo meets your terms, extracting value from both sides of the crisis."
+                ),
+                "default": (
+                    "You expose the full ledger publicly, seize available collateral by "
+                    "force, and dictate debt resolution terms from a position of open power."
+                ),
+            },
         },
         {
             "quest_id": "Q45",
@@ -4455,6 +5531,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("public tribunal", "secret retaliation", "counter-propaganda strike"),
             "follow_up_hook": "False-flag operators trade forbidden scrolls in a night market.",
             "reward_theme": "legitimacy_control",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your clan's symbolic ownership of the banner makes its forgery a "
+                    "legal offense; you prosecute the operators under ancestral defamation law."
+                ),
+                "street_ghost": (
+                    "You trace the forged banners back to their production site through "
+                    "underground networks and destroy the operation before the next atrocity."
+                ),
+                "wandering_monk": (
+                    "You document each false-flag incident personally and present the "
+                    "evidence to village elders, restoring your banner's meaning through truth."
+                ),
+                "nonlethal_path": (
+                    "You infiltrate the false-flag operations through stealth and "
+                    "substitute counterfeit orders that redirect operatives away from civilians."
+                ),
+                "heroic_path": (
+                    "Your public credibility makes the forgery transparently implausible; "
+                    "civilian communities publicly reject the false-flag narrative on your behalf."
+                ),
+                "rogue_path": (
+                    "You capture the false-flag operators and leverage their confessions "
+                    "to discredit the faction behind the scheme rather than prosecuting publicly."
+                ),
+                "default": (
+                    "You hunt the false-flag operators down, expose the entire scheme "
+                    "in a public reckoning, and destroy every forged banner by force."
+                ),
+            },
         },
         {
             "quest_id": "Q46",
@@ -4464,6 +5570,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("destroy auction stock", "buy and seal scrolls", "control auction ring"),
             "follow_up_hook": "Auction maps reveal tampered borders with no true north.",
             "reward_theme": "forbidden_jutsu",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan interdiction authority over forbidden jutsu gives you "
+                    "legal standing to seize the auction stock and prosecute its brokers."
+                ),
+                "street_ghost": (
+                    "You infiltrate the market as a buyer through false identity "
+                    "and reroute every lot to sealed storage before the bidding closes."
+                ),
+                "wandering_monk": (
+                    "You alert hidden temple observers to the auction's location "
+                    "and coordinate a simultaneous multi-entry that neutralizes all bidders nonviolently."
+                ),
+                "nonlethal_path": (
+                    "You disable the auction's security network through stealth "
+                    "and scatter the power brokers through misdirection before the first lot opens."
+                ),
+                "heroic_path": (
+                    "Your public standing draws enforcement allies who blockade the market "
+                    "legally, forcing brokers to abandon the auction before it can proceed."
+                ),
+                "rogue_path": (
+                    "You purchase the entire auction stock through proxies and "
+                    "control the forbidden jutsu economy, deciding who gets access and at what cost."
+                ),
+                "default": (
+                    "You raid the auction mid-session, neutralize every broker by force, "
+                    "and destroy the forbidden stock before a single scroll changes hands."
+                ),
+            },
         },
         {
             "quest_id": "Q47",
@@ -4473,6 +5609,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("restore neutral maps", "redraw in your favor", "erase all claims"),
             "follow_up_hook": "Border casualties spark conflict at a fallen allies memorial.",
             "reward_theme": "territorial_stability",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Clan survey records predate every altered map; "
+                    "you produce original boundary documentation that legally voids the altered versions."
+                ),
+                "street_ghost": (
+                    "You trace the alteration campaign to its cartography ring "
+                    "and replace every forged map with authenticated copies before mobilization orders are issued."
+                ),
+                "wandering_monk": (
+                    "You convene boundary mediators from every affected region "
+                    "and guide them to a joint settlement that all sides can formally accept."
+                ),
+                "nonlethal_path": (
+                    "You recover every original map through stealth archive raids "
+                    "and distribute authenticated copies before the first army crosses any disputed line."
+                ),
+                "heroic_path": (
+                    "Your credibility as an impartial witness earns neutral nations' "
+                    "endorsement of the authentic maps, making the alterations politically indefensible."
+                ),
+                "rogue_path": (
+                    "You control the most strategically valuable border data and "
+                    "negotiate settlement terms that incorporate your faction's territorial priorities."
+                ),
+                "default": (
+                    "You seize the cartography ring, destroy every forged map, "
+                    "and publish authenticated boundaries under armed escort before war begins."
+                ),
+            },
         },
         {
             "quest_id": "Q48",
@@ -4482,6 +5648,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("honor all fallen", "elevate one faction", "seal memorial archives"),
             "follow_up_hook": "Memorial archives reference an unnamed heir claimant.",
             "reward_theme": "legacy_memory",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline is inscribed in the memorial's founding charter; "
+                    "you invoke that standing to declare the site neutral ground under your stewardship."
+                ),
+                "street_ghost": (
+                    "You identify who is manipulating the memorial narrative through "
+                    "underground channels and replace their planted records with verified history."
+                ),
+                "wandering_monk": (
+                    "You host a multi-faction remembrance ceremony, giving each side "
+                    "equal voice in the memorial's meaning and defusing the blame spiral."
+                ),
+                "nonlethal_path": (
+                    "You stand vigil at the memorial through every challenge, "
+                    "turning away agitators through presence and calm until the crisis passes."
+                ),
+                "heroic_path": (
+                    "Your allies among the fallen's families trust your stewardship; "
+                    "their public backing gives you authority to protect the memorial's integrity."
+                ),
+                "rogue_path": (
+                    "You control the most historically sensitive memorial documents "
+                    "and use that leverage to negotiate a narrative settlement that prevents exploitation."
+                ),
+                "default": (
+                    "You defend the memorial by force, eject those who would weaponize "
+                    "it, and declare its history as settled fact backed by your authority."
+                ),
+            },
         },
         {
             "quest_id": "Q49",
@@ -4491,6 +5687,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("endorse heir", "disprove claim", "form dual governance"),
             "follow_up_hook": "Final settlement council convenes for lasting peace terms.",
             "reward_theme": "succession_resolution",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your own succession records intersect with the claimant's evidence; "
+                    "you authenticate their lineage and establish a joint governance framework."
+                ),
+                "street_ghost": (
+                    "You investigate the heir's claim through archival contacts "
+                    "and determine whether to authenticate or dismantle it based on verified facts."
+                ),
+                "wandering_monk": (
+                    "You mediate between the heir and every opposing faction, "
+                    "building a governance arrangement that earns broader legitimacy than either side alone."
+                ),
+                "nonlethal_path": (
+                    "You validate the heir's claim through peaceful investigation "
+                    "and stealth fact-finding, presenting a clean succession path with no blood attached."
+                ),
+                "heroic_path": (
+                    "Your endorsement of the heir carries enough credibility to "
+                    "override rival objections; the succession council ratifies the claim under your witness."
+                ),
+                "rogue_path": (
+                    "You hold the decisive proof of the heir's legitimacy in private "
+                    "and negotiate governance terms before releasing the authentication publicly."
+                ),
+                "default": (
+                    "You confront the succession dispute head-on, present your evidence "
+                    "before the full council, and force a binding resolution through direct authority."
+                ),
+            },
         },
         {
             "quest_id": "Q50",
@@ -4500,6 +5726,36 @@ def _build_extended_quest_chain() -> List[Quest]:
             "choices": ("restorative justice", "deterrence doctrine", "shadow equilibrium"),
             "follow_up_hook": "Legacy state enters replay-vault history for future ages.",
             "reward_theme": "new_game_plus",
+            "branch_outcomes": {
+                "exiled_heir": (
+                    "Your bloodline covenant becomes the constitutional foundation of the "
+                    "post-war settlement, binding every faction to a framework built on your ancestry."
+                ),
+                "street_ghost": (
+                    "Your intelligence network survives the war intact; "
+                    "you architect a shadow governance layer that keeps the peace through information control."
+                ),
+                "wandering_monk": (
+                    "You draft a restorative justice framework built on restraint and "
+                    "accountability, writing the world's next chapter without a single act of retribution."
+                ),
+                "nonlethal_path": (
+                    "You reach the final settlement with every hand clean; "
+                    "the world accepts your governance model because your path proved it was possible."
+                ),
+                "heroic_path": (
+                    "Your heroic record is written into the settlement as the new standard "
+                    "of legitimacy; every future claim to authority must measure itself against yours."
+                ),
+                "rogue_path": (
+                    "You establish a hidden arbitration network that enforces the peace "
+                    "from the shadows, ensuring stability without needing visible power."
+                ),
+                "default": (
+                    "You impose your governance framework on the final settlement through "
+                    "decisive authority, locking the post-war world into your legacy for generations."
+                ),
+            },
         },
     ]
 
@@ -5369,6 +6625,49 @@ def _seed_trophy_catalog() -> Dict[str, Trophy]:
             "Monk Ascendant",
             "Clear every region as the Wandering Monk.",
             TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        # Stance evolution mastery trophies (Issue 2)
+        Trophy(
+            TROPHY_PACIFIER,
+            "Pacifier",
+            "Drive at least two villains to PASSIVE stance through charm, mercy, and diplomacy.",
+            TrophyCategory.SOCIAL,
+            TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_TERROR,
+            "Terror",
+            "Drive at least two villains to AGGRESSIVE stance through lethal and betrayal actions.",
+            TrophyCategory.COMBAT,
+            TrophyTier.MID,
+        ),
+        Trophy(
+            TROPHY_STANCE_BREAKER,
+            "Stance Breaker",
+            "Force at least three different villains through multiple stance transitions in a single run.",
+            TrophyCategory.PROGRESSION,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_SHADOW_WHISPERER,
+            "Shadow Whisperer",
+            "Complete a kill-free run while achieving ten stealth encounter outcomes.",
+            TrophyCategory.STEALTH,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_SILVER_MASK,
+            "Silver Mask",
+            "Complete a kill-free run while achieving ten charm encounter outcomes.",
+            TrophyCategory.SOCIAL,
+            TrophyTier.LATE,
+        ),
+        Trophy(
+            TROPHY_WIND_DANCER,
+            "Wind Dancer",
+            "Complete a kill-free run while achieving eight evasion encounter outcomes.",
+            TrophyCategory.STEALTH,
             TrophyTier.LATE,
         ),
     ]

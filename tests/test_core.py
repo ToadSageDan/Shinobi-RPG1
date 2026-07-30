@@ -840,6 +840,29 @@ class CoreSystemTests(unittest.TestCase):
                 [poi["name"] for poi in restored_region["points_of_interest"]],
             )
 
+    def test_memory_store_tracks_subject_entries(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        count = world.store_memory(player.name, "Saved the hidden village from raiders.")
+        self.assertEqual(count, 1)
+        world.store_memory(player.name, "Brokered peace with rival scouts.")
+        self.assertEqual(
+            world.get_memory_store(player.name),
+            [
+                "Saved the hidden village from raiders.",
+                "Brokered peace with rival scouts.",
+            ],
+        )
+
+    def test_snapshot_roundtrip_preserves_memory_store(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world.store_memory(player.name, "Recovered the moon archive seal.")
+        snapshot = world.to_snapshot(player)
+        restored_world, _ = world.from_snapshot(snapshot)
+        self.assertEqual(
+            restored_world.get_memory_store(player.name),
+            ["Recovered the moon archive seal."],
+        )
+
     # ------------------------------------------------------------------
     # Q6-Q15 quest branching tests
     # ------------------------------------------------------------------

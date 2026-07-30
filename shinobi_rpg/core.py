@@ -1146,6 +1146,7 @@ class NinjaWorld:
     npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
+    memory_store: Dict[str, List[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -1820,6 +1821,23 @@ class NinjaWorld:
             meta_entry["run_id"] = self.run_counter
             self.vault_meta_tapestry.append(meta_entry)
         self.active_run_tapestry = []
+
+    def store_memory(self, subject: str, memory: str) -> int:
+        normalized_subject = subject.strip()
+        normalized_memory = memory.strip()
+        if not normalized_subject:
+            raise ValueError("Memory subject cannot be empty.")
+        if not normalized_memory:
+            raise ValueError("Memory value cannot be empty.")
+        entries = self.memory_store.setdefault(normalized_subject, [])
+        entries.append(normalized_memory)
+        return len(entries)
+
+    def get_memory_store(self, subject: str) -> List[str]:
+        normalized_subject = subject.strip()
+        if not normalized_subject:
+            raise ValueError("Memory subject cannot be empty.")
+        return list(self.memory_store.get(normalized_subject, []))
 
     def get_player_vault_history(self, player_name: str) -> List[Dict[str, Any]]:
         normalized_name = player_name.strip()
@@ -3056,6 +3074,10 @@ class NinjaWorld:
                 },
                 "external_pressure_history": [dict(entry) for entry in self.external_pressure_history],
                 "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log],
+                "memory_store": {
+                    subject: [str(entry) for entry in entries]
+                    for subject, entries in self.memory_store.items()
+                },
             },
             "player": player.to_snapshot(),
         }
@@ -3274,6 +3296,10 @@ class NinjaWorld:
             },
             external_pressure_history=list(world_snapshot.get("external_pressure_history", [])),
             intel_discovery_log=list(world_snapshot.get("intel_discovery_log", [])),
+            memory_store={
+                str(subject): [str(entry) for entry in entries]
+                for subject, entries in world_snapshot.get("memory_store", {}).items()
+            },
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}

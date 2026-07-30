@@ -127,6 +127,32 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["category"], "ultimate")
         self.assertEqual(result["damage"], 50)
 
+    def test_move_power_scales_stay_within_balance_bands(self):
+        world, _ = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        balance_bands = {
+            MoveCategory.ESCAPE: (0.6, 0.8),
+            MoveCategory.ATTACK: (1.0, 1.15),
+            MoveCategory.DEFENSE: (0.7, 1.0),
+            MoveCategory.SUMMON: (1.0, 1.15),
+            MoveCategory.ULTIMATE: (2.2, 2.6),
+        }
+        for move in world.technique_library:
+            with self.subTest(move=move.name, category=move.category.value):
+                lower, upper = balance_bands[move.category]
+                self.assertGreaterEqual(move.power_scale, lower)
+                self.assertLessEqual(move.power_scale, upper)
+
+    def test_ultimate_damage_is_impactful_but_not_broken(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        strongest_attack = max(
+            player.execute_move(move.name)["damage"] for move in player.moves_by_set[MoveCategory.ATTACK]
+        )
+        for move in player.moves_by_set[MoveCategory.ULTIMATE]:
+            with self.subTest(ultimate=move.name):
+                damage = player.execute_move(move.name)["damage"]
+                self.assertGreaterEqual(damage, strongest_attack * 4)
+                self.assertLessEqual(damage, strongest_attack * 5)
+
     def test_execute_summon_move_uses_focus_and_defense(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         summon_name = player.moves_by_set[MoveCategory.SUMMON][0].name

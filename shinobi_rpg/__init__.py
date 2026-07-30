@@ -30,6 +30,7 @@ from .core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from .framework import framework_overview_json, get_framework_overview
 
 __all__ = [
     "__version__",
@@ -59,4 +60,6 @@ __all__ = [
     "load_world_snapshot",
     "resolve_affinity_minigame",
     "save_world_snapshot",
+    "get_framework_overview",
+    "framework_overview_json",
 ]

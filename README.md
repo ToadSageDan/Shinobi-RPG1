@@ -4,6 +4,17 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 
 [![CI](https://github.com/ToadSageDan/Shinobi-RPG1/actions/workflows/ci.yml/badge.svg)](https://github.com/ToadSageDan/Shinobi-RPG1/actions/workflows/ci.yml)
 
+## Official project bootstrap
+
+Install the package in editable mode and print the current framework snapshot:
+
+```bash
+pip install -e .
+python -m shinobi_rpg
+```
+
+The bootstrap command outputs a JSON summary of the seeded player setup, supported gameplay systems, packaged content counts, and the core development command for running tests.
+
 ## Included MVP systems
 
 - Affinity mini-game and assignment (Fire/Water/Earth/Wind)
@@ -99,4 +110,3 @@ world, player = build_mvp_world("Dan", [3, 1, 2, 4, 5])
 reward = world.clear_region(player, "Verdant Gate", "move")
 print(player.affinity.value, reward)
 ```
-

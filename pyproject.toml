@@ -24,6 +24,9 @@ classifiers = [
 Homepage = "https://github.com/ToadSageDan/Shinobi-RPG1"
 Issues = "https://github.com/ToadSageDan/Shinobi-RPG1/issues"
 
+[project.scripts]
+shinobi-rpg = "shinobi_rpg.__main__:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["shinobi_rpg*"]

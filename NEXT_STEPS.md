@@ -13,10 +13,10 @@ Items marked `[x]` are complete and correspond to closed GitHub Issues.
 
 ## v0.3.0 — Next Horizon (after systems stabilize)
 
-- [ ] 6) Implement stealth quest gating enforcement — Q3, Q5, Q10 require `stealth_required=True` outcomes to unlock nonlethal victory conditions in-engine.
-- [ ] 7) Add arc-transition summary events — when the world crosses an arc boundary (opening → escalation → apex), emit a narrative summary event to the vault and tapestry.
-- [ ] 8) Expand the Black Market shop inventory — add at least 5 new items gated behind reputation tiers and quest completions.
-- [ ] 9) Add villain "reformed" dialogue hooks — when a villain reaches `relationship_arc == "reformed"`, surface a unique narrative line in quest branch outcomes.
+- [x] 6) Implement stealth quest gating enforcement — Q3, Q5, Q10 require `stealth_required=True` outcomes to unlock nonlethal victory conditions in-engine. *(persisted quest-resolution state + explicit approach tracking — done)*
+- [x] 7) Add arc-transition summary events — when the world crosses an arc boundary (opening → escalation → apex), emit a narrative summary event to the vault and tapestry. *(transition history now logged in world events, tapestry, and summaries — done)*
+- [x] 8) Expand the Black Market shop inventory — add at least 5 new items gated behind reputation tiers and quest completions. *(5 new quest-gated Black Market items — done)*
+- [x] 9) Add villain "reformed" dialogue hooks — when a villain reaches `relationship_arc == "reformed"`, surface a unique narrative line in quest branch outcomes. *(quest outcome hooks added for key villain-facing quests — done)*
 - [ ] 10) Define the implementation plan for character models, animation pipeline, and physics architecture after gameplay systems are more locked.
 
 ## Scope guard for animation realism
@@ -32,4 +32,3 @@ export GITHUB_TOKEN=<your-PAT>
 python scripts/setup_github_project.py
 ```
 See `scripts/setup_github_project.py` for full setup instructions.
-

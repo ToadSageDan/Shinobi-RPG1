@@ -843,6 +843,7 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("Pacifist", [3, 1, 2, 4])
         for decision in ["stealth", "charm", "evasion"]:
             world.apply_player_decision(player, decision)
+        world.record_quest_resolution(player, "Q10", approach="direct", stealth_satisfied=True)
         result = world.resolve_quest_branch(player, "Q10")
         self.assertEqual(result["branch_key"], "nonlethal_path")
         self.assertIn("without blood debt", result["outcome"].lower())
@@ -1538,6 +1539,99 @@ class Issue4ReplaySummaryTests(unittest.TestCase):
             self.assertIn("trophy_near_miss", summary)
         finally:
             os.unlink(path)
+
+
+class Issue5QuestPathingAndArcTests(unittest.TestCase):
+    def _world_and_player(self) -> tuple:
+        return build_mvp_world("PathingTest", [3, 1, 2, 4])
+
+    def test_stealth_gated_seeded_quests_are_flagged(self):
+        world, _ = self._world_and_player()
+        gated = {quest.quest_id for quest in world.quests if quest.stealth_required}
+        self.assertTrue({"Q3", "Q5", "Q10"}.issubset(gated))
+
+    def test_all_seeded_quests_expose_tactical_paths(self):
+        world, _ = self._world_and_player()
+        required = {"stealth_path", "charm_path", "evasion_path", "kill_path"}
+        for quest in world.quests:
+            with self.subTest(quest_id=quest.quest_id):
+                self.assertTrue(required.issubset(set(quest.branch_outcomes)))
+
+    def test_explicit_quest_approach_overrides_global_dominant_outcome(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            world.apply_player_decision(player, "kill")
+        world.record_quest_resolution(player, "Q4", approach="stealth", stealth_satisfied=True)
+        result = world.resolve_quest_branch(player, "Q4")
+        self.assertEqual(result["branch_key"], "stealth_path")
+
+    def test_stealth_gate_blocks_nonlethal_branch_until_satisfied(self):
+        world, player = self._world_and_player()
+        for decision in ["stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        blocked = world.resolve_quest_branch(player, "Q5")
+        self.assertNotEqual(blocked["branch_key"], "nonlethal_path")
+        self.assertFalse(blocked["quest_resolution"]["stealth_gate_open"])
+
+        world.record_quest_resolution(player, "Q5", approach="direct", stealth_satisfied=True)
+        unlocked = world.resolve_quest_branch(player, "Q5")
+        self.assertEqual(unlocked["branch_key"], "nonlethal_path")
+        self.assertTrue(unlocked["quest_resolution"]["stealth_gate_open"])
+
+    def test_complete_quest_persists_resolution_state(self):
+        world, player = self._world_and_player()
+        player.set_quest_status("Q3", QuestStatus.ACTIVE)
+        world.record_quest_resolution(player, "Q3", approach="stealth", stealth_satisfied=True)
+        result = world.complete_quest(player, "Q3")
+        self.assertEqual(result["resolved_branch_key"], "stealth_path")
+        self.assertTrue(player.quest_resolution_state["Q3"]["completed"])
+
+    def test_snapshot_roundtrip_preserves_quest_resolution_state(self):
+        world, player = self._world_and_player()
+        world.record_quest_resolution(player, "Q10", approach="stealth", stealth_satisfied=True)
+        with TemporaryDirectory() as temp_dir:
+            snapshot_path = f"{temp_dir}/snapshot.json"
+            save_world_snapshot(world, player, snapshot_path)
+            restored_world, restored_player = load_world_snapshot(snapshot_path)
+        self.assertEqual(
+            restored_player.quest_resolution_state["Q10"]["approach"],
+            "stealth",
+        )
+        restored = restored_world.resolve_quest_branch(restored_player, "Q10")
+        self.assertTrue(restored["quest_resolution"]["stealth_gate_open"])
+
+    def test_arc_transition_events_are_logged_once_per_phase(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            region_name = world.dynamic_region_chain[0]
+            world.clear_region(player, region_name, "weapon")
+        self.assertEqual(
+            [entry["to_phase"] for entry in world.arc_transition_history],
+            ["escalation", "apex"],
+        )
+        summary = world.generate_playthrough_summary(player)
+        self.assertEqual(len(summary["arc_state"]["transition_history"]), 2)
+        self.assertEqual(len(world.arc_transition_history), 2)
+        self.assertTrue(
+            any(entry.get("event_type") == "arc_transition" for entry in world.world_event_history)
+        )
+
+    def test_black_market_inventory_honors_required_quest_completion(self):
+        world, player = self._world_and_player()
+        player.update_reputation(-60)
+        inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertNotIn("gatebreaker_smoke_map", inventory)
+        player.set_quest_status("Q3", QuestStatus.COMPLETED)
+        inventory = {item["key"] for item in world.get_shop_inventory(player)}
+        self.assertIn("gatebreaker_smoke_map", inventory)
+
+    def test_reformed_villain_hook_surfaces_in_quest_outcome(self):
+        world, player = self._world_and_player()
+        for _ in range(3):
+            world.apply_player_decision(player, "charm")
+        result = world.resolve_quest_branch(player, "Q3")
+        self.assertIsNotNone(result["reformed_villain_hook"])
+        self.assertIn("lowers his blade", result["outcome"])
 
 
 if __name__ == "__main__":

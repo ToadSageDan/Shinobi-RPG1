@@ -103,6 +103,21 @@ OUTCOME_BRANCH_PATH_KEYS = {
     "stealth": "stealth_path",
     "evasion": "evasion_path",
 }
+STEALTH_GATED_QUEST_IDS = {"Q3", "Q5", "Q10"}
+REFORMED_VILLAIN_DIALOGUE_HOOKS: Dict[str, Dict[str, str]] = {
+    "Q3": {
+        "villain": "Kage Renda",
+        "line": '"Enough. I have no wish to feed the gate more graves," Kage Renda admits as he lowers his blade.',
+    },
+    "Q5": {
+        "villain": "Admiral Neris",
+        "line": '"The basin has drowned in orders for too long," Admiral Neris says. "Take the peace I should have offered first."',
+    },
+    "Q10": {
+        "villain": "Mist Widow",
+        "line": '"Guard the archive better than I did," Mist Widow says, abandoning the doctrine of fear for a final warning.',
+    },
+}
 ROLE_STANCE_BIAS = {
     "assassin": 1,
     "attrition": 1,
@@ -731,6 +746,7 @@ class PlayerProfile:
     )
     trophies: Set[str] = field(default_factory=set)
     quest_log: Dict[str, QuestStatus] = field(default_factory=dict)
+    quest_resolution_state: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     ally_loyalty: Dict[str, int] = field(default_factory=dict)
     encounter_history: Dict[str, int] = field(default_factory=dict)
     credits: int = 100
@@ -997,6 +1013,43 @@ class PlayerProfile:
     def set_quest_status(self, quest_id: str, status: QuestStatus) -> None:
         self.quest_log[quest_id] = status
 
+    def set_quest_resolution_context(
+        self,
+        quest_id: str,
+        *,
+        approach: str | None = None,
+        stealth_required: bool | None = None,
+        stealth_satisfied: bool | None = None,
+        resolved_branch_key: str | None = None,
+        completed: bool | None = None,
+    ) -> Dict[str, Any]:
+        state = self.quest_resolution_state.setdefault(
+            quest_id,
+            {
+                "approach": None,
+                "stealth_required": False,
+                "stealth_satisfied": True,
+                "stealth_gate_open": True,
+                "resolved_branch_key": None,
+                "completed": False,
+            },
+        )
+        if approach is not None:
+            state["approach"] = approach.strip().lower()
+        if stealth_required is not None:
+            state["stealth_required"] = bool(stealth_required)
+        if stealth_satisfied is not None:
+            state["stealth_satisfied"] = bool(stealth_satisfied)
+        if resolved_branch_key is not None:
+            state["resolved_branch_key"] = resolved_branch_key
+        if completed is not None:
+            state["completed"] = bool(completed)
+        state["stealth_gate_open"] = (
+            not bool(state.get("stealth_required", False))
+            or bool(state.get("stealth_satisfied", False))
+        )
+        return dict(state)
+
     def adjust_ally_loyalty(self, ally_name: str, delta: int) -> int:
         current = self.ally_loyalty.get(ally_name, 0)
         updated = max(-100, min(100, current + delta))
@@ -1077,6 +1130,9 @@ class PlayerProfile:
             "encounter_outcomes": dict(self.encounter_outcomes),
             "trophies": sorted(self.trophies),
             "quest_log": {quest_id: status.value for quest_id, status in self.quest_log.items()},
+            "quest_resolution_state": {
+                quest_id: dict(state) for quest_id, state in self.quest_resolution_state.items()
+            },
             "ally_loyalty": dict(self.ally_loyalty),
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
@@ -1127,6 +1183,7 @@ class NinjaWorld:
     npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
+    arc_transition_history: List[Dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -1165,6 +1222,81 @@ class NinjaWorld:
         bounded_index = min(max(self.current_era_index, 0), len(timeline) - 1)
         return timeline[bounded_index]
 
+    def _current_arc_phase(self) -> str:
+        if self.current_era_index >= 2:
+            return "apex"
+        if self.current_era_index >= 1:
+            return "escalation"
+        return "opening"
+
+    def _ensure_quest_resolution_state(
+        self, player: PlayerProfile, quest: Quest
+    ) -> Dict[str, Any]:
+        return player.set_quest_resolution_context(
+            quest.quest_id,
+            stealth_required=quest.stealth_required,
+            stealth_satisfied=not quest.stealth_required
+            if quest.quest_id not in player.quest_resolution_state
+            else None,
+        )
+
+    def record_quest_resolution(
+        self,
+        player: PlayerProfile,
+        quest_id: str,
+        *,
+        approach: str = "direct",
+        stealth_satisfied: bool | None = None,
+    ) -> Dict[str, Any]:
+        quest = next((q for q in self.quests if q.quest_id == quest_id), None)
+        if not quest:
+            raise ValueError(f'Quest "{quest_id}" not found.')
+        normalized_approach = approach.strip().lower()
+        inferred_stealth = normalized_approach == "stealth" if stealth_satisfied is None else stealth_satisfied
+        self._ensure_quest_resolution_state(player, quest)
+        return player.set_quest_resolution_context(
+            quest_id,
+            approach=normalized_approach,
+            stealth_required=quest.stealth_required,
+            stealth_satisfied=(not quest.stealth_required) or bool(inferred_stealth),
+        )
+
+    def _emit_arc_transition_event(
+        self,
+        *,
+        previous_phase: str,
+        previous_arc_key: str,
+        previous_era_key: str,
+    ) -> Dict[str, Any]:
+        current_phase = self._current_arc_phase()
+        current_era = self._current_era()
+        record = {
+            "event_key": f"arc_transition::{previous_phase}_to_{current_phase}",
+            "event_type": "arc_transition",
+            "label": f"The world shifts from {previous_phase} to {current_phase}.",
+            "from_phase": previous_phase,
+            "to_phase": current_phase,
+            "from_arc_key": previous_arc_key,
+            "to_arc_key": self.current_arc_key,
+            "from_era": previous_era_key,
+            "to_era": current_era["key"],
+            "age": self.current_age,
+        }
+        self.arc_transition_history.append(record)
+        self.world_event_history.append(dict(record))
+        self._log_tapestry(
+            event_type="arc_transition",
+            label=record["label"],
+            causes=[f"phase:{previous_phase}", f"phase:{current_phase}"],
+            effects={
+                "from_arc_key": previous_arc_key,
+                "to_arc_key": self.current_arc_key,
+                "from_era": previous_era_key,
+                "to_era": current_era["key"],
+            },
+        )
+        return record
+
     def _arc_for_region(self, region_name: str) -> ArcDefinition | None:
         for arc in self.arcs:
             if region_name in arc.regions:
@@ -1193,6 +1325,9 @@ class NinjaWorld:
         return entry
 
     def _refresh_arc_and_era(self) -> None:
+        previous_phase = self._current_arc_phase()
+        previous_arc_key = self.current_arc_key
+        previous_era_key = self._current_era()["key"]
         cleared = sum(1 for region in self.regions if region.cleared)
         if cleared >= 3:
             self.current_era_index = min(2, len(self.era_timeline) - 1)
@@ -1210,6 +1345,16 @@ class NinjaWorld:
             arc_pressure[arc_key] = arc_pressure.get(arc_key, 0) + pressure - recovery
         if arc_pressure:
             self.current_arc_key = sorted(arc_pressure.items(), key=lambda item: (-item[1], item[0]))[0][0]
+        current_phase = self._current_arc_phase()
+        if previous_phase != current_phase and (previous_phase, current_phase) in {
+            ("opening", "escalation"),
+            ("escalation", "apex"),
+        }:
+            self._emit_arc_transition_event(
+                previous_phase=previous_phase,
+                previous_arc_key=previous_arc_key,
+                previous_era_key=previous_era_key,
+            )
 
     def _penalty_for_recent_boss_chain(self, chain: Sequence[str]) -> int:
         if not self.recent_boss_chains:
@@ -2110,6 +2255,7 @@ class NinjaWorld:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
         if not quest:
             raise ValueError(f'Quest "{quest_id}" not found.')
+        state = self._ensure_quest_resolution_state(player, quest)
 
         if not quest.branch_outcomes:
             return {
@@ -2125,12 +2271,22 @@ class NinjaWorld:
                 "villain_stance_impacts": dict(quest.villain_stance_impacts),
                 "reputation_impacts": dict(quest.reputation_impacts),
                 "trophy_hooks": list(quest.trophy_hooks),
+                "quest_resolution": dict(state),
+                "reformed_villain_hook": None,
             }
 
-        branch_key = self._resolve_branch_key(player, quest.branch_outcomes)
+        branch_key = self._resolve_branch_key(player, quest, quest.branch_outcomes)
 
         outcome = quest.branch_outcomes.get(branch_key) or quest.branch_outcomes.get(
             "default", quest.objective
+        )
+        reformed_hook = self._get_reformed_villain_hook(quest.quest_id)
+        if reformed_hook:
+            outcome = f"{outcome} {reformed_hook}"
+        state = player.set_quest_resolution_context(
+            quest.quest_id,
+            stealth_required=quest.stealth_required,
+            resolved_branch_key=branch_key,
         )
         return {
             "quest_id": quest.quest_id,
@@ -2145,6 +2301,8 @@ class NinjaWorld:
             "villain_stance_impacts": dict(quest.villain_stance_impacts),
             "reputation_impacts": dict(quest.reputation_impacts),
             "trophy_hooks": list(quest.trophy_hooks),
+            "quest_resolution": dict(state),
+            "reformed_villain_hook": reformed_hook,
         }
 
     def start_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
@@ -2166,6 +2324,10 @@ class NinjaWorld:
         if player.quest_log.get(quest_id) == QuestStatus.COMPLETED:
             raise ValueError(f'Quest "{quest_id}" has already been completed.')
         player.set_quest_status(quest_id, QuestStatus.ACTIVE)
+        self._ensure_quest_resolution_state(
+            player,
+            next(q for q in self.quests if q.quest_id == quest_id),
+        )
         return self.resolve_quest_branch(player, quest_id)
 
     def complete_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
@@ -2176,6 +2338,13 @@ class NinjaWorld:
             raise ValueError(f'Quest "{quest_id}" must be active before completion.')
 
         player.set_quest_status(quest_id, QuestStatus.COMPLETED)
+        branch_result = self.resolve_quest_branch(player, quest_id)
+        player.set_quest_resolution_context(
+            quest_id,
+            stealth_required=quest.stealth_required,
+            resolved_branch_key=branch_result["branch_key"],
+            completed=True,
+        )
         levels_gained = player.stats.gain_xp(quest.reward_xp)
         credit_reward = QUEST_CREDIT_REWARD_BASE + (max(player.stats.level - 1, 0) * QUEST_CREDIT_REWARD_STEP)
         player.earn_credits(credit_reward)
@@ -2214,6 +2383,8 @@ class NinjaWorld:
             "levels_gained": levels_gained,
             "credit_reward": credit_reward,
             "new_balance": player.credits,
+            "resolved_branch_key": branch_result["branch_key"],
+            "stealth_gate_open": branch_result["quest_resolution"]["stealth_gate_open"],
         }
 
     def fail_quest(self, player: PlayerProfile, quest_id: str) -> None:
@@ -2237,14 +2408,40 @@ class NinjaWorld:
             effects={"loyalty_impact": -1},
         )
 
-    def _resolve_branch_key(self, player: PlayerProfile, branch_outcomes: Dict[str, str]) -> str:
+    def _get_reformed_villain_hook(self, quest_id: str) -> str | None:
+        hook = REFORMED_VILLAIN_DIALOGUE_HOOKS.get(quest_id)
+        if not hook:
+            return None
+        checkpoints = {
+            checkpoint["villain"]: checkpoint
+            for checkpoint in self.get_villain_evolution_checkpoints()
+        }
+        villain_checkpoint = checkpoints.get(hook["villain"])
+        if villain_checkpoint and villain_checkpoint.get("relationship_arc") == "reformed":
+            return hook["line"]
+        return None
+
+    def _resolve_branch_key(
+        self, player: PlayerProfile, quest: Quest, branch_outcomes: Dict[str, str]
+    ) -> str:
         """Resolve branch precedence: backstory, path states, narrative tags, then default.
 
         Narrative tags are checked in alphabetical order to keep matching deterministic.
         """
+        state = self._ensure_quest_resolution_state(player, quest)
         if player.selected_backstory and player.selected_backstory.key in branch_outcomes:
             return player.selected_backstory.key
-        if player.is_nonlethal_path_active() and "nonlethal_path" in branch_outcomes:
+        tactical_approach = OUTCOME_BRANCH_PATH_KEYS.get(str(state.get("approach")))
+        if tactical_approach in branch_outcomes:
+            return tactical_approach
+        if (
+            player.is_nonlethal_path_active()
+            and "nonlethal_path" in branch_outcomes
+            and (
+                not quest.stealth_required
+                or bool(state.get("stealth_satisfied"))
+            )
+        ):
             return "nonlethal_path"
         dominant_outcome = player.dominant_encounter_outcome()
         if dominant_outcome:
@@ -2326,6 +2523,9 @@ class NinjaWorld:
             if item.get("requires_nonlethal") and not player.is_nonlethal_path_active():
                 continue
             if player.nonlethal_action_count() < int(item.get("min_nonlethal_actions", 0)):
+                continue
+            required_quests = item.get("required_quests", ())
+            if any(player.quest_log.get(quest_id) != QuestStatus.COMPLETED for quest_id in required_quests):
                 continue
             if (
                 item.get("requires_world_clear_nonlethal")
@@ -2686,6 +2886,9 @@ class NinjaWorld:
             "red_bar_power_claims": dict(player.red_bar_power_claims),
             "red_bar_progress": red_bar_progress,
             "quest_log": {quest_id: status.value for quest_id, status in player.quest_log.items()},
+            "quest_resolution_state": {
+                quest_id: dict(state) for quest_id, state in player.quest_resolution_state.items()
+            },
             "ally_loyalty": dict(player.ally_loyalty),
             "credits": player.credits,
             "kill_counter": {
@@ -2717,6 +2920,7 @@ class NinjaWorld:
                 "scheduled_regions": list(self.dynamic_region_chain),
                 "era": dict(self._current_era()),
                 "age": self.current_age,
+                "transition_history": [dict(entry) for entry in self.arc_transition_history],
             },
             "living_tapestry": {
                 "active_run_entries": [dict(entry) for entry in self.active_run_tapestry],
@@ -2912,6 +3116,7 @@ class NinjaWorld:
                 "vault_meta_tapestry": list(self.vault_meta_tapestry),
                 "active_run_tapestry": list(self.active_run_tapestry),
                 "world_event_history": list(self.world_event_history),
+                "arc_transition_history": [dict(entry) for entry in self.arc_transition_history],
                 "dynamic_region_chain": list(self.dynamic_region_chain),
                 "recent_boss_chains": [list(chain) for chain in self.recent_boss_chains],
                 "region_state": {key: dict(value) for key, value in self.region_state.items()},
@@ -3121,6 +3326,7 @@ class NinjaWorld:
             vault_meta_tapestry=list(world_snapshot.get("vault_meta_tapestry", [])),
             active_run_tapestry=list(world_snapshot.get("active_run_tapestry", [])),
             world_event_history=list(world_snapshot.get("world_event_history", [])),
+            arc_transition_history=list(world_snapshot.get("arc_transition_history", [])),
             dynamic_region_chain=list(world_snapshot.get("dynamic_region_chain", [])),
             recent_boss_chains=[list(chain) for chain in world_snapshot.get("recent_boss_chains", [])],
             region_state={
@@ -3205,6 +3411,10 @@ class NinjaWorld:
             quest_log={
                 quest_id: QuestStatus(status)
                 for quest_id, status in player_snapshot.get("quest_log", {}).items()
+            },
+            quest_resolution_state={
+                quest_id: dict(state)
+                for quest_id, state in player_snapshot.get("quest_resolution_state", {}).items()
             },
             ally_loyalty={
                 ally_name: int(value)
@@ -4065,7 +4275,7 @@ def _seed_quests() -> List[Quest]:
             quest_id="Q3",
             title="Break the Gate",
             objective="Defeat Kage Renda and secure Verdant Gate.",
-            stealth_required=False,
+            stealth_required=True,
             reward_xp=220,
             branch_outcomes={
                 "exiled_heir": "You invoke a legacy challenge and force Kage Renda into a formal duel for the gate.",
@@ -4095,7 +4305,7 @@ def _seed_quests() -> List[Quest]:
             quest_id="Q5",
             title="Moonlit Reckoning",
             objective="Confront the Tideglass command ring and decide the final terms of peace.",
-            stealth_required=False,
+            stealth_required=True,
             reward_xp=320,
             branch_outcomes={
                 "exiled_heir": "You restore the old charter and bind the command ring to a public oath.",
@@ -5995,9 +6205,32 @@ def _quest_trophy_hooks(quest_number: int) -> Tuple[str, ...]:
     return (TROPHY_MERCY_CROWN, TROPHY_QUESTMASTER)
 
 
+def _build_generic_tactical_branch_outcomes(quest: Quest) -> Dict[str, str]:
+    return {
+        "stealth_path": (
+            f"You complete {quest.title} through stealth-first positioning, bypassing the loudest resistance "
+            "and securing the objective before alarms can spread."
+        ),
+        "charm_path": (
+            f"You complete {quest.title} through negotiation, leverage, and disciplined restraint, turning "
+            "open conflict into a controlled concession."
+        ),
+        "evasion_path": (
+            f"You complete {quest.title} through misdirection and evasive movement, exhausting enemy responses "
+            "until the objective is yours."
+        ),
+        "kill_path": (
+            f"You complete {quest.title} by overwhelming the opposition in a decisive strike and forcing the "
+            "field to submit."
+        ),
+    }
+
+
 def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
     required_branch_keys = ("exiled_heir", "street_ghost", "wandering_monk", "default")
     for idx, quest in enumerate(quests):
+        if quest.quest_id in STEALTH_GATED_QUEST_IDS:
+            quest.stealth_required = True
         if not quest.premise:
             quest.premise = quest.objective
         if not quest.choices:
@@ -6027,6 +6260,9 @@ def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
         for branch_key in required_branch_keys:
             if branch_key not in quest.branch_outcomes:
                 quest.branch_outcomes[branch_key] = quest.branch_outcomes["default"]
+        for branch_key, outcome in _build_generic_tactical_branch_outcomes(quest).items():
+            if branch_key not in quest.branch_outcomes:
+                quest.branch_outcomes[branch_key] = outcome
 
 
 def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:
@@ -6847,6 +7083,57 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "requires_nonlethal": True,
             "min_nonlethal_actions": 8,
             "requires_world_clear_nonlethal": True,
+        },
+        "gatebreaker_smoke_map": {
+            "name": "Gatebreaker Smoke Map",
+            "reward_type": "move",
+            "reward_name": "Gatebreaker Veil",
+            "price": 95,
+            "min_reputation": -1000,
+            "max_reputation": -20,
+            "requires_black_market": True,
+            "required_quests": ("Q3",),
+        },
+        "tideglass_truce_wire": {
+            "name": "Tideglass Truce Wire",
+            "reward_type": "weapon",
+            "reward_name": "Truce Wire Kunai",
+            "price": 115,
+            "min_reputation": -1000,
+            "max_reputation": -10,
+            "requires_black_market": True,
+            "required_quests": ("Q5",),
+        },
+        "moonwell_ledger_cloak": {
+            "name": "Moonwell Ledger Cloak",
+            "reward_type": "clothing",
+            "reward_name": "Ledgerbound Cloak",
+            "price": 135,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": True,
+            "required_quests": ("Q7",),
+        },
+        "eternal_watch_decoy": {
+            "name": "Eternal Watch Decoy",
+            "reward_type": "move",
+            "reward_name": "Eternal Mirage",
+            "price": 160,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": True,
+            "required_quests": ("Q10",),
+            "requires_nonlethal": True,
+        },
+        "smuggler_regent_wraps": {
+            "name": "Smuggler Regent Wraps",
+            "reward_type": "clothing",
+            "reward_name": "Regent Shadow Wraps",
+            "price": 185,
+            "min_reputation": -1000,
+            "max_reputation": -40,
+            "requires_black_market": True,
+            "required_quests": ("Q12",),
         },
     }
 

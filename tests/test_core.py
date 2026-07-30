@@ -1634,5 +1634,281 @@ class Issue5QuestPathingAndArcTests(unittest.TestCase):
         self.assertIn("lowers his blade", result["outcome"])
 
 
+class VillainBackstoryAndTieInTests(unittest.TestCase):
+    """Villain backstory, power origins, arc ties, and player backstory hooks."""
+
+    _PLAYER_BACKSTORY_KEYS = ("exiled_heir", "street_ghost", "wandering_monk")
+    _PATH_KEYS = ("nonlethal_path", "rogue_path", "heroic_path")
+    _BOSS_NAMES = ("Kage Renda", "General Voln", "Admiral Neris", "Zephyr Tyrant", "Ashen Monarch")
+
+    def _world(self) -> tuple:
+        return build_mvp_world("TestPlayer", [3, 1, 2, 4])
+
+    # ------------------------------------------------------------------
+    # power_origin field
+    # ------------------------------------------------------------------
+
+    def test_all_villains_have_non_empty_power_origin(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertTrue(
+                    villain.power_origin,
+                    f"Villain '{villain.name}' is missing a power_origin.",
+                )
+
+    def test_boss_power_origins_are_substantive(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                self.assertGreater(
+                    len(villain.power_origin),
+                    80,
+                    f"'{name}' power_origin is too brief.",
+                )
+
+    def test_power_origins_mention_signature_power(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                # power_origin should contextually reference the technique
+                self.assertTrue(
+                    villain.power_origin,
+                    f"'{villain.name}' has empty power_origin.",
+                )
+
+    # ------------------------------------------------------------------
+    # arc_ties field
+    # ------------------------------------------------------------------
+
+    def test_all_villains_have_at_least_one_arc_tie(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertTrue(
+                    villain.arc_ties,
+                    f"Villain '{villain.name}' has no arc_ties.",
+                )
+
+    def test_boss_arc_ties_reference_known_arcs(self):
+        world, _ = self._world()
+        known_arcs = {
+            "political_war", "fracture_front", "recovery_mandate",
+            "rebellion_wave", "highland_reckoning", "depths_awakening",
+        }
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for arc in villain.arc_ties:
+                    self.assertIn(arc, known_arcs, f"'{name}' has unknown arc tie '{arc}'.")
+
+    def test_kage_renda_tied_to_political_war(self):
+        world, _ = self._world()
+        renda = next(v for v in world.villains if v.name == "Kage Renda")
+        self.assertIn("political_war", renda.arc_ties)
+
+    def test_general_voln_tied_to_fracture_front(self):
+        world, _ = self._world()
+        voln = next(v for v in world.villains if v.name == "General Voln")
+        self.assertIn("fracture_front", voln.arc_ties)
+
+    def test_admiral_neris_tied_to_recovery_mandate(self):
+        world, _ = self._world()
+        neris = next(v for v in world.villains if v.name == "Admiral Neris")
+        self.assertIn("recovery_mandate", neris.arc_ties)
+
+    def test_zephyr_tyrant_tied_to_highland_reckoning(self):
+        world, _ = self._world()
+        tyrant = next(v for v in world.villains if v.name == "Zephyr Tyrant")
+        self.assertIn("highland_reckoning", tyrant.arc_ties)
+
+    def test_ashen_monarch_tied_to_depths_awakening(self):
+        world, _ = self._world()
+        monarch = next(v for v in world.villains if v.name == "Ashen Monarch")
+        self.assertIn("depths_awakening", monarch.arc_ties)
+
+    # ------------------------------------------------------------------
+    # player_backstory_hooks field
+    # ------------------------------------------------------------------
+
+    def test_all_bosses_have_hooks_for_all_player_backstory_keys(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for key in self._PLAYER_BACKSTORY_KEYS:
+                    self.assertIn(
+                        key,
+                        villain.player_backstory_hooks,
+                        f"'{name}' missing player backstory hook for '{key}'.",
+                    )
+
+    def test_all_bosses_have_hooks_for_path_keys(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            villain = next(v for v in world.villains if v.name == name)
+            with self.subTest(villain=name):
+                for key in self._PATH_KEYS:
+                    self.assertIn(
+                        key,
+                        villain.player_backstory_hooks,
+                        f"'{name}' missing hook for path '{key}'.",
+                    )
+
+    def test_all_villains_have_at_least_three_backstory_hooks(self):
+        world, _ = self._world()
+        for villain in world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertGreaterEqual(
+                    len(villain.player_backstory_hooks),
+                    3,
+                    f"'{villain.name}' has fewer than 3 backstory hooks.",
+                )
+
+    def test_kage_renda_exiled_heir_hook_references_exile(self):
+        world, _ = self._world()
+        renda = next(v for v in world.villains if v.name == "Kage Renda")
+        hook = renda.player_backstory_hooks["exiled_heir"]
+        self.assertTrue(hook)
+        self.assertIn("exile", hook.lower())
+
+    def test_ashen_monarch_wandering_monk_hook_references_seals(self):
+        world, _ = self._world()
+        monarch = next(v for v in world.villains if v.name == "Ashen Monarch")
+        hook = monarch.player_backstory_hooks["wandering_monk"]
+        self.assertIn("seal", hook.lower())
+
+    # ------------------------------------------------------------------
+    # get_villain_backstory_profile method
+    # ------------------------------------------------------------------
+
+    def test_get_villain_backstory_profile_returns_all_fields(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertEqual(profile["name"], "Kage Renda")
+        self.assertIn("backstory", profile)
+        self.assertIn("power_origin", profile)
+        self.assertIn("arc_ties", profile)
+        self.assertIn("player_backstory_hooks", profile)
+        self.assertIn("signature_power", profile)
+        self.assertIn("primary_affinity", profile)
+        self.assertIn("role", profile)
+        self.assertIn("stance", profile)
+        self.assertIn("relationship_arc", profile)
+
+    def test_get_villain_backstory_profile_raises_for_unknown_villain(self):
+        world, _ = self._world()
+        with self.assertRaises(ValueError):
+            world.get_villain_backstory_profile("Nonexistent Villain")
+
+    def test_get_villain_backstory_profile_arc_ties_is_list(self):
+        world, _ = self._world()
+        for name in self._BOSS_NAMES:
+            with self.subTest(villain=name):
+                profile = world.get_villain_backstory_profile(name)
+                self.assertIsInstance(profile["arc_ties"], list)
+                self.assertTrue(profile["arc_ties"])
+
+    def test_get_villain_backstory_profile_hooks_is_dict(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("General Voln")
+        self.assertIsInstance(profile["player_backstory_hooks"], dict)
+        self.assertIn("exiled_heir", profile["player_backstory_hooks"])
+
+    def test_get_villain_backstory_profile_relationship_arc_dormant_at_start(self):
+        world, _ = self._world()
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertEqual(profile["relationship_arc"], "dormant")
+
+    def test_get_villain_backstory_profile_relationship_arc_updates_with_pressure(self):
+        world, player = self._world()
+        for _ in range(10):
+            world.apply_player_decision(player, "kill")
+        profile = world.get_villain_backstory_profile("Kage Renda")
+        self.assertIn(profile["relationship_arc"], ("nemesis", "rival", "active"))
+
+    # ------------------------------------------------------------------
+    # generate_playthrough_summary integration
+    # ------------------------------------------------------------------
+
+    def test_playthrough_summary_includes_villain_backstory_profiles(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        self.assertIn("villain_backstory_profiles", summary)
+        profiles = summary["villain_backstory_profiles"]
+        self.assertIsInstance(profiles, dict)
+        for name in self._BOSS_NAMES:
+            with self.subTest(villain=name):
+                self.assertIn(name, profiles)
+
+    def test_villain_backstory_profiles_summary_contains_required_keys(self):
+        world, player = self._world()
+        summary = world.generate_playthrough_summary(player)
+        profiles = summary["villain_backstory_profiles"]
+        for name, data in profiles.items():
+            with self.subTest(villain=name):
+                self.assertIn("backstory", data)
+                self.assertIn("power_origin", data)
+                self.assertIn("arc_ties", data)
+                self.assertIn("player_backstory_hooks", data)
+
+    # ------------------------------------------------------------------
+    # Snapshot round-trip
+    # ------------------------------------------------------------------
+
+    def test_snapshot_round_trip_preserves_villain_backstory_fields(self):
+        import tempfile, os
+        world, player = self._world()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            save_world_snapshot(world, player, path)
+            restored_world, _ = load_world_snapshot(path)
+        finally:
+            os.unlink(path)
+
+        for original, restored in zip(world.villains, restored_world.villains):
+            with self.subTest(villain=original.name):
+                self.assertEqual(restored.power_origin, original.power_origin)
+                self.assertEqual(restored.arc_ties, original.arc_ties)
+                self.assertEqual(
+                    restored.player_backstory_hooks,
+                    original.player_backstory_hooks,
+                )
+
+    def test_snapshot_round_trip_preserves_boss_arc_ties(self):
+        import tempfile, os
+        world, player = self._world()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            save_world_snapshot(world, player, path)
+            restored_world, _ = load_world_snapshot(path)
+        finally:
+            os.unlink(path)
+
+        renda_orig = next(v for v in world.villains if v.name == "Kage Renda")
+        renda_rest = next(v for v in restored_world.villains if v.name == "Kage Renda")
+        self.assertEqual(renda_rest.arc_ties, renda_orig.arc_ties)
+        self.assertIn("political_war", renda_rest.arc_ties)
+
+    def test_legacy_snapshot_without_new_fields_loads_with_defaults(self):
+        """Snapshots saved before power_origin/arc_ties existed should still load."""
+        world, player = self._world()
+        snapshot = world.to_snapshot(player)
+        # Strip the new fields to simulate a legacy snapshot
+        for villain_data in snapshot["world"]["villains"]:
+            villain_data.pop("power_origin", None)
+            villain_data.pop("arc_ties", None)
+            villain_data.pop("player_backstory_hooks", None)
+        restored_world, _ = world.from_snapshot(snapshot)
+        for villain in restored_world.villains:
+            with self.subTest(villain=villain.name):
+                self.assertEqual(villain.power_origin, "")
+                self.assertEqual(villain.arc_ties, ())
+                self.assertEqual(villain.player_backstory_hooks, {})
+
+
 if __name__ == "__main__":
     unittest.main()

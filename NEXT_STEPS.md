@@ -17,7 +17,7 @@ Items marked `[x]` are complete and correspond to closed GitHub Issues.
 - [x] 7) Add arc-transition summary events — when the world crosses an arc boundary (opening → escalation → apex), emit a narrative summary event to the vault and tapestry. *(transition history now logged in world events, tapestry, and summaries — done)*
 - [x] 8) Expand the Black Market shop inventory — add at least 5 new items gated behind reputation tiers and quest completions. *(5 new quest-gated Black Market items — done)*
 - [x] 9) Add villain "reformed" dialogue hooks — when a villain reaches `relationship_arc == "reformed"`, surface a unique narrative line in quest branch outcomes. *(quest outcome hooks added for key villain-facing quests — done)*
-- [ ] 10) Define the implementation plan for character models, animation pipeline, and physics architecture after gameplay systems are more locked.
+- [x] 10) Expand villain backstories, power origins, and arc tie-ins — each villain now carries a full narrative backstory, a `power_origin` explaining how their signature technique emerged from their history, `arc_ties` linking them to story arcs, and `player_backstory_hooks` for all three player backstory paths plus nonlethal/rogue/heroic paths. Exposed via `get_villain_backstory_profile()` and `generate_playthrough_summary`. *(26 new tests, 203 total — done)*
 
 ## Scope guard for animation realism
 

@@ -491,6 +491,29 @@ class CoreSystemTests(unittest.TestCase):
         heroic = heroic_world.resolve_quest_branch(heroic_player, "Q4")
         self.assertEqual(heroic["branch_key"], "heroic_path")
 
+    def test_q1_to_q3_include_required_backstory_and_reputation_branch_keys(self):
+        world, _ = build_mvp_world("Coverage", [3, 1, 2, 4])
+        required = {
+            "exiled_heir",
+            "street_ghost",
+            "wandering_monk",
+            "nonlethal_path",
+            "heroic_path",
+            "rogue_path",
+            "default",
+        }
+        for quest_id in ("Q1", "Q2", "Q3"):
+            quest = next(item for item in world.quests if item.quest_id == quest_id)
+            with self.subTest(quest_id=quest_id):
+                self.assertTrue(required.issubset(set(quest.branch_outcomes.keys())))
+
+    def test_q2_branching_uses_nonlethal_path_when_active(self):
+        world, player = build_mvp_world("NonLethal", [3, 1, 2, 4])
+        for decision in ["stealth", "stealth", "stealth", "charm", "evasion"]:
+            world.apply_player_decision(player, decision)
+        result = world.resolve_quest_branch(player, "Q2")
+        self.assertEqual(result["branch_key"], "nonlethal_path")
+
     def test_region_boss_behavior_uses_villain_specific_rules(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         behavior = world.get_region_boss_behavior("Verdant Gate", player)

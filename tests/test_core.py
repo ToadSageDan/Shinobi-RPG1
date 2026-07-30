@@ -614,6 +614,61 @@ class CoreSystemTests(unittest.TestCase):
         self.assertNotEqual(first["encounter"], second["encounter"])
         self.assertEqual(player.encounter_history["Verdant Gate"], 2)
 
+    def test_region_encounters_grant_repeatable_xp_for_grinding(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        initial_level = player.stats.level
+        initial_xp = player.stats.xp
+        first = world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertGreater(first["reward_xp"], 0)
+        self.assertEqual(player.stats.xp, initial_xp + first["reward_xp"])
+        for _ in range(12):
+            world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertGreater(player.stats.level, initial_level)
+
+    def test_seeded_encounter_tables_include_shinobi_guards_and_animals(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        encounter_names = [
+            encounter.lower()
+            for region in world.regions
+            for encounter in (region.encounter_table or region.enemies)
+        ]
+        self.assertTrue(any("shinobi" in encounter for encounter in encounter_names))
+        self.assertTrue(any("guard" in encounter or "sentry" in encounter for encounter in encounter_names))
+        self.assertTrue(
+            any(
+                marker in encounter
+                for encounter in encounter_names
+                for marker in ("hound", "wolf", "boar", "mole", "otter", "bat")
+            )
+        )
+
+    def test_seeded_encounters_are_mostly_shinobi_conflicts(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        encounter_names = [
+            encounter.lower()
+            for region in world.regions
+            for encounter in (region.encounter_table or region.enemies)
+        ]
+        shinobi_markers = (
+            "shinobi",
+            "ronin",
+            "mercenar",
+            "raider",
+            "assassin",
+            "monk",
+            "scout",
+            "hunter",
+            "corsair",
+            "adept",
+            "stalker",
+            "guard",
+            "sentry",
+        )
+        shinobi_count = sum(
+            1 for encounter in encounter_names if any(marker in encounter for marker in shinobi_markers)
+        )
+        self.assertGreater(shinobi_count, len(encounter_names) // 2)
+
     def test_shop_inventory_respects_black_market_unlock(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         public_inventory = {item["key"] for item in world.get_shop_inventory(player)}

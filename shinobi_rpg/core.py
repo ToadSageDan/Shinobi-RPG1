@@ -96,6 +96,10 @@ DEFAULT_ALLY_MIN_COUNT = 10
 QUEST_CREDIT_REWARD_BASE = 35
 QUEST_CREDIT_REWARD_STEP = 10
 ROGUE_SHOP_DISCOUNT_PERCENT = 20
+REGION_ENCOUNTER_XP_SHINOBI = 12
+REGION_ENCOUNTER_XP_GUARD = 10
+REGION_ENCOUNTER_XP_ANIMAL = 8
+REGION_ENCOUNTER_XP_OTHER = 9
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
 OUTCOME_BRANCH_PATH_KEYS = {
     "kill": "kill_path",
@@ -571,6 +575,31 @@ def _empty_affinity_scores() -> Dict[Affinity, int]:
 
 def _ordered_unique_affinities(affinities: Sequence[Affinity]) -> Tuple[Affinity, ...]:
     return tuple(dict.fromkeys(affinities))
+
+
+def _region_encounter_xp_reward(encounter_name: str) -> int:
+    normalized = encounter_name.strip().lower()
+    shinobi_markers = (
+        "shinobi",
+        "ronin",
+        "mercenar",
+        "raider",
+        "assassin",
+        "monk",
+        "scout",
+        "hunter",
+        "corsair",
+        "adept",
+        "stalker",
+    )
+    animal_markers = ("hound", "wolf", "boar", "mole", "otter", "bat")
+    if "guard" in normalized or "sentry" in normalized:
+        return REGION_ENCOUNTER_XP_GUARD
+    if any(marker in normalized for marker in animal_markers):
+        return REGION_ENCOUNTER_XP_ANIMAL
+    if any(marker in normalized for marker in shinobi_markers):
+        return REGION_ENCOUNTER_XP_SHINOBI
+    return REGION_ENCOUNTER_XP_OTHER
 
 
 def _reputation_tier_for(reputation: int) -> ReputationTier:
@@ -2574,11 +2603,16 @@ class NinjaWorld:
         encounter_index = player.encounter_history.get(region_name, 0) % len(encounter_pool)
         encounter = encounter_pool[encounter_index]
         encounter_count = player.record_region_encounter(region_name)
+        reward_xp = _region_encounter_xp_reward(encounter)
+        levels_gained = player.stats.gain_xp(reward_xp)
         return {
             "region": region_name,
             "encounter": encounter,
             "encounter_index": encounter_index,
             "times_seen": encounter_count,
+            "reward_xp": reward_xp,
+            "levels_gained": levels_gained,
+            "level": player.stats.level,
         }
 
     def get_shop_inventory(self, player: PlayerProfile) -> List[Dict[str, Any]]:
@@ -4219,7 +4253,15 @@ def _seed_regions() -> List[Region]:
             name="Verdant Gate",
             village_hub="Leafrise Village",
             enemies=["Bandit Scouts", "Mist Ronin", "Root Stalkers"],
-            encounter_table=["Bandit Scouts", "Mist Ronin", "Root Stalkers", "Hidden Sentry"],
+            encounter_table=[
+                "Academy Shinobi",
+                "Bandit Scouts",
+                "Mist Ronin",
+                "Root Stalkers",
+                "Gate Patrol Guard",
+                "Moss Boar",
+                "Hidden Sentry",
+            ],
             allies=["Dan"],
             boss="Kage Renda",
             boss_rewards={
@@ -4234,7 +4276,14 @@ def _seed_regions() -> List[Region]:
             name="Ashen Cradle",
             village_hub="Cinder Port",
             enemies=["Ash Mercenaries", "Lava Hounds"],
-            encounter_table=["Ash Mercenaries", "Lava Hounds", "Ember Raiders"],
+            encounter_table=[
+                "Cinder Trainee Shinobi",
+                "Ash Mercenaries",
+                "Ember Raiders",
+                "Port Guard Cadet",
+                "Lava Hounds",
+                "Ash Boar",
+            ],
             allies=["Moon", "Sleep"],
             boss="General Voln",
             boss_rewards={
@@ -4249,7 +4298,14 @@ def _seed_regions() -> List[Region]:
             name="Tideglass Basin",
             village_hub="Azure Rest",
             enemies=["Tide Hunters", "Reef Assassins"],
-            encounter_table=["Tide Hunters", "Reef Assassins", "Basin Corsairs"],
+            encounter_table=[
+                "Basin Shinobi Trainee",
+                "Tide Hunters",
+                "Reef Assassins",
+                "Basin Corsairs",
+                "Harbor Guard",
+                "Reef Otter Pack",
+            ],
             allies=["Dot", "Porter"],
             boss="Admiral Neris",
             boss_rewards={
@@ -4264,8 +4320,10 @@ def _seed_regions() -> List[Region]:
             village_hub="Crestfall Outpost",
             enemies=["Windcutter Raiders", "Gale Monks", "Ridge Wolves"],
             encounter_table=[
+                "Ridge Shinobi Aspirant",
                 "Windcutter Raiders",
                 "Gale Monks",
+                "Stormwall Guard",
                 "Ridge Wolves",
                 "Stormcaller Scouts",
                 "Aerial Sentry",
@@ -4285,10 +4343,13 @@ def _seed_regions() -> List[Region]:
             village_hub="Dusk Refuge",
             enemies=["Cave Stalkers", "Poison Adepts", "Hollow Wraiths"],
             encounter_table=[
+                "Hollow Shinobi Scout",
                 "Cave Stalkers",
                 "Poison Adepts",
+                "Refuge Guard",
                 "Hollow Wraiths",
                 "Ember Moles",
+                "Cave Bats",
                 "Deep Sentries",
             ],
             allies=["Sleep", "Dot"],

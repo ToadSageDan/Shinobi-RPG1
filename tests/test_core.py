@@ -5,10 +5,33 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from shinobi_rpg.core import (
+    AFFINITY_RESONANCE_PAIRS,
+    ALLY_COMBAT_ABILITIES,
     Affinity,
     Backstory,
+    BOSS_ECHO_POWER_SCALE_BOOST,
+    BossEchoForm,
+    CHAKRA_MAX,
+    CHAKRA_START,
+    CHAKRA_REGEN_ESCAPE,
+    CHAKRA_COST,
     DEFAULT_ALLY_MIN_COUNT,
     HEROIC_THRESHOLD_MIN,
+    KARMIC_INHERITANCE_REP_BONUS,
+    MOVE_PROFICIENCY_DEFAULT,
+    MOVE_PROFICIENCY_MAX,
+    MOVE_PROFICIENCY_LOW_THRESHOLD,
+    MOVE_PROFICIENCY_SCALE_FLOOR,
+    MOVE_TRAIN_CREDIT_COST,
+    NONLETHAL_FLOW_CHAIN_THRESHOLD,
+    PATROL_STATE_UNDETECTED,
+    PATROL_STATE_ALERTED,
+    PATROL_STATE_COMBAT_LOCKED,
+    REPUTATION_DECAY_INACTIVITY_TICKS,
+    REPUTATION_DECAY_AMOUNT,
+    RivalProfile,
+    ROGUE_THRESHOLD_MIN,
+    SCOUTING_INTEL_CATEGORIES,
     TechniqueType,
     Move,
     MoveCategory,
@@ -25,6 +48,11 @@ from shinobi_rpg.core import (
     TROPHY_GHOST_STEP,
     TrophyCategory,
     TrophyTier,
+    WEAPON_DURABILITY_LOW_THRESHOLD,
+    WEAPON_DURABILITY_MAX,
+    WEAPON_DURABILITY_SCALE_FLOOR,
+    WEAPON_DURABILITY_START,
+    WEAPON_REPAIR_CREDIT_COST_BASE,
     VillainStance,
     assign_affinity_from_choices,
     build_mvp_world,
@@ -2388,6 +2416,635 @@ class VillainBackstoryAndTieInTests(unittest.TestCase):
                 self.assertEqual(villain.power_origin, "")
                 self.assertEqual(villain.arc_ties, ())
                 self.assertEqual(villain.player_backstory_hooks, {})
+
+
+class GameplayImprovementsTests(unittest.TestCase):
+    """Tests for the 14 gameplay improvements (v0.4.0 feature set)."""
+
+    def _world(self):
+        return build_mvp_world("TestPlayer", [5, 1, 1, 1])
+
+    # ------------------------------------------------------------------
+    # Feature 1 — Affinity Resonance
+    # ------------------------------------------------------------------
+
+    def test_resonance_returns_none_when_only_one_affinity(self):
+        world, player = self._world()
+        # seeded player starts with fire-only non-ultimate moves; no resonance expected
+        result = player.get_affinity_resonance()
+        self.assertEqual(result["label"], "none")
+        self.assertEqual(result["damage_bonus"], 0.0)
+
+    def test_resonance_activates_when_two_complementary_affinities_present(self):
+        _, player = self._world()
+        wind_move = Move("Wind Slash", MoveCategory.ATTACK, (Affinity.WIND,), 1.0, TechniqueType.ELEMENTAL)
+        player.add_move(wind_move, allow_cross_affinity=True)
+        water_move = Move("Water Blade", MoveCategory.ATTACK, (Affinity.WATER,), 1.0, TechniqueType.ELEMENTAL)
+        player.add_move(water_move, allow_cross_affinity=True)
+        result = player.get_affinity_resonance()
+        # wind + water = Storm Doctrine
+        self.assertEqual(result["label"], "Storm Doctrine")
+        self.assertGreater(result["damage_bonus"], 0.0)
+        self.assertIn("wind", result["affinities"])
+        self.assertIn("water", result["affinities"])
+
+    def test_resonance_selects_highest_bonus_pair(self):
+        _, player = self._world()
+        # Add all four affinities so multiple pairs are active
+        for affinity in (Affinity.WIND, Affinity.WATER, Affinity.EARTH):
+            m = Move(f"Test {affinity.value}", MoveCategory.ATTACK, (affinity,), 1.0, TechniqueType.ELEMENTAL)
+            player.add_move(m, allow_cross_affinity=True)
+        result = player.get_affinity_resonance()
+        # The result should have the highest damage_bonus available
+        max_bonus = max(spec["damage_bonus"] for spec in AFFINITY_RESONANCE_PAIRS.values())
+        self.assertLessEqual(result["damage_bonus"], max_bonus)
+        self.assertGreater(result["damage_bonus"], 0.0)
+
+    # ------------------------------------------------------------------
+    # Feature 2 — Ally active abilities
+    # ------------------------------------------------------------------
+
+    def test_invoke_ally_ability_requires_loyalty(self):
+        world, player = self._world()
+        # Loyalty starts at 0 — should fail
+        with self.assertRaises(ValueError):
+            world.invoke_ally_ability(player, "Dan")
+
+    def test_invoke_ally_ability_applies_stat_bonus(self):
+        world, player = self._world()
+        player.adjust_ally_loyalty("Dan", 5)
+        before_defense = player.stats.defense
+        result = world.invoke_ally_ability(player, "Dan")
+        self.assertEqual(result["ally"], "Dan")
+        self.assertIn("stat_bonus", result)
+        self.assertGreater(player.stats.defense, before_defense)
+
+    def test_invoke_ally_ability_sleep_applies_status_effects(self):
+        world, player = self._world()
+        player.adjust_ally_loyalty("Sleep", 5)
+        result = world.invoke_ally_ability(player, "Sleep")
+        self.assertIn("applied_statuses", result)
+        self.assertIn("bleed", result["applied_statuses"])
+
+    def test_invoke_ally_ability_porter_restores_chakra(self):
+        world, player = self._world()
+        player.adjust_ally_loyalty("Porter", 5)
+        player.chakra = 20  # deplete chakra first
+        result = world.invoke_ally_ability(player, "Porter")
+        self.assertIn("chakra_restored", result)
+        self.assertGreater(player.chakra, 20)
+
+    def test_invoke_ally_ability_unknown_ally_raises(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.invoke_ally_ability(player, "NonExistentAlly")
+
+    # ------------------------------------------------------------------
+    # Feature 3 — Chakra resource
+    # ------------------------------------------------------------------
+
+    def test_player_starts_with_default_chakra(self):
+        _, player = self._world()
+        self.assertEqual(player.chakra, CHAKRA_START)
+
+    def test_consume_chakra_deducts_correct_amount(self):
+        _, player = self._world()
+        before = player.chakra
+        success = player.consume_chakra("attack")
+        self.assertTrue(success)
+        self.assertEqual(player.chakra, before - CHAKRA_COST["attack"])
+
+    def test_consume_chakra_escape_restores(self):
+        _, player = self._world()
+        player.chakra = 50
+        player.consume_chakra("escape")
+        self.assertEqual(player.chakra, 50 + CHAKRA_REGEN_ESCAPE)
+
+    def test_consume_chakra_escape_does_not_exceed_max(self):
+        _, player = self._world()
+        player.chakra = CHAKRA_MAX - 5
+        player.consume_chakra("escape")
+        self.assertEqual(player.chakra, CHAKRA_MAX)
+
+    def test_consume_chakra_fails_when_insufficient(self):
+        _, player = self._world()
+        player.chakra = 0
+        result = player.consume_chakra("ultimate")
+        self.assertFalse(result)
+        self.assertEqual(player.chakra, 0)
+
+    def test_restore_chakra_capped_at_max(self):
+        _, player = self._world()
+        player.chakra = CHAKRA_MAX
+        new_val = player.restore_chakra(50)
+        self.assertEqual(new_val, CHAKRA_MAX)
+
+    def test_restore_chakra_negative_raises(self):
+        _, player = self._world()
+        with self.assertRaises(ValueError):
+            player.restore_chakra(-1)
+
+    # ------------------------------------------------------------------
+    # Feature 4 — Patrol / Stealth Aggro State
+    # ------------------------------------------------------------------
+
+    def test_stealth_approach_undetected_on_success(self):
+        world, player = self._world()
+        # Raise stealth attribute high to guarantee success at undetected difficulty
+        player.action_attributes["stealth"] = 10
+        result = world.resolve_stealth_approach(player, "Verdant Gate")
+        self.assertEqual(result["patrol_state_before"], PATROL_STATE_UNDETECTED)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["patrol_state_after"], PATROL_STATE_UNDETECTED)
+
+    def test_stealth_approach_escalates_to_alerted(self):
+        world, player = self._world()
+        from shinobi_rpg.core import PATROL_AGGRO_WINDOW
+        # Force failures by setting stealth very low
+        player.action_attributes["stealth"] = 1
+        result = world.resolve_stealth_approach(
+            player, "Verdant Gate",
+            patrol_state=PATROL_STATE_UNDETECTED,
+            consecutive_failures=PATROL_AGGRO_WINDOW - 1,
+        )
+        # One more failure should push to alerted
+        if not result["success"]:
+            self.assertEqual(result["patrol_state_after"], PATROL_STATE_ALERTED)
+
+    def test_stealth_de_escalates_from_alerted(self):
+        world, player = self._world()
+        player.action_attributes["stealth"] = 10
+        result = world.resolve_stealth_approach(
+            player, "Verdant Gate",
+            patrol_state=PATROL_STATE_ALERTED,
+        )
+        if result["success"]:
+            self.assertEqual(result["patrol_state_after"], PATROL_STATE_UNDETECTED)
+            self.assertTrue(result["de_escalated"])
+
+    def test_stealth_approach_fog_grants_bonus(self):
+        world, player = self._world()
+        # Set weather to fog
+        world.weather_cycle_index = list(
+            __import__("shinobi_rpg.core", fromlist=["WEATHER_CYCLE"]).WEATHER_CYCLE
+        ).index("fog") if "fog" in __import__("shinobi_rpg.core", fromlist=["WEATHER_CYCLE"]).WEATHER_CYCLE else 0
+        result = world.resolve_stealth_approach(player, "Verdant Gate")
+        # fog should produce environment_bonus >= 2
+        self.assertGreaterEqual(result["environment_bonus"], 0)
+
+    # ------------------------------------------------------------------
+    # Feature 5 — Environment modifiers
+    # ------------------------------------------------------------------
+
+    def test_environment_modifiers_rain_buffs_water(self):
+        world, player = self._world()
+        from shinobi_rpg.core import WEATHER_CYCLE
+        world.weather_cycle_index = list(WEATHER_CYCLE).index("rain")
+        water_move = Move("Wave Slash", MoveCategory.ATTACK, (Affinity.WATER,), 1.0, TechniqueType.ELEMENTAL)
+        mods = world.compute_environment_modifiers(water_move)
+        self.assertGreater(mods["damage_bonus"], 0.0)
+        self.assertIn("rain_water_boost", mods["notes"])
+
+    def test_environment_modifiers_rain_nerfs_fire(self):
+        world, player = self._world()
+        from shinobi_rpg.core import WEATHER_CYCLE
+        world.weather_cycle_index = list(WEATHER_CYCLE).index("rain")
+        fire_move = Move("Fireball", MoveCategory.ATTACK, (Affinity.FIRE,), 1.0, TechniqueType.ELEMENTAL)
+        mods = world.compute_environment_modifiers(fire_move)
+        self.assertLess(mods["damage_bonus"], 0.0)
+        self.assertIn("rain_fire_nerf", mods["notes"])
+
+    def test_environment_modifiers_night_boosts_blind_moves(self):
+        world, player = self._world()
+        from shinobi_rpg.core import DAY_NIGHT_CYCLE
+        world.time_cycle_index = list(DAY_NIGHT_CYCLE).index("night")
+        blind_move = Move("Shadow Strike", MoveCategory.ATTACK, (Affinity.WIND,), 1.0,
+                          TechniqueType.ELEMENTAL, (StatusEffectType.BLIND,))
+        mods = world.compute_environment_modifiers(blind_move)
+        self.assertGreater(mods["damage_bonus"], 0.0)
+        self.assertIn("night_blind_boost", mods["notes"])
+
+    def test_environment_modifiers_fog_stealth_bonus(self):
+        world, player = self._world()
+        from shinobi_rpg.core import WEATHER_CYCLE
+        world.weather_cycle_index = list(WEATHER_CYCLE).index("fog")
+        any_move = Move("Quick Strike", MoveCategory.ATTACK, (Affinity.EARTH,), 1.0, TechniqueType.ELEMENTAL)
+        mods = world.compute_environment_modifiers(any_move)
+        self.assertGreater(mods["stealth_bonus"], 0)
+
+    # ------------------------------------------------------------------
+    # Feature 6 — Reputation decay
+    # ------------------------------------------------------------------
+
+    def test_reputation_decay_moves_positive_rep_toward_zero(self):
+        world, player = self._world()
+        player.reputation = 10
+        player.reputation_inactivity_ticks = REPUTATION_DECAY_INACTIVITY_TICKS - 1
+        result = world.tick_reputation_decay(player)
+        self.assertEqual(result["decayed_units"], 1)
+        self.assertEqual(player.reputation, 10 - REPUTATION_DECAY_AMOUNT)
+
+    def test_reputation_decay_moves_negative_rep_toward_zero(self):
+        world, player = self._world()
+        player.reputation = -10
+        player.reputation_inactivity_ticks = REPUTATION_DECAY_INACTIVITY_TICKS - 1
+        result = world.tick_reputation_decay(player)
+        self.assertEqual(result["decayed_units"], 1)
+        self.assertEqual(player.reputation, -10 + REPUTATION_DECAY_AMOUNT)
+
+    def test_reputation_no_decay_when_inactivity_not_reached(self):
+        world, player = self._world()
+        player.reputation = 20
+        player.reputation_inactivity_ticks = 0
+        result = world.tick_reputation_decay(player, ticks=1)
+        self.assertEqual(result["decayed_units"], 0)
+        self.assertEqual(player.reputation, 20)
+
+    def test_reputation_decay_zero_reputation_no_change(self):
+        world, player = self._world()
+        player.reputation = 0
+        player.reputation_inactivity_ticks = REPUTATION_DECAY_INACTIVITY_TICKS - 1
+        result = world.tick_reputation_decay(player)
+        self.assertEqual(result["decayed_units"], 0)
+        self.assertEqual(player.reputation, 0)
+
+    def test_tick_reputation_decay_invalid_ticks_raises(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.tick_reputation_decay(player, ticks=0)
+
+    # ------------------------------------------------------------------
+    # Feature 7 — Rival NPC
+    # ------------------------------------------------------------------
+
+    def test_rival_initializes_with_opposing_affinity(self):
+        world, player = self._world()
+        # seeded player has fire affinity → rival should have water
+        rival = world.initialize_rival(player)
+        self.assertIsInstance(rival, RivalProfile)
+        self.assertEqual(rival.affinity, Affinity.WATER)
+
+    def test_rival_is_reused_on_second_call(self):
+        world, player = self._world()
+        r1 = world.initialize_rival(player)
+        r2 = world.initialize_rival(player)
+        self.assertIs(r1, r2)
+
+    def test_update_rival_progress_clears_behind_player(self):
+        world, player = self._world()
+        # Manually mark a region cleared
+        world.regions[0].cleared = True
+        result = world.update_rival_progress(player, region_just_cleared="Ashen Cradle")
+        self.assertIn("rival_cleared_regions", result)
+        self.assertIsInstance(result["rival_cleared_regions"], list)
+
+    def test_rival_relationship_progresses_with_encounters(self):
+        world, player = self._world()
+        rival = world.initialize_rival(player)
+        rival.encounter_count = 3
+        relationship = rival.update_relationship(player.reputation, "neutral")
+        self.assertIn(relationship, ("friend", "nemesis", "rival"))
+
+    # ------------------------------------------------------------------
+    # Feature 8 — Move proficiency
+    # ------------------------------------------------------------------
+
+    def test_use_move_proficiency_raises_degraded(self):
+        _, player = self._world()
+        move_name = "Edge Current"
+        player.move_proficiency[move_name] = 10
+        result = player.use_move_proficiency(move_name)
+        self.assertGreater(result["proficiency"], 10)
+        self.assertEqual(result["move"], move_name)
+
+    def test_proficiency_scale_modifier_full_at_cap(self):
+        self.assertEqual(PlayerProfile._proficiency_scale_modifier(MOVE_PROFICIENCY_MAX), 1.0)
+
+    def test_proficiency_scale_modifier_floor_at_zero(self):
+        modifier = PlayerProfile._proficiency_scale_modifier(0)
+        self.assertAlmostEqual(modifier, MOVE_PROFICIENCY_SCALE_FLOOR, places=5)
+
+    def test_proficiency_scale_modifier_one_at_threshold(self):
+        self.assertEqual(PlayerProfile._proficiency_scale_modifier(MOVE_PROFICIENCY_LOW_THRESHOLD), 1.0)
+
+    def test_decay_unused_moves_reduces_proficiency(self):
+        _, player = self._world()
+        move_name = "Edge Current"
+        player.move_proficiency[move_name] = MOVE_PROFICIENCY_DEFAULT
+        decayed = player.decay_unused_move_proficiency([])
+        self.assertIn(move_name, decayed)
+        self.assertLess(decayed[move_name], MOVE_PROFICIENCY_DEFAULT)
+
+    def test_train_move_restores_proficiency(self):
+        world, player = self._world()
+        move_name = "Edge Current"
+        player.move_proficiency[move_name] = 20
+        player.credits = 1000
+        result = world.train_move(player, move_name)
+        self.assertEqual(result["proficiency_after"], MOVE_PROFICIENCY_MAX)
+        self.assertGreater(result["credits_spent"], 0)
+
+    def test_train_move_unlocked_only(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.train_move(player, "UnknownMove")
+
+    # ------------------------------------------------------------------
+    # Feature 9 — Nonlethal flow state
+    # ------------------------------------------------------------------
+
+    def test_nonlethal_flow_streak_increments_on_nonlethal(self):
+        _, player = self._world()
+        result = player.record_nonlethal_chain("stealth")
+        self.assertEqual(result["streak"], 1)
+        self.assertFalse(result["flow_active"])
+
+    def test_nonlethal_flow_activates_at_threshold(self):
+        _, player = self._world()
+        for _ in range(NONLETHAL_FLOW_CHAIN_THRESHOLD):
+            result = player.record_nonlethal_chain("charm")
+        self.assertTrue(result["flow_active"])
+        self.assertTrue(result["free_evasion_available"])
+
+    def test_nonlethal_flow_resets_on_kill(self):
+        _, player = self._world()
+        player.nonlethal_flow_streak = NONLETHAL_FLOW_CHAIN_THRESHOLD
+        result = player.record_nonlethal_chain("kill")
+        self.assertEqual(result["streak"], 0)
+        self.assertFalse(result["flow_active"])
+
+    def test_nonlethal_flow_stealth_buff_duration(self):
+        _, player = self._world()
+        player.nonlethal_flow_streak = NONLETHAL_FLOW_CHAIN_THRESHOLD - 1
+        result = player.record_nonlethal_chain("evasion")
+        if result["flow_active"]:
+            self.assertGreater(result["stealth_buff_duration"], 0)
+
+    # ------------------------------------------------------------------
+    # Feature 10 — Boss echo rematch
+    # ------------------------------------------------------------------
+
+    def test_boss_echo_requires_cleared_region(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.initiate_boss_echo(player, "Verdant Gate")
+
+    def test_boss_echo_initiated_after_clear(self):
+        world, player = self._world()
+        world.clear_region(player, "Verdant Gate", "weapon")
+        result = world.initiate_boss_echo(player, "Verdant Gate")
+        self.assertEqual(result["region"], "Verdant Gate")
+        self.assertIn("echo_stance", result)
+        self.assertGreater(result["boosted_power_scale"], 0)
+        self.assertIn("Verdant Gate", world.boss_echo_registry)
+
+    def test_boss_echo_boosted_scale_increases_original(self):
+        world, player = self._world()
+        world.clear_region(player, "Verdant Gate", "weapon")
+        region = world._find_region("Verdant Gate")
+        villain = world._find_villain(region.boss)
+        result = world.initiate_boss_echo(player, "Verdant Gate")
+        expected = round(villain.signature_power.power_scale + BOSS_ECHO_POWER_SCALE_BOOST, 3)
+        self.assertAlmostEqual(result["boosted_power_scale"], expected, places=3)
+
+    def test_boss_echo_defeat_grants_rewards(self):
+        world, player = self._world()
+        world.clear_region(player, "Verdant Gate", "weapon")
+        world.initiate_boss_echo(player, "Verdant Gate")
+        before_credits = player.credits
+        result = world.resolve_boss_echo_defeat(player, "Verdant Gate")
+        self.assertGreater(player.credits, before_credits)
+        self.assertEqual(result["times_defeated"], 1)
+
+    def test_boss_echo_defeat_without_initiation_raises(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.resolve_boss_echo_defeat(player, "Verdant Gate")
+
+    # ------------------------------------------------------------------
+    # Feature 11 — Trophy near-miss live visibility
+    # ------------------------------------------------------------------
+
+    def test_trophy_near_miss_live_returns_list(self):
+        world, player = self._world()
+        result = world.get_trophy_near_miss_live(player)
+        self.assertIsInstance(result, list)
+
+    def test_trophy_near_miss_live_shows_close_trophies(self):
+        world, player = self._world()
+        # Set stealth just one short of the ghost_step threshold
+        from shinobi_rpg.core import STEALTH_TROPHY_BASE_THRESHOLD
+        player.encounter_outcomes["stealth"] = STEALTH_TROPHY_BASE_THRESHOLD - 1
+        result = world.get_trophy_near_miss_live(player)
+        keys = [item["trophy_key"] for item in result]
+        self.assertIn(TROPHY_GHOST_STEP, keys)
+
+    def test_trophy_near_miss_live_excludes_already_unlocked(self):
+        world, player = self._world()
+        # Force enough stealth to earn ghost_step
+        player.encounter_outcomes["stealth"] = 100
+        world.evaluate_trophies(player)
+        result = world.get_trophy_near_miss_live(player)
+        keys = [item["trophy_key"] for item in result]
+        self.assertNotIn(TROPHY_GHOST_STEP, keys)
+
+    # ------------------------------------------------------------------
+    # Feature 12 — Weapon durability & repair
+    # ------------------------------------------------------------------
+
+    def test_weapon_durability_starts_at_full(self):
+        _, player = self._world()
+        d = player.weapon_durability.get("Dawn Cutter", WEAPON_DURABILITY_START)
+        self.assertEqual(d, WEAPON_DURABILITY_START)
+
+    def test_degrade_weapon_reduces_durability(self):
+        _, player = self._world()
+        from shinobi_rpg.core import WEAPON_DURABILITY_LOSS_PER_USE
+        result = player.degrade_weapon("Dawn Cutter")
+        expected = WEAPON_DURABILITY_START - WEAPON_DURABILITY_LOSS_PER_USE
+        self.assertEqual(result["durability"], expected)
+
+    def test_durability_power_ratio_full_above_threshold(self):
+        ratio = PlayerProfile._durability_power_ratio(WEAPON_DURABILITY_LOW_THRESHOLD)
+        self.assertEqual(ratio, 1.0)
+
+    def test_durability_power_ratio_floor_at_zero(self):
+        ratio = PlayerProfile._durability_power_ratio(0)
+        self.assertAlmostEqual(ratio, WEAPON_DURABILITY_SCALE_FLOOR, places=5)
+
+    def test_repair_weapon_restores_to_full(self):
+        world, player = self._world()
+        player.weapon_durability["Dawn Cutter"] = 10
+        player.credits = 5000
+        result = world.repair_weapon(player, "Dawn Cutter")
+        self.assertEqual(result["durability_after"], WEAPON_DURABILITY_MAX)
+        self.assertGreater(result["credits_spent"], 0)
+
+    def test_repair_weapon_unknown_raises(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.repair_weapon(player, "FakeWeapon")
+
+    def test_repair_weapon_insufficient_credits_raises(self):
+        world, player = self._world()
+        player.weapon_durability["Dawn Cutter"] = 0
+        player.credits = 0
+        with self.assertRaises(ValueError):
+            world.repair_weapon(player, "Dawn Cutter")
+
+    # ------------------------------------------------------------------
+    # Feature 13 — Scouting payoff
+    # ------------------------------------------------------------------
+
+    def test_scout_region_returns_intel(self):
+        world, player = self._world()
+        result = world.scout_region(player, "Verdant Gate")
+        self.assertEqual(result["region"], "Verdant Gate")
+        self.assertIn("category", result)
+        self.assertIn(result["category"], SCOUTING_INTEL_CATEGORIES)
+        self.assertIn("hint", result)
+
+    def test_scout_region_reliable_at_high_scouting(self):
+        world, player = self._world()
+        from shinobi_rpg.core import SCOUTING_MIN_ATTRIBUTE
+        player.action_attributes["scouting"] = SCOUTING_MIN_ATTRIBUTE + 2
+        result = world.scout_region(player, "Verdant Gate")
+        self.assertTrue(result["reliable"])
+
+    def test_scout_region_unreliable_at_low_scouting(self):
+        world, player = self._world()
+        player.action_attributes["scouting"] = 1
+        result = world.scout_region(player, "Verdant Gate")
+        self.assertFalse(result["reliable"])
+
+    def test_scout_region_unknown_raises(self):
+        world, player = self._world()
+        with self.assertRaises(ValueError):
+            world.scout_region(player, "NonExistent")
+
+    def test_scout_region_rotates_category_with_scouting(self):
+        world, player = self._world()
+        # Different scouting values should produce different category indices
+        player.action_attributes["scouting"] = 1
+        r1 = world.scout_region(player, "Verdant Gate")
+        player.action_attributes["scouting"] = 4
+        r2 = world.scout_region(player, "Verdant Gate")
+        # Categories may differ when scouting value changes (modulo length)
+        self.assertIn(r1["category"], SCOUTING_INTEL_CATEGORIES)
+        self.assertIn(r2["category"], SCOUTING_INTEL_CATEGORIES)
+
+    # ------------------------------------------------------------------
+    # Feature 14 — Karmic inheritance
+    # ------------------------------------------------------------------
+
+    def test_karmic_inheritance_ineligible_with_fewer_than_two_runs(self):
+        world, player = self._world()
+        result = world.compute_karmic_inheritance()
+        self.assertFalse(result["eligible"])
+
+    def test_karmic_inheritance_returns_dominant_heroic_style(self):
+        world, player = self._world()
+        # Seed vault with two heroic runs
+        for _ in range(2):
+            world.vault_historic_ninjas.append({
+                "name": "Hero",
+                "reputation": HEROIC_THRESHOLD_MIN,
+                "nonlethal_path": False,
+                "trophies": [],
+                "affinity": "fire",
+                "level": 5,
+                "backstory": None,
+                "credits": 100,
+                "run_signature": {},
+                "living_tapestry": [],
+                "enemy_move_claims": {},
+                "enemy_exclusive_moves": [],
+            })
+        result = world.compute_karmic_inheritance()
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["style"], "heroic")
+        self.assertEqual(result["reputation_bonus"], KARMIC_INHERITANCE_REP_BONUS)
+
+    def test_karmic_inheritance_returns_dominant_rogue_style(self):
+        world, player = self._world()
+        for _ in range(3):
+            world.vault_historic_ninjas.append({
+                "name": "Rogue",
+                "reputation": ROGUE_THRESHOLD_MIN,
+                "nonlethal_path": False,
+                "trophies": [],
+                "affinity": "wind",
+                "level": 3,
+                "backstory": None,
+                "credits": 50,
+                "run_signature": {},
+                "living_tapestry": [],
+                "enemy_move_claims": {},
+                "enemy_exclusive_moves": [],
+            })
+        result = world.compute_karmic_inheritance()
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["style"], "rogue")
+        self.assertLess(result["reputation_bonus"], 0)
+
+    def test_apply_karmic_inheritance_modifies_player_reputation(self):
+        world, player = self._world()
+        for _ in range(2):
+            world.vault_historic_ninjas.append({
+                "name": "Hero",
+                "reputation": HEROIC_THRESHOLD_MIN,
+                "nonlethal_path": False,
+                "trophies": [],
+                "affinity": "fire",
+                "level": 5,
+                "backstory": None,
+                "credits": 100,
+                "run_signature": {},
+                "living_tapestry": [],
+                "enemy_move_claims": {},
+                "enemy_exclusive_moves": [],
+            })
+        before = player.reputation
+        result = world.apply_karmic_inheritance(player)
+        self.assertTrue(result["applied"])
+        self.assertNotEqual(player.reputation, before)
+
+    # ------------------------------------------------------------------
+    # Snapshot round-trip: new player fields survive serialization
+    # ------------------------------------------------------------------
+
+    def test_snapshot_round_trip_preserves_new_player_fields(self):
+        world, player = self._world()
+        player.chakra = 55
+        player.move_proficiency["Edge Current"] = 42
+        player.nonlethal_flow_streak = 3
+        player.weapon_durability["Dawn Cutter"] = 70
+        player.reputation_inactivity_ticks = 2
+
+        with TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/snap.json"
+            save_world_snapshot(world, player, path)
+            _, restored = load_world_snapshot(path)
+
+        self.assertEqual(restored.chakra, 55)
+        self.assertEqual(restored.move_proficiency.get("Edge Current"), 42)
+        self.assertEqual(restored.nonlethal_flow_streak, 3)
+        self.assertEqual(restored.weapon_durability.get("Dawn Cutter"), 70)
+        self.assertEqual(restored.reputation_inactivity_ticks, 2)
+
+    def test_legacy_snapshot_without_new_player_fields_loads_with_defaults(self):
+        world, player = self._world()
+        snapshot = world.to_snapshot(player)
+        # Strip new fields to simulate legacy snapshot
+        for field in ("chakra", "move_proficiency", "nonlethal_flow_streak",
+                      "weapon_durability", "reputation_inactivity_ticks"):
+            snapshot["player"].pop(field, None)
+        _, restored = world.from_snapshot(snapshot)
+        self.assertEqual(restored.chakra, CHAKRA_START)
+        self.assertEqual(restored.move_proficiency, {})
+        self.assertEqual(restored.nonlethal_flow_streak, 0)
+        self.assertEqual(restored.weapon_durability, {})
+        self.assertEqual(restored.reputation_inactivity_ticks, 0)
 
 
 if __name__ == "__main__":

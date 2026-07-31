@@ -747,6 +747,159 @@ EXTERNAL_PRESSURE_EVENT_LIBRARY: Dict[str, Dict[str, Any]] = {
 }
 INTEL_CHANNELS = {"newspaper", "overheard"}
 
+# ---------------------------------------------------------------------------
+# Gameplay improvement constants
+# ---------------------------------------------------------------------------
+
+# Feature 1 — Affinity Resonance pairs and passive damage multiplier
+AFFINITY_RESONANCE_PAIRS: Dict[Tuple[str, str], Dict[str, Any]] = {
+    ("wind", "water"): {"label": "Storm Doctrine", "damage_bonus": 0.15, "flavor": "storm_surge"},
+    ("fire", "wind"): {"label": "Inferno Gale", "damage_bonus": 0.12, "flavor": "wildfire_rush"},
+    ("earth", "water"): {"label": "Tide Bastion", "damage_bonus": 0.10, "flavor": "flood_lock"},
+    ("fire", "earth"): {"label": "Magma Doctrine", "damage_bonus": 0.13, "flavor": "eruption_press"},
+    ("wind", "earth"): {"label": "Gale Shatter", "damage_bonus": 0.11, "flavor": "sandstorm_rend"},
+    ("fire", "water"): {"label": "Steam Veil", "damage_bonus": 0.08, "flavor": "scalding_mist"},
+}
+
+# Feature 3 — Chakra resource system
+CHAKRA_MAX = 100
+CHAKRA_START = 80
+CHAKRA_REGEN_ESCAPE = 15
+CHAKRA_COST: Dict[str, int] = {
+    "attack": 10,
+    "defense": 8,
+    "summon": 12,
+    "ultimate": 30,
+    "escape": 0,
+}
+
+# Feature 4 — Enemy patrol / stealth aggro states
+PATROL_STATE_UNDETECTED = "undetected"
+PATROL_STATE_ALERTED = "alerted"
+PATROL_STATE_COMBAT_LOCKED = "combat_locked"
+PATROL_AGGRO_WINDOW = 2       # consecutive stealth failures to escalate undetected→alerted
+PATROL_LOCKDOWN_WINDOW = 2    # consecutive failures at alerted to reach combat_locked
+
+# Feature 6 — Reputation decay thresholds
+REPUTATION_DECAY_INACTIVITY_TICKS = 5   # ticks without reinforcing decisions before decay fires
+REPUTATION_DECAY_AMOUNT = 1             # absolute decay per tick toward neutral
+
+# Feature 8 — Move proficiency / training cost
+MOVE_PROFICIENCY_MAX = 100
+MOVE_PROFICIENCY_DEFAULT = 80
+MOVE_PROFICIENCY_DECAY_ON_SKIP = 5      # proficiency lost per encounter the move is unused
+MOVE_PROFICIENCY_LOW_THRESHOLD = 40     # effective power_scale penalty kicks in below this
+MOVE_PROFICIENCY_SCALE_FLOOR = 0.6      # minimum effective scale multiplier at zero proficiency
+MOVE_TRAIN_CREDIT_COST = 20             # credits to restore full proficiency at a hub
+
+# Feature 9 — Nonlethal flow state / combo chain
+NONLETHAL_FLOW_CHAIN_THRESHOLD = 2      # consecutive nonlethal outcomes to enter flow state
+NONLETHAL_FLOW_EVASION_BONUS = True     # flow state grants a free evasion opportunity
+NONLETHAL_FLOW_STEALTH_DURATION = 1     # encounters the stealth buff lasts
+
+# Feature 10 — Boss echo rematch
+BOSS_ECHO_STANCE_OVERRIDE = VillainStance.AGGRESSIVE
+BOSS_ECHO_POWER_SCALE_BOOST = 0.25      # added to the boss move's base power_scale
+BOSS_ECHO_EXTRA_MOVE_COUNT = 1          # number of player moves the echo boss borrows
+
+# Feature 12 — Weapon durability
+WEAPON_DURABILITY_MAX = 100
+WEAPON_DURABILITY_START = 100
+WEAPON_DURABILITY_LOSS_PER_USE = 10
+WEAPON_DURABILITY_LOW_THRESHOLD = 30    # power penalty begins below this
+WEAPON_DURABILITY_SCALE_FLOOR = 0.7     # minimum effective power ratio at zero durability
+WEAPON_REPAIR_CREDIT_COST_BASE = 25     # flat repair cost per weapon
+WEAPON_REPAIR_CREDIT_COST_PER_UNIT = 1  # extra credit per durability point restored
+
+# Feature 13 — Scouting payoff options
+SCOUTING_INTEL_CATEGORIES = ("enemy_count", "elite_position", "boss_move_preview", "hidden_poi")
+SCOUTING_MIN_ATTRIBUTE = 3              # scouting attribute needed for reliable intel
+
+# Feature 14 — Karmic inheritance bonuses
+KARMIC_INHERITANCE_REP_BONUS = 2        # reputation starting bonus from prior run
+KARMIC_INHERITANCE_STYLES = ("rogue", "heroic", "nonlethal")
+
+# Ally combat ability definitions (Feature 2)
+ALLY_COMBAT_ABILITIES: Dict[str, Dict[str, Any]] = {
+    "Dan": {
+        "ability_name": "Warden's Bulwark",
+        "category": "defense",
+        "description": "Dan raises a corridor shield, granting the player a defense boost for one round.",
+        "stat_bonus": {"defense": 5},
+        "duration": 1,
+        "cooldown_encounters": 3,
+    },
+    "Moon": {
+        "ability_name": "Beacon Burst",
+        "category": "attack",
+        "description": "Moon launches a signal flare that distracts enemies, applying Blind for 1 turn.",
+        "status_effect": "blind",
+        "duration": 1,
+        "cooldown_encounters": 3,
+    },
+    "Sleep": {
+        "ability_name": "Venom Cloud",
+        "category": "attack",
+        "description": "Sleep drops a poison cloud that applies Bleed and Crack Armor.",
+        "status_effects": ["bleed", "crack_armor"],
+        "duration": 2,
+        "cooldown_encounters": 4,
+    },
+    "Dot": {
+        "ability_name": "Archive Seal",
+        "category": "defense",
+        "description": "Dot channels a treaty seal that temporarily Silences an enemy.",
+        "status_effect": "silence",
+        "duration": 1,
+        "cooldown_encounters": 3,
+    },
+    "Porter": {
+        "ability_name": "Supply Drop",
+        "category": "support",
+        "description": "Porter delivers a supply cache, restoring 20 chakra.",
+        "chakra_restore": 20,
+        "cooldown_encounters": 4,
+    },
+    "Ren": {
+        "ability_name": "Terrain Read",
+        "category": "escape",
+        "description": "Ren reads the battlefield, granting a free escape opportunity.",
+        "grants_free_escape": True,
+        "cooldown_encounters": 4,
+    },
+    "Kaida": {
+        "ability_name": "Shrine Ward",
+        "category": "defense",
+        "description": "Kaida invokes a ritual barrier, granting Root resistance for 2 turns.",
+        "status_immunity": "root",
+        "duration": 2,
+        "cooldown_encounters": 5,
+    },
+    "Shiro": {
+        "ability_name": "Cold March",
+        "category": "attack",
+        "description": "Shiro leads a cold-route flanking strike, applying Chill and Stagger.",
+        "status_effects": ["chill", "stagger"],
+        "duration": 1,
+        "cooldown_encounters": 4,
+    },
+    "Emi": {
+        "ability_name": "Debt Audit",
+        "category": "support",
+        "description": "Emi exposes a financial pressure point, applying Fear to the target.",
+        "status_effect": "fear",
+        "duration": 1,
+        "cooldown_encounters": 3,
+    },
+    "Toma": {
+        "ability_name": "Protocol Mandate",
+        "category": "support",
+        "description": "Toma invokes a succession clause that boosts all ally loyalty by 1.",
+        "ally_loyalty_bonus": 1,
+        "cooldown_encounters": 5,
+    },
+}
+
 
 def _empty_affinity_scores() -> Dict[Affinity, int]:
     return {affinity: 0 for affinity in AFFINITY_ORDER}
@@ -846,6 +999,49 @@ class ArcDefinition:
     stakes: str
     regions: Tuple[str, ...]
     era_band: str
+
+
+@dataclass
+class RivalProfile:
+    """A persistent rival shinobi that races the player through the world."""
+
+    name: str
+    affinity: Affinity
+    alignment: str = "neutral"          # mirrors/opposes player: "mirror", "opposing", "neutral"
+    cleared_regions: List[str] = field(default_factory=list)
+    encounter_count: int = 0
+    relationship: str = "stranger"      # stranger → rival → friend / nemesis
+    loot_claims: List[str] = field(default_factory=list)
+
+    def advance_region(self, region_name: str) -> None:
+        if region_name not in self.cleared_regions:
+            self.cleared_regions.append(region_name)
+
+    def update_relationship(self, player_reputation: int, player_alignment: str) -> str:
+        if self.encounter_count >= 3:
+            if player_alignment == self.alignment:
+                self.relationship = "friend"
+            else:
+                self.relationship = "nemesis"
+        elif self.encounter_count >= 1:
+            self.relationship = "rival"
+        return self.relationship
+
+
+@dataclass
+class BossEchoForm:
+    """An optional harder echo rematch version of a defeated regional boss."""
+
+    region_name: str
+    boss_name: str
+    echo_stance: VillainStance
+    borrowed_move_names: List[str] = field(default_factory=list)
+    times_challenged: int = 0
+    times_defeated: int = 0
+
+    @property
+    def available(self) -> bool:
+        return self.times_defeated < self.times_challenged + 1
 
 
 @dataclass
@@ -1047,6 +1243,16 @@ class PlayerProfile:
     pickpocket_history: Dict[str, int] = field(
         default_factory=lambda: {"success": 0, "caught": 0}
     )
+    # Feature 3 — Chakra resource
+    chakra: int = CHAKRA_START
+    # Feature 8 — Move proficiency tracking (move name → 0–100)
+    move_proficiency: Dict[str, int] = field(default_factory=dict)
+    # Feature 9 — Nonlethal flow state streak counter
+    nonlethal_flow_streak: int = 0
+    # Feature 12 — Weapon durability (weapon name → 0–100)
+    weapon_durability: Dict[str, int] = field(default_factory=dict)
+    # Feature 6 — Tracks consecutive non-reputation-changing decisions for decay
+    reputation_inactivity_ticks: int = 0
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -1515,6 +1721,156 @@ class PlayerProfile:
             self.add_move(move, allow_cross_affinity=True)
         return True
 
+    # ------------------------------------------------------------------
+    # Feature 1 — Affinity Resonance
+    # ------------------------------------------------------------------
+
+    def get_affinity_resonance(self) -> Dict[str, Any]:
+        """Return the strongest active resonance bonus for the player's unlocked move set.
+
+        A resonance fires when the player has unlocked at least one non-ultimate
+        move in each of two complementary affinities.  The highest-bonus pair wins;
+        ties resolve alphabetically by pair label.
+        """
+        present_affinities: Set[str] = set()
+        for moves in self.moves_by_set.values():
+            for move in moves:
+                if move.category != MoveCategory.ULTIMATE:
+                    for affinity in move.affinities:
+                        present_affinities.add(affinity.value)
+
+        best: Dict[str, Any] = {"label": "none", "damage_bonus": 0.0, "flavor": "none", "affinities": []}
+        for (a1, a2), spec in AFFINITY_RESONANCE_PAIRS.items():
+            if a1 in present_affinities and a2 in present_affinities:
+                if spec["damage_bonus"] > best["damage_bonus"] or (
+                    spec["damage_bonus"] == best["damage_bonus"]
+                    and spec["label"] < best["label"]
+                ):
+                    best = {
+                        "label": spec["label"],
+                        "damage_bonus": spec["damage_bonus"],
+                        "flavor": spec["flavor"],
+                        "affinities": [a1, a2],
+                    }
+        return best
+
+    # ------------------------------------------------------------------
+    # Feature 3 — Chakra resource
+    # ------------------------------------------------------------------
+
+    def consume_chakra(self, move_category: str) -> bool:
+        """Deduct chakra for a move.  Returns True if the player had enough chakra.
+
+        Escape moves regen instead of consuming chakra.
+        """
+        normalized = move_category.strip().lower()
+        if normalized == "escape":
+            self.chakra = min(CHAKRA_MAX, self.chakra + CHAKRA_REGEN_ESCAPE)
+            return True
+        cost = CHAKRA_COST.get(normalized, 10)
+        if self.chakra < cost:
+            return False
+        self.chakra -= cost
+        return True
+
+    def restore_chakra(self, amount: int) -> int:
+        """Restore chakra up to the cap and return the new value."""
+        if amount < 0:
+            raise ValueError("Chakra restore amount cannot be negative.")
+        self.chakra = min(CHAKRA_MAX, self.chakra + amount)
+        return self.chakra
+
+    # ------------------------------------------------------------------
+    # Feature 8 — Move proficiency
+    # ------------------------------------------------------------------
+
+    def use_move_proficiency(self, move_name: str) -> Dict[str, Any]:
+        """Record active use of a move, resetting decay for this encounter.
+
+        Returns the current proficiency and the effective power scale modifier.
+        """
+        current = self.move_proficiency.get(move_name, MOVE_PROFICIENCY_DEFAULT)
+        # Using a move restores proficiency toward the max (diminishing returns).
+        restored = min(MOVE_PROFICIENCY_MAX, current + MOVE_PROFICIENCY_DECAY_ON_SKIP)
+        self.move_proficiency[move_name] = restored
+        scale_mod = self._proficiency_scale_modifier(restored)
+        return {"move": move_name, "proficiency": restored, "scale_modifier": scale_mod}
+
+    def decay_unused_move_proficiency(self, used_move_names: Sequence[str]) -> Dict[str, int]:
+        """Decay proficiency for every unlocked move that was not used this encounter."""
+        decayed: Dict[str, int] = {}
+        for name in self.unlocked_move_names:
+            if name in used_move_names:
+                continue
+            current = self.move_proficiency.get(name, MOVE_PROFICIENCY_DEFAULT)
+            updated = max(0, current - MOVE_PROFICIENCY_DECAY_ON_SKIP)
+            self.move_proficiency[name] = updated
+            if updated != current:
+                decayed[name] = updated
+        return decayed
+
+    @staticmethod
+    def _proficiency_scale_modifier(proficiency: int) -> float:
+        """Linear interpolation: full scale at cap, floor scale at zero."""
+        clamped = max(0, min(MOVE_PROFICIENCY_MAX, proficiency))
+        if clamped >= MOVE_PROFICIENCY_LOW_THRESHOLD:
+            return 1.0
+        ratio = clamped / MOVE_PROFICIENCY_LOW_THRESHOLD
+        return MOVE_PROFICIENCY_SCALE_FLOOR + ratio * (1.0 - MOVE_PROFICIENCY_SCALE_FLOOR)
+
+    # ------------------------------------------------------------------
+    # Feature 9 — Nonlethal flow state
+    # ------------------------------------------------------------------
+
+    def record_nonlethal_chain(self, outcome: str) -> Dict[str, Any]:
+        """Track consecutive nonlethal outcomes and activate flow state when threshold is met.
+
+        Returns a dict with the current streak and whether the flow state is active.
+        """
+        nonlethal_outcomes = {"charm", "stealth", "evasion"}
+        normalized = outcome.strip().lower()
+        if normalized in nonlethal_outcomes:
+            self.nonlethal_flow_streak += 1
+        else:
+            self.nonlethal_flow_streak = 0
+        flow_active = self.nonlethal_flow_streak >= NONLETHAL_FLOW_CHAIN_THRESHOLD
+        return {
+            "outcome": normalized,
+            "streak": self.nonlethal_flow_streak,
+            "flow_active": flow_active,
+            "free_evasion_available": flow_active and NONLETHAL_FLOW_EVASION_BONUS,
+            "stealth_buff_duration": NONLETHAL_FLOW_STEALTH_DURATION if flow_active else 0,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 12 — Weapon durability
+    # ------------------------------------------------------------------
+
+    def degrade_weapon(self, weapon_name: str) -> Dict[str, Any]:
+        """Record combat use of a weapon and reduce its durability.
+
+        Returns the new durability and effective power ratio.
+        """
+        current = self.weapon_durability.get(weapon_name, WEAPON_DURABILITY_START)
+        updated = max(0, current - WEAPON_DURABILITY_LOSS_PER_USE)
+        self.weapon_durability[weapon_name] = updated
+        power_ratio = self._durability_power_ratio(updated)
+        return {
+            "weapon": weapon_name,
+            "durability": updated,
+            "power_ratio": power_ratio,
+            "needs_repair": updated <= WEAPON_DURABILITY_LOW_THRESHOLD,
+        }
+
+    @staticmethod
+    def _durability_power_ratio(durability: int) -> float:
+        """Linear scale: full power above low threshold, floor at zero."""
+        clamped = max(0, min(WEAPON_DURABILITY_MAX, durability))
+        if clamped >= WEAPON_DURABILITY_LOW_THRESHOLD:
+            return 1.0
+        ratio = clamped / WEAPON_DURABILITY_LOW_THRESHOLD
+        return WEAPON_DURABILITY_SCALE_FLOOR + ratio * (1.0 - WEAPON_DURABILITY_SCALE_FLOOR)
+
     def to_snapshot(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -1579,6 +1935,11 @@ class PlayerProfile:
                 }
                 for effect_name, payload in self.active_status_effects.items()
             },
+            "chakra": int(self.chakra),
+            "move_proficiency": {k: int(v) for k, v in self.move_proficiency.items()},
+            "nonlethal_flow_streak": int(self.nonlethal_flow_streak),
+            "weapon_durability": {k: int(v) for k, v in self.weapon_durability.items()},
+            "reputation_inactivity_ticks": int(self.reputation_inactivity_ticks),
         }
 
 
@@ -1629,6 +1990,10 @@ class NinjaWorld:
     time_cycle_index: int = 0
     weather_cycle_index: int = 0
     environment_cycle_step: int = 0
+    # Feature 7 — Rival NPC
+    rival_profile: RivalProfile | None = None
+    # Feature 10 — Boss echo forms (region_name → BossEchoForm)
+    boss_echo_registry: Dict[str, BossEchoForm] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.era_timeline:
@@ -4213,6 +4578,555 @@ class NinjaWorld:
             "living_tapestry_delta": self.get_living_tapestry_delta(),
         }
 
+    # ------------------------------------------------------------------
+    # Feature 2 — Ally active abilities
+    # ------------------------------------------------------------------
+
+    def invoke_ally_ability(
+        self, player: PlayerProfile, ally_name: str
+    ) -> Dict[str, Any]:
+        """Invoke the named ally's combat ability if the ally has sufficient loyalty.
+
+        Requires ally loyalty >= 1.  Returns a result dict describing what happened.
+        """
+        if ally_name not in self.allies:
+            raise ValueError(f'Ally "{ally_name}" is not in the active roster.')
+        loyalty = player.ally_loyalty.get(ally_name, 0)
+        if loyalty < 1:
+            raise ValueError(f'Ally "{ally_name}" requires at least 1 loyalty to invoke.')
+        ability = ALLY_COMBAT_ABILITIES.get(ally_name)
+        if not ability:
+            raise ValueError(f'No combat ability defined for ally "{ally_name}".')
+        result: Dict[str, Any] = {
+            "ally": ally_name,
+            "ability": ability["ability_name"],
+            "category": ability["category"],
+            "description": ability["description"],
+            "loyalty_used": loyalty,
+        }
+        # Apply ability effects to player state
+        if "stat_bonus" in ability:
+            for stat, bonus in ability["stat_bonus"].items():
+                current = getattr(player.stats, stat, 0)
+                setattr(player.stats, stat, current + bonus)
+            result["stat_bonus"] = dict(ability["stat_bonus"])
+        if "status_effect" in ability:
+            effect = StatusEffectType(ability["status_effect"])
+            player.apply_status_effects([effect], duration=int(ability.get("duration", 1)))
+            result["applied_status"] = ability["status_effect"]
+        if "status_effects" in ability:
+            effects = [StatusEffectType(e) for e in ability["status_effects"]]
+            player.apply_status_effects(effects, duration=int(ability.get("duration", 1)))
+            result["applied_statuses"] = list(ability["status_effects"])
+        if "chakra_restore" in ability:
+            player.restore_chakra(int(ability["chakra_restore"]))
+            result["chakra_restored"] = ability["chakra_restore"]
+        if ability.get("grants_free_escape"):
+            result["free_escape_granted"] = True
+        if "ally_loyalty_bonus" in ability:
+            bonus = int(ability["ally_loyalty_bonus"])
+            for name in self.allies:
+                player.adjust_ally_loyalty(name, bonus)
+            result["ally_loyalty_bonus"] = bonus
+        self._log_tapestry(
+            event_type="ally_ability",
+            label=f"{ally_name} activated {ability['ability_name']}.",
+            causes=[ally_name],
+            effects={"ability": ability["ability_name"], "category": ability["category"]},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Feature 4 — Patrol / stealth aggro state
+    # ------------------------------------------------------------------
+
+    def resolve_stealth_approach(
+        self,
+        player: PlayerProfile,
+        region_name: str,
+        *,
+        patrol_state: str = PATROL_STATE_UNDETECTED,
+        consecutive_failures: int = 0,
+    ) -> Dict[str, Any]:
+        """Resolve a stealth approach against a region's patrol network.
+
+        Uses the player's stealth action attribute.  Returns the new patrol state
+        and whether the stealth attempt succeeded.
+        """
+        region = self._find_region(region_name)
+        environment = self.get_environment_state()
+        # Fog and night give a stealth situational bonus.
+        situational_bonus = 0
+        if environment["weather"] == "fog":
+            situational_bonus += 2
+        if environment["time_of_day"] == "night":
+            situational_bonus += 1
+        difficulty_by_state = {
+            PATROL_STATE_UNDETECTED: 5,
+            PATROL_STATE_ALERTED: 8,
+            PATROL_STATE_COMBAT_LOCKED: 11,
+        }
+        difficulty = difficulty_by_state.get(patrol_state, 5)
+        check = player.resolve_action_check(
+            "stealth", difficulty=difficulty, situational_bonus=situational_bonus
+        )
+        success = check["success"]
+        new_failures = 0 if success else consecutive_failures + 1
+
+        if not success:
+            if patrol_state == PATROL_STATE_UNDETECTED and new_failures >= PATROL_AGGRO_WINDOW:
+                new_state = PATROL_STATE_ALERTED
+            elif patrol_state == PATROL_STATE_ALERTED and new_failures >= PATROL_LOCKDOWN_WINDOW:
+                new_state = PATROL_STATE_COMBAT_LOCKED
+            else:
+                new_state = patrol_state
+        else:
+            # Successful stealth can de-escalate alerted state back to undetected.
+            if patrol_state == PATROL_STATE_ALERTED:
+                new_state = PATROL_STATE_UNDETECTED
+            else:
+                new_state = patrol_state
+
+        return {
+            "region": region_name,
+            "patrol_state_before": patrol_state,
+            "patrol_state_after": new_state,
+            "stealth_check": check,
+            "success": success,
+            "consecutive_failures": new_failures if not success else 0,
+            "environment_bonus": situational_bonus,
+            "escalated": (not success) and new_state != patrol_state,
+            "de_escalated": success and new_state != patrol_state,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 5 — Day/Night and Weather modifiers
+    # ------------------------------------------------------------------
+
+    def compute_environment_modifiers(self, move: Move) -> Dict[str, Any]:
+        """Return situational damage/guard/stealth modifiers from current time and weather.
+
+        Modifiers stack additively.  A damage_bonus of 0.1 means +10 % to base damage.
+        """
+        env = self.get_environment_state()
+        time_of_day = env["time_of_day"]
+        weather = env["weather"]
+        damage_bonus = 0.0
+        guard_bonus = 0.0
+        stealth_bonus = 0
+        notes: List[str] = []
+
+        # Rain: buffs Water, nerfs Fire
+        if weather == "rain":
+            if Affinity.WATER in move.affinities:
+                damage_bonus += 0.10
+                notes.append("rain_water_boost")
+            if Affinity.FIRE in move.affinities:
+                damage_bonus -= 0.10
+                notes.append("rain_fire_nerf")
+
+        # Storm: bigger bonus for Wind, strong penalty for Fire
+        if weather == "storm":
+            if Affinity.WIND in move.affinities:
+                damage_bonus += 0.15
+                notes.append("storm_wind_boost")
+            if Affinity.FIRE in move.affinities:
+                damage_bonus -= 0.15
+                notes.append("storm_fire_nerf")
+
+        # Fog: stealth bonus for all moves; slight damage nerf for ranged/straight-line
+        if weather == "fog":
+            stealth_bonus += 2
+            notes.append("fog_stealth_boost")
+            move_lower = move.name.lower()
+            if any(t in move_lower for t in STRAIGHT_LINE_TARGETING_TERMS):
+                damage_bonus -= 0.05
+                notes.append("fog_ranged_nerf")
+
+        # Night: ambush moves and Blind status get a bonus; defenses weaken slightly
+        if time_of_day == "night":
+            if StatusEffectType.BLIND in move.status_effects:
+                damage_bonus += 0.10
+                notes.append("night_blind_boost")
+            if move.category == MoveCategory.DEFENSE:
+                guard_bonus -= 0.05
+                notes.append("night_defense_nerf")
+
+        # Breezy: Wind moves get a speed-up bonus (represented as minor damage bonus)
+        if weather == "breezy" and Affinity.WIND in move.affinities:
+            damage_bonus += 0.05
+            notes.append("breezy_wind_boost")
+
+        # Earth moves get a boost during clear day (solid ground, no environmental interference)
+        if weather == "clear" and time_of_day == "day" and Affinity.EARTH in move.affinities:
+            damage_bonus += 0.05
+            notes.append("clear_day_earth_boost")
+
+        return {
+            "time_of_day": time_of_day,
+            "weather": weather,
+            "damage_bonus": round(damage_bonus, 3),
+            "guard_bonus": round(guard_bonus, 3),
+            "stealth_bonus": stealth_bonus,
+            "notes": notes,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 6 — Reputation decay
+    # ------------------------------------------------------------------
+
+    def tick_reputation_decay(self, player: PlayerProfile, *, ticks: int = 1) -> Dict[str, Any]:
+        """Apply reputation decay toward neutral after prolonged inactivity.
+
+        Each tick increments the inactivity counter.  When the counter reaches
+        REPUTATION_DECAY_INACTIVITY_TICKS, one unit of reputation decays toward zero.
+        """
+        if ticks < 1:
+            raise ValueError("Ticks must be at least 1.")
+        decayed = 0
+        for _ in range(ticks):
+            player.reputation_inactivity_ticks += 1
+            if player.reputation_inactivity_ticks >= REPUTATION_DECAY_INACTIVITY_TICKS:
+                player.reputation_inactivity_ticks = 0
+                if player.reputation > 0:
+                    player.reputation -= REPUTATION_DECAY_AMOUNT
+                    decayed += 1
+                elif player.reputation < 0:
+                    player.reputation += REPUTATION_DECAY_AMOUNT
+                    decayed += 1
+        return {
+            "ticks_applied": ticks,
+            "decayed_units": decayed,
+            "reputation": player.reputation,
+            "inactivity_ticks": player.reputation_inactivity_ticks,
+            "reputation_tier": player.current_reputation_tier().value,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 7 — Rival NPC
+    # ------------------------------------------------------------------
+
+    def initialize_rival(self, player: PlayerProfile) -> RivalProfile:
+        """Spawn or return the world's rival shinobi, aligned opposite the player."""
+        if self.rival_profile:
+            return self.rival_profile
+        opposing_affinity = {
+            Affinity.FIRE: Affinity.WATER,
+            Affinity.WATER: Affinity.FIRE,
+            Affinity.EARTH: Affinity.WIND,
+            Affinity.WIND: Affinity.EARTH,
+        }.get(player.affinity, Affinity.WIND)
+        alignment = "opposing" if player.current_reputation_tier().value != "neutral" else "mirror"
+        self.rival_profile = RivalProfile(
+            name="Shin — The Scarred Wanderer",
+            affinity=opposing_affinity,
+            alignment=alignment,
+        )
+        return self.rival_profile
+
+    def update_rival_progress(self, player: PlayerProfile, *, region_just_cleared: str) -> Dict[str, Any]:
+        """Advance the rival's cleared-region list one region behind the player."""
+        rival = self.initialize_rival(player)
+        rival.encounter_count += 1
+        cleared_player = [r.name for r in self.regions if r.cleared]
+        # Rival clears the previous region the player was in (one step behind).
+        for region_name in cleared_player:
+            if region_name != region_just_cleared and region_name not in rival.cleared_regions:
+                rival.advance_region(region_name)
+                # Rival claims one item from that region as competition.
+                region = self._find_region(region_name)
+                if region.boss_rewards:
+                    loot_key = sorted(region.boss_rewards.keys())[0]
+                    loot_name = region.boss_rewards[loot_key]
+                    if loot_name not in rival.loot_claims:
+                        rival.loot_claims.append(loot_name)
+        player_alignment = player.current_reputation_tier().value
+        relationship = rival.update_relationship(player.reputation, player_alignment)
+        return {
+            "rival_name": rival.name,
+            "rival_affinity": rival.affinity.value,
+            "rival_cleared_regions": list(rival.cleared_regions),
+            "rival_loot_claims": list(rival.loot_claims),
+            "relationship": relationship,
+            "encounter_count": rival.encounter_count,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 8 — Move training (repair proficiency)
+    # ------------------------------------------------------------------
+
+    def train_move(self, player: PlayerProfile, move_name: str) -> Dict[str, Any]:
+        """Restore a move's proficiency to full by spending credits at a hub village.
+
+        Cost scales with how degraded the proficiency is.
+        """
+        if move_name not in player.unlocked_move_names:
+            raise ValueError(f'Move "{move_name}" is not unlocked.')
+        current = player.move_proficiency.get(move_name, MOVE_PROFICIENCY_DEFAULT)
+        deficit = MOVE_PROFICIENCY_MAX - current
+        cost = MOVE_TRAIN_CREDIT_COST + deficit // 2
+        player.spend_credits(cost)
+        player.move_proficiency[move_name] = MOVE_PROFICIENCY_MAX
+        return {
+            "move": move_name,
+            "proficiency_before": current,
+            "proficiency_after": MOVE_PROFICIENCY_MAX,
+            "credits_spent": cost,
+            "remaining_credits": player.credits,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 10 — Boss echo rematch
+    # ------------------------------------------------------------------
+
+    def initiate_boss_echo(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        """Trigger an optional echo rematch for a previously defeated region boss.
+
+        The echo boss fights with an aggressive stance and borrows one of the
+        player's most-used attack move names.
+        """
+        region = self._find_region(region_name)
+        if not region.cleared:
+            raise ValueError(f'Region "{region_name}" must be cleared before an echo rematch.')
+        villain = self._find_villain(region.boss)
+        if not villain.defeated:
+            raise ValueError(f'Boss "{region.boss}" has not been defeated yet.')
+        # Determine borrowed moves from player's top attack moves
+        attack_moves = player.moves_by_set.get(MoveCategory.ATTACK, [])
+        borrowed = [m.name for m in attack_moves[:BOSS_ECHO_EXTRA_MOVE_COUNT]]
+        echo = self.boss_echo_registry.get(region_name)
+        if echo is None:
+            echo = BossEchoForm(
+                region_name=region_name,
+                boss_name=region.boss,
+                echo_stance=BOSS_ECHO_STANCE_OVERRIDE,
+                borrowed_move_names=borrowed,
+            )
+            self.boss_echo_registry[region_name] = echo
+        else:
+            echo.borrowed_move_names = borrowed
+        echo.times_challenged += 1
+        boosted_scale = round(villain.signature_power.power_scale + BOSS_ECHO_POWER_SCALE_BOOST, 3)
+        self._log_tapestry(
+            event_type="boss_echo",
+            label=f"Echo of {region.boss} rises at {region_name}.",
+            causes=[f"region:{region_name}"],
+            effects={"echo_stance": BOSS_ECHO_STANCE_OVERRIDE.value, "boosted_scale": boosted_scale},
+        )
+        return {
+            "region": region_name,
+            "boss": region.boss,
+            "echo_stance": BOSS_ECHO_STANCE_OVERRIDE.value,
+            "boosted_power_scale": boosted_scale,
+            "borrowed_moves": list(echo.borrowed_move_names),
+            "times_challenged": echo.times_challenged,
+            "original_signature": villain.signature_power.name,
+        }
+
+    def resolve_boss_echo_defeat(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        """Record a successful echo rematch completion and grant a small reward."""
+        echo = self.boss_echo_registry.get(region_name)
+        if not echo:
+            raise ValueError(f'No echo rematch registered for region "{region_name}".')
+        echo.times_defeated += 1
+        xp_bonus = 25
+        credit_bonus = 30
+        player.stats.gain_xp(xp_bonus)
+        player.earn_credits(credit_bonus)
+        self._log_tapestry(
+            event_type="boss_echo_defeat",
+            label=f"Echo of {echo.boss_name} defeated at {region_name}.",
+            causes=[f"region:{region_name}"],
+            effects={"xp_bonus": xp_bonus, "credit_bonus": credit_bonus},
+        )
+        return {
+            "region": region_name,
+            "boss": echo.boss_name,
+            "times_defeated": echo.times_defeated,
+            "xp_bonus": xp_bonus,
+            "credit_bonus": credit_bonus,
+            "remaining_credits": player.credits,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 11 — Trophy near-miss live visibility
+    # ------------------------------------------------------------------
+
+    def get_trophy_near_miss_live(self, player: PlayerProfile) -> List[Dict[str, Any]]:
+        """Return live trophy near-miss data for HUD display during an active run.
+
+        Identical to the end-of-run trophy near-miss but surfaced as a public
+        method so it can be called at any point during play.
+        """
+        return self._build_trophy_near_miss(player)
+
+    # ------------------------------------------------------------------
+    # Feature 12 — Weapon repair (hub service)
+    # ------------------------------------------------------------------
+
+    def repair_weapon(self, player: PlayerProfile, weapon_name: str) -> Dict[str, Any]:
+        """Restore a weapon's durability to full by spending credits.
+
+        Raises ValueError if the player cannot afford the repair.
+        """
+        known = {weapon.name for weapon in self.weapons} | {weapon.name for weapon in player.weapons}
+        if weapon_name not in known:
+            raise ValueError(f'Weapon "{weapon_name}" is not recognised.')
+        current = player.weapon_durability.get(weapon_name, WEAPON_DURABILITY_START)
+        deficit = WEAPON_DURABILITY_MAX - current
+        cost = WEAPON_REPAIR_CREDIT_COST_BASE + deficit * WEAPON_REPAIR_CREDIT_COST_PER_UNIT
+        player.spend_credits(cost)
+        player.weapon_durability[weapon_name] = WEAPON_DURABILITY_MAX
+        return {
+            "weapon": weapon_name,
+            "durability_before": current,
+            "durability_after": WEAPON_DURABILITY_MAX,
+            "credits_spent": cost,
+            "remaining_credits": player.credits,
+        }
+
+    # ------------------------------------------------------------------
+    # Feature 13 — Scouting payoff
+    # ------------------------------------------------------------------
+
+    def scout_region(self, player: PlayerProfile, region_name: str) -> Dict[str, Any]:
+        """Use the player's scouting attribute to reveal pre-mission intel about a region.
+
+        Higher scouting values reveal more accurate or valuable intelligence categories.
+        The revealed category rotates deterministically based on the player's scouting
+        attribute and how many times the region has been scouted.
+        """
+        region = self._find_region(region_name)
+        scout_value = player.action_attributes.get("scouting", 1)
+        scout_count = player.encounter_history.get(region_name, 0)
+        # Deterministic category rotation based on scout value and encounter count
+        category_index = (scout_value + scout_count) % len(SCOUTING_INTEL_CATEGORIES)
+        category = SCOUTING_INTEL_CATEGORIES[category_index]
+        reliable = scout_value >= SCOUTING_MIN_ATTRIBUTE
+
+        intel: Dict[str, Any] = {
+            "region": region_name,
+            "scouting_value": scout_value,
+            "reliable": reliable,
+            "category": category,
+        }
+
+        if category == "enemy_count":
+            enemy_pool = region.encounter_table or region.enemies
+            intel["enemy_count"] = len(enemy_pool)
+            intel["hint"] = (
+                f"{region_name} has {len(enemy_pool)} distinct encounter types."
+                if reliable else
+                "Intel is too noisy to get an accurate enemy count."
+            )
+        elif category == "elite_position":
+            important_enemies = [
+                e for e in (region.encounter_table or region.enemies)
+                if e in ENEMY_EXCLUSIVE_MOVE_SPECS
+            ]
+            intel["elite_enemies"] = important_enemies if reliable else []
+            intel["hint"] = (
+                f"Elite enemies spotted: {', '.join(important_enemies) or 'none detected'}."
+                if reliable else
+                "Scout confirms elite presence but cannot pinpoint location."
+            )
+        elif category == "boss_move_preview":
+            villain = self._find_villain(region.boss) if region.boss else None
+            if villain and reliable:
+                intel["boss_signature_move"] = villain.signature_power.name
+                intel["boss_affinity"] = villain.primary_affinity.value
+                intel["hint"] = (
+                    f"{region.boss} relies on {villain.signature_power.name} "
+                    f"({villain.primary_affinity.value} affinity)."
+                )
+            else:
+                intel["boss_signature_move"] = None
+                intel["hint"] = "Scout reports unusual energy near the boss territory."
+        elif category == "hidden_poi":
+            hidden_pois = [poi.name for poi in region.points_of_interest if poi.poi_type != "hub"]
+            intel["hidden_pois"] = hidden_pois[:2] if reliable else []
+            intel["hint"] = (
+                f"Hidden sites located: {', '.join(hidden_pois[:2]) or 'none found'}."
+                if reliable else
+                "Faint signs of hidden activity but nothing confirmed."
+            )
+
+        return intel
+
+    # ------------------------------------------------------------------
+    # Feature 14 — Cross-playthrough karmic inheritance
+    # ------------------------------------------------------------------
+
+    def compute_karmic_inheritance(self) -> Dict[str, Any]:
+        """Derive a starting bonus for the next run based on the vault's dominant playstyle.
+
+        Returns the best-fit inheritance style and the concrete bonuses it unlocks.
+        Returns a no-bonus result if the vault has fewer than 2 archived runs.
+        """
+        if len(self.vault_historic_ninjas) < 2:
+            return {
+                "eligible": False,
+                "reason": "At least 2 completed runs required for karmic inheritance.",
+                "style": None,
+                "reputation_bonus": 0,
+                "free_move_style": None,
+            }
+        heroic_count = sum(
+            1 for entry in self.vault_historic_ninjas
+            if int(entry.get("reputation", 0)) >= HEROIC_THRESHOLD_MIN
+        )
+        rogue_count = sum(
+            1 for entry in self.vault_historic_ninjas
+            if int(entry.get("reputation", 0)) <= ROGUE_THRESHOLD_MIN
+        )
+        nonlethal_count = sum(
+            1 for entry in self.vault_historic_ninjas
+            if bool(entry.get("nonlethal_path", False))
+        )
+        counts = {
+            "heroic": heroic_count,
+            "rogue": rogue_count,
+            "nonlethal": nonlethal_count,
+        }
+        dominant_style = max(counts, key=lambda k: (counts[k], k))
+        if counts[dominant_style] == 0:
+            return {
+                "eligible": False,
+                "reason": "No dominant playstyle has emerged across archived runs.",
+                "style": None,
+                "reputation_bonus": 0,
+                "free_move_style": None,
+            }
+        rep_direction = {
+            "heroic": KARMIC_INHERITANCE_REP_BONUS,
+            "rogue": -KARMIC_INHERITANCE_REP_BONUS,
+            "nonlethal": KARMIC_INHERITANCE_REP_BONUS,
+        }[dominant_style]
+        free_move_style = dominant_style  # The new run unlocks one matching-style move for free
+        return {
+            "eligible": True,
+            "style": dominant_style,
+            "dominant_counts": counts,
+            "reputation_bonus": rep_direction,
+            "free_move_style": free_move_style,
+            "description": (
+                f"Past runs favor the {dominant_style} path.  "
+                f"New run gains {abs(rep_direction)} reputation toward that alignment "
+                f"and may claim one {free_move_style}-style move for free."
+            ),
+        }
+
+    def apply_karmic_inheritance(self, player: PlayerProfile) -> Dict[str, Any]:
+        """Apply the karmic inheritance bonuses to a freshly started player profile."""
+        inheritance = self.compute_karmic_inheritance()
+        if not inheritance["eligible"]:
+            return inheritance
+        rep_bonus = int(inheritance["reputation_bonus"])
+        player.update_reputation(rep_bonus)
+        inheritance["applied"] = True
+        inheritance["new_reputation"] = player.reputation
+        return inheritance
+
     def get_trophy_progress(self, player: PlayerProfile) -> List[Dict[str, Any]]:
         progress = []
         cleared_regions = sum(1 for region in self.regions if region.cleared)
@@ -4879,6 +5793,17 @@ class NinjaWorld:
                 }
                 for effect_name, payload in player_snapshot.get("active_status_effects", {}).items()
             },
+            chakra=int(player_snapshot.get("chakra", CHAKRA_START)),
+            move_proficiency={
+                k: int(v) for k, v in player_snapshot.get("move_proficiency", {}).items()
+            },
+            nonlethal_flow_streak=int(player_snapshot.get("nonlethal_flow_streak", 0)),
+            weapon_durability={
+                k: int(v) for k, v in player_snapshot.get("weapon_durability", {}).items()
+            },
+            reputation_inactivity_ticks=int(
+                player_snapshot.get("reputation_inactivity_ticks", 0)
+            ),
         )
         for category_name, moves in player_snapshot.get("moves_by_set", {}).items():
             category = MoveCategory(category_name)

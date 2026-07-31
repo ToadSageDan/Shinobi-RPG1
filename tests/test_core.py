@@ -836,6 +836,60 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("Nightglass Kunai", player.reward_inventory["weapon"])
         self.assertEqual(result["remaining_credits"], player.credits)
 
+    def test_city_shops_are_seeded_across_regions(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        shops = world.get_city_shops(player)
+        self.assertGreaterEqual(len(shops), len(world.regions))
+        self.assertEqual({shop["region_name"] for shop in shops}, {region.name for region in world.regions})
+
+    def test_wayfarer_anchor_purchase_unlocks_mobile_fast_travel_tool(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for quest_id in ("Q1", "Q2", "Q3", "Q4"):
+            world.complete_quest(player, quest_id)
+        player.credits = 999
+        result = world.purchase_shop_item(player, "wayfarer_anchor", city_shop_key="crestfall_wind_market")
+        self.assertIn("Wayfarer Anchor", player.owned_tools)
+        self.assertIn("Wayfarer Anchor", player.reward_inventory["tool"])
+        self.assertEqual(result["remaining_credits"], player.credits)
+
+    def test_mobile_fast_travel_can_be_set_after_buying_tool(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        for quest_id in ("Q1", "Q2", "Q3", "Q4"):
+            world.complete_quest(player, quest_id)
+        player.credits = 999
+        world.purchase_shop_item(player, "wayfarer_anchor", city_shop_key="crestfall_wind_market")
+        placement = world.set_mobile_fast_travel(player, "Leafrise Village")
+        self.assertEqual(placement["node"], "Leafrise Village")
+        self.assertIn("Leafrise Village", world.get_available_fast_travel_points(player))
+        travel = world.fast_travel(player, "Leafrise Village")
+        self.assertTrue(travel["used_mobile_anchor"])
+
+    def test_pickpocket_uses_raiseable_attribute(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.attribute_points = 4
+        player.raise_action_attribute("pickpocket", 3)
+        player.stats.agility = 16
+        before = player.credits
+        result = world.attempt_pickpocket(player, "Quartermaster Iori")
+        self.assertTrue(result["success"])
+        self.assertGreater(player.credits, before)
+        self.assertEqual(player.pickpocket_history["success"], 1)
+
+    def test_quest_distribution_is_evenly_assigned_across_regions(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        distribution = world.get_quest_distribution()
+        counts = [len(entries) for entries in distribution.values()]
+        self.assertEqual(len(distribution), len(world.regions))
+        self.assertLessEqual(max(counts) - min(counts), 1)
+
+    def test_city_npc_interaction_exposes_intel_and_trade_context(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        intel = world.interact_city_npc(player, "Quartermaster Iori", interaction="gather_intel")
+        trade = world.interact_city_npc(player, "Quartermaster Iori", interaction="trade")
+        self.assertIn("intel_check", intel)
+        self.assertIn("shops", trade)
+        self.assertTrue(trade["shops"])
+
     def test_trophy_progress_contains_near_miss(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for _ in range(2):
@@ -1037,6 +1091,20 @@ class CoreSystemTests(unittest.TestCase):
             restored_world.get_memory_store(player.name),
             ["Recovered the moon archive seal."],
         )
+
+    def test_snapshot_roundtrip_preserves_city_systems_and_action_attributes(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.attribute_points = 3
+        player.raise_action_attribute("commerce", 2)
+        player.unlock_tool("Wayfarer Anchor")
+        world.set_mobile_fast_travel(player, "Leafrise Village")
+        snapshot = world.to_snapshot(player)
+        restored_world, restored_player = world.from_snapshot(snapshot)
+        self.assertEqual(restored_player.action_attributes["commerce"], player.action_attributes["commerce"])
+        self.assertIn("Wayfarer Anchor", restored_player.owned_tools)
+        self.assertEqual(restored_player.mobile_fast_travel_node, "Leafrise Village")
+        self.assertTrue(restored_world.city_shops)
+        self.assertTrue(restored_world.city_npcs)
 
     # ------------------------------------------------------------------
     # Q6-Q15 quest branching tests

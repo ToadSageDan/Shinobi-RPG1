@@ -7,6 +7,86 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Sequence, Set, Tuple
 
+__all__ = [
+    # Enums
+    "Affinity",
+    "MoveCategory",
+    "TechniqueType",
+    "WeaponType",
+    "StatusEffectType",
+    "VillainStance",
+    "TrophyCategory",
+    "TrophyTier",
+    "ReputationTier",
+    "QuestStatus",
+    # Dataclass models
+    "Move",
+    "Weapon",
+    "MoveSkin",
+    "Skin",
+    "Backstory",
+    "ArcDefinition",
+    "RivalProfile",
+    "BossEchoForm",
+    "VillainProfile",
+    "Trophy",
+    "Quest",
+    "PointOfInterest",
+    "CityShop",
+    "CityNPC",
+    "Region",
+    "PlayerStats",
+    "PlayerProfile",
+    "NinjaWorld",
+    # Public constants
+    "AFFINITY_RESONANCE_PAIRS",
+    "ALLY_COMBAT_ABILITIES",
+    "BASE_XP_PER_LEVEL",
+    "BOSS_ECHO_POWER_SCALE_BOOST",
+    "CHAKRA_COST",
+    "CHAKRA_MAX",
+    "CHAKRA_REGEN_ESCAPE",
+    "CHAKRA_START",
+    "DEFAULT_ALLY_MIN_COUNT",
+    "HEROIC_THRESHOLD_MIN",
+    "KARMIC_INHERITANCE_REP_BONUS",
+    "KILL_REP_LOSS",
+    "MOVE_PROFICIENCY_DEFAULT",
+    "MOVE_PROFICIENCY_MAX",
+    "MOVE_PROFICIENCY_LOW_THRESHOLD",
+    "MOVE_PROFICIENCY_SCALE_FLOOR",
+    "MOVE_TRAIN_CREDIT_COST",
+    "NONLETHAL_CHARM_MASTER_THRESHOLD",
+    "NONLETHAL_CHARM_REP_GAIN",
+    "NONLETHAL_EVASION_MASTER_THRESHOLD",
+    "NONLETHAL_EVASION_REP_GAIN",
+    "NONLETHAL_FLOW_CHAIN_THRESHOLD",
+    "NONLETHAL_STEALTH_MASTER_THRESHOLD",
+    "NONLETHAL_STEALTH_REP_GAIN",
+    "PATROL_STATE_ALERTED",
+    "PATROL_STATE_COMBAT_LOCKED",
+    "PATROL_STATE_UNDETECTED",
+    "REPUTATION_DECAY_AMOUNT",
+    "REPUTATION_DECAY_INACTIVITY_TICKS",
+    "ROGUE_THRESHOLD_MIN",
+    "SCOUTING_INTEL_CATEGORIES",
+    "STATUS_EFFECT_BANDS",
+    "TROPHY_BATTLE_HARDENED",
+    "TROPHY_GHOST_STEP",
+    "WEAPON_DURABILITY_LOW_THRESHOLD",
+    "WEAPON_DURABILITY_MAX",
+    "WEAPON_DURABILITY_SCALE_FLOOR",
+    "WEAPON_DURABILITY_START",
+    "WEAPON_REPAIR_CREDIT_COST_BASE",
+    # Public functions
+    "assign_affinity_from_choices",
+    "build_mvp_world",
+    "enemy_exclusive_move_for",
+    "get_learnable_enemy_moves",
+    "load_world_snapshot",
+    "resolve_affinity_minigame",
+    "save_world_snapshot",
+]
 
 class Affinity(str, Enum):
     FIRE = "fire"
@@ -1019,7 +1099,14 @@ class RivalProfile:
 
     def update_relationship(self, player_reputation: int, player_alignment: str) -> str:
         if self.encounter_count >= 3:
-            if player_alignment == self.alignment:
+            alignment_matches = player_alignment == self.alignment
+            # Heroic reputation nudges toward friendship; rogue reputation toward nemesis.
+            # These override alignment when reputation is strongly committed (|rep| >= 50).
+            if player_reputation >= 50:
+                self.relationship = "friend"
+            elif player_reputation <= -50:
+                self.relationship = "nemesis"
+            elif alignment_matches:
                 self.relationship = "friend"
             else:
                 self.relationship = "nemesis"
@@ -1414,19 +1501,57 @@ class PlayerProfile:
         escape_difficulty: int = 6,
         target_name: str | None = None,
         lock_on: bool = False,
+        weapon_name: str | None = None,
     ) -> Dict[str, Any]:
         """Execute an unlocked move and return deterministic MVP combat output.
 
         ``escape_difficulty`` is only used for Escape moves and ignored for
         Attack, Defense, and Ultimate categories.
+
+        ``weapon_name`` optionally names the weapon being used.  When provided
+        and the weapon is in the player's reward inventory, its durability is
+        degraded each call and the resulting power ratio is applied to all
+        damage / guard / power values.
+
+        Chakra is consumed automatically based on move category; the remaining
+        chakra and an ``insufficient_chakra`` flag are always included in the
+        returned result so callers can react to chakra exhaustion.  Move
+        proficiency is also tracked: each call restores proficiency for the
+        executed move (reversing decay from unused encounters) and applies a
+        scale modifier that reduces effectiveness below the low threshold.
         """
         move = self.get_move(move_name)
         if move.status_effects:
             self.apply_status_effects(move.status_effects)
         combat_physics = self._build_combat_physics(move)
         combat_targeting = self._resolve_targeting_profile(move, target_name=target_name, lock_on=lock_on)
+
+        # --- Feature 3: Chakra ---
+        chakra_sufficient = self.consume_chakra(move.category.value)
+
+        # --- Feature 8: Move proficiency ---
+        proficiency_result = self.use_move_proficiency(move_name)
+        proficiency_modifier = proficiency_result["scale_modifier"]
+
+        # --- Feature 12: Weapon durability (optional) ---
+        durability_ratio = 1.0
+        durability_result: Dict[str, Any] | None = None
+        if weapon_name is not None and weapon_name in self.reward_inventory.get("weapon", []):
+            durability_result = self.degrade_weapon(weapon_name)
+            durability_ratio = durability_result["power_ratio"]
+
+        effective_scale = move.power_scale * proficiency_modifier * durability_ratio
+
+        chakra_meta = {
+            "chakra_remaining": self.chakra,
+            "insufficient_chakra": not chakra_sufficient,
+            "proficiency": proficiency_result["proficiency"],
+            "proficiency_modifier": proficiency_modifier,
+            "durability_ratio": durability_ratio,
+        }
+
         if move.category == MoveCategory.ATTACK:
-            damage = int(self.stats.power * move.power_scale)
+            damage = int(self.stats.power * effective_scale)
             return {
                 "move": move.name,
                 "category": move.category.value,
@@ -1434,9 +1559,10 @@ class PlayerProfile:
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
+                **chakra_meta,
             }
         if move.category == MoveCategory.DEFENSE:
-            guard = int(self.stats.defense * move.power_scale)
+            guard = int(self.stats.defense * effective_scale)
             return {
                 "move": move.name,
                 "category": move.category.value,
@@ -1444,9 +1570,10 @@ class PlayerProfile:
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
+                **chakra_meta,
             }
         if move.category == MoveCategory.ESCAPE:
-            escape_score = int(self.stats.agility * move.power_scale)
+            escape_score = int(self.stats.agility * effective_scale)
             escaped = escape_score >= escape_difficulty
             return {
                 "move": move.name,
@@ -1456,9 +1583,10 @@ class PlayerProfile:
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
+                **chakra_meta,
             }
         if move.category == MoveCategory.ULTIMATE:
-            damage = int((self.stats.power + self.stats.focus) * move.power_scale)
+            damage = int((self.stats.power + self.stats.focus) * effective_scale)
             return {
                 "move": move.name,
                 "category": move.category.value,
@@ -1466,9 +1594,10 @@ class PlayerProfile:
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
+                **chakra_meta,
             }
         if move.category == MoveCategory.SUMMON:
-            summon_power = int((self.stats.focus + self.stats.defense) * move.power_scale)
+            summon_power = int((self.stats.focus + self.stats.defense) * effective_scale)
             return {
                 "move": move.name,
                 "category": move.category.value,
@@ -1477,6 +1606,7 @@ class PlayerProfile:
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
+                **chakra_meta,
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
 

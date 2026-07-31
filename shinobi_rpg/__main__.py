@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .client import runtime_package_json
 
+__all__ = ["main"]
+
 
 def main() -> int:
     print(runtime_package_json())

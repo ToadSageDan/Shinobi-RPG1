@@ -7,6 +7,14 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from .core import MoveCategory, build_mvp_world
+from .framework import DEFAULT_BOOTSTRAP_DECISIONS
+
+__all__ = [
+    "RuntimeScene",
+    "ShinobiRuntimeClient",
+    "VISUAL_TARGET",
+    "runtime_package_json",
+]
 
 VISUAL_TARGET = {
     "style": "2.5D_stylized",
@@ -35,7 +43,7 @@ class ShinobiRuntimeClient:
     """Client shell that renders simulation data into runtime scene models."""
 
     def __init__(self, player_name: str = "Dan") -> None:
-        self.world, self.player = build_mvp_world(player_name, [3, 1, 2, 4, 5])
+        self.world, self.player = build_mvp_world(player_name, list(DEFAULT_BOOTSTRAP_DECISIONS))
 
     def build_title_menu_scene(self) -> RuntimeScene:
         return RuntimeScene(

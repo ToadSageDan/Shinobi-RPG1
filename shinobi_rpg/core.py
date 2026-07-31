@@ -104,6 +104,61 @@ REGION_ENCOUNTER_XP_OTHER = 9
 DECISION_OUTCOMES = {"kill", "charm", "stealth", "evasion"}
 DAY_NIGHT_CYCLE = ("dawn", "day", "dusk", "night")
 WEATHER_CYCLE = ("clear", "breezy", "rain", "storm", "fog")
+ACTION_ATTRIBUTE_SPECS: Dict[str, Dict[str, Any]] = {
+    "stealth": {
+        "linked_stat": "agility",
+        "default": 1,
+        "cap": 10,
+        "label": "Stealth",
+        "improves": "infiltration and silent route checks",
+    },
+    "diplomacy": {
+        "linked_stat": "focus",
+        "default": 1,
+        "cap": 10,
+        "label": "Diplomacy",
+        "improves": "social and negotiation checks",
+    },
+    "commerce": {
+        "linked_stat": "focus",
+        "default": 1,
+        "cap": 10,
+        "label": "Commerce",
+        "improves": "shop pricing and market access",
+    },
+    "pickpocket": {
+        "linked_stat": "agility",
+        "default": 1,
+        "cap": 10,
+        "label": "Pickpocket",
+        "improves": "theft attempts against distracted targets",
+    },
+    "scouting": {
+        "linked_stat": "focus",
+        "default": 1,
+        "cap": 10,
+        "label": "Scouting",
+        "improves": "field intel and route reading",
+    },
+    "mobility": {
+        "linked_stat": "agility",
+        "default": 1,
+        "cap": 10,
+        "label": "Mobility",
+        "improves": "travel setup and traversal actions",
+    },
+}
+ATTRIBUTE_POINTS_PER_LEVEL = 2
+MOBILE_FAST_TRAVEL_TOOL_NAME = "Wayfarer Anchor"
+PICKPOCKET_REPUTATION_PENALTY_ON_CAUGHT = -3
+PICKPOCKET_REPUTATION_PENALTY_ON_SUCCESS = -1
+QUEST_LOCATION_ROTATION = (
+    ("Verdant Gate", "Leafrise Village", "Watch Captain Dan"),
+    ("Ashen Cradle", "Cinder Port", "Harbormaster Moon"),
+    ("Tideglass Basin", "Azure Rest", "Archivist Dot"),
+    ("Stormwall Ridge", "Crestfall Outpost", "Warden Shiro"),
+    ("Sunken Hollow", "Dusk Refuge", "Medic Sleep"),
+)
 AOE_TARGETING_TERMS = ("nova", "storm", "maelstrom", "cyclone", "burst", "eruption", "field", "convergence")
 STRAIGHT_LINE_TARGETING_TERMS = ("line", "lance", "spear", "arc", "bolt", "shot", "slice", "current")
 OUTCOME_BRANCH_PATH_KEYS = {
@@ -111,6 +166,23 @@ OUTCOME_BRANCH_PATH_KEYS = {
     "charm": "charm_path",
     "stealth": "stealth_path",
     "evasion": "evasion_path",
+}
+CITY_QUEST_PRESSURE_BY_BRANCH = {
+    "kill_path": 2,
+    "rogue_path": 2,
+    "default": 1,
+    "stealth_path": 1,
+    "evasion_path": 1,
+    "charm_path": -1,
+    "heroic_path": -1,
+    "nonlethal_path": -1,
+}
+WORLD_MAP_REGION_COORDINATES = {
+    "Verdant Gate": (4, 6),
+    "Ashen Cradle": (16, 3),
+    "Tideglass Basin": (28, 5),
+    "Stormwall Ridge": (24, 11),
+    "Sunken Hollow": (12, 12),
 }
 STEALTH_GATED_QUEST_IDS = {"Q3", "Q5", "Q10"}
 REFORMED_VILLAIN_DIALOGUE_HOOKS: Dict[str, Dict[str, str]] = {
@@ -842,6 +914,9 @@ class Quest:
     villain_stance_impacts: Dict[str, int] = field(default_factory=dict)
     reputation_impacts: Dict[str, int] = field(default_factory=dict)
     trophy_hooks: Tuple[str, ...] = field(default_factory=tuple)
+    region_name: str = ""
+    city_hub: str = ""
+    quest_giver: str = ""
 
 
 @dataclass
@@ -853,6 +928,30 @@ class PointOfInterest:
     threats: Tuple[str, ...] = field(default_factory=tuple)
     services: Tuple[str, ...] = field(default_factory=tuple)
     connected_nodes: Tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass
+class CityShop:
+    key: str
+    name: str
+    region_name: str
+    city_name: str
+    specialty: str
+    description: str
+    inventory_item_keys: Tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass
+class CityNPC:
+    name: str
+    region_name: str
+    city_name: str
+    role: str
+    disposition: str
+    dialogue: str
+    services: Tuple[str, ...] = field(default_factory=tuple)
+    pickpocket_difficulty: int = 6
+    pickpocket_rewards: Tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -910,7 +1009,7 @@ class PlayerProfile:
     unlocked_skins: List[Skin] = field(default_factory=list)
     weapons: List[Weapon] = field(default_factory=list)
     reward_inventory: Dict[str, List[str]] = field(
-        default_factory=lambda: {"weapon": [], "clothing": [], "move": []}
+        default_factory=lambda: {"weapon": [], "clothing": [], "move": [], "tool": []}
     )
     red_bar_power_claims: Dict[str, str] = field(default_factory=dict)
     enemy_move_claims: Dict[str, str] = field(default_factory=dict)
@@ -937,6 +1036,17 @@ class PlayerProfile:
     credits: int = 100
     active_status_effects: Dict[str, Dict[str, int]] = field(default_factory=dict)
     locked_on_target: str | None = None
+    owned_tools: List[str] = field(default_factory=list)
+    mobile_fast_travel_node: str | None = None
+    action_attributes: Dict[str, int] = field(
+        default_factory=lambda: {
+            key: int(spec["default"]) for key, spec in ACTION_ATTRIBUTE_SPECS.items()
+        }
+    )
+    attribute_points: int = 0
+    pickpocket_history: Dict[str, int] = field(
+        default_factory=lambda: {"success": 0, "caught": 0}
+    )
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
@@ -1321,12 +1431,73 @@ class PlayerProfile:
         self.credits -= amount
         return self.credits
 
+    def gain_attribute_points(self, levels_gained: int) -> int:
+        if levels_gained < 0:
+            raise ValueError("Levels gained cannot be negative.")
+        self.attribute_points += levels_gained * ATTRIBUTE_POINTS_PER_LEVEL
+        return self.attribute_points
+
+    def raise_action_attribute(self, attribute_name: str, points: int = 1) -> int:
+        normalized = attribute_name.strip().lower()
+        if normalized not in ACTION_ATTRIBUTE_SPECS:
+            raise ValueError(f'Unknown action attribute "{attribute_name}".')
+        if points <= 0:
+            raise ValueError("Attribute spend must be greater than zero.")
+        if points > self.attribute_points:
+            raise ValueError("Insufficient attribute points.")
+        cap = int(ACTION_ATTRIBUTE_SPECS[normalized]["cap"])
+        current = int(self.action_attributes.get(normalized, ACTION_ATTRIBUTE_SPECS[normalized]["default"]))
+        updated = min(cap, current + points)
+        spent = updated - current
+        if spent <= 0:
+            raise ValueError(f'Action attribute "{attribute_name}" is already at cap.')
+        self.action_attributes[normalized] = updated
+        self.attribute_points -= spent
+        return updated
+
+    def resolve_action_check(
+        self,
+        action_name: str,
+        *,
+        difficulty: int = 6,
+        situational_bonus: int = 0,
+    ) -> Dict[str, Any]:
+        normalized = action_name.strip().lower()
+        if normalized not in ACTION_ATTRIBUTE_SPECS:
+            raise ValueError(f'Unknown action attribute "{action_name}".')
+        if difficulty < 0:
+            raise ValueError("Difficulty cannot be negative.")
+        spec = ACTION_ATTRIBUTE_SPECS[normalized]
+        linked_stat_name = str(spec["linked_stat"])
+        linked_stat_value = int(getattr(self.stats, linked_stat_name))
+        attribute_value = int(self.action_attributes.get(normalized, spec["default"]))
+        score = attribute_value * 2 + max(1, linked_stat_value // 4) + int(situational_bonus)
+        return {
+            "action": normalized,
+            "attribute_value": attribute_value,
+            "linked_stat": linked_stat_name,
+            "linked_stat_value": linked_stat_value,
+            "score": score,
+            "difficulty": difficulty,
+            "success": score >= difficulty,
+        }
+
     def grant_boss_reward(self, reward_type: str, reward_name: str) -> None:
         if reward_type not in self.reward_inventory:
             raise ValueError("Reward choice must be weapon, clothing, or move.")
         if reward_name in self.reward_inventory[reward_type]:
             raise ValueError(f'"{reward_name}" has already been granted for {reward_type}.')
         self.reward_inventory[reward_type].append(reward_name)
+
+    def unlock_tool(self, tool_name: str) -> str:
+        normalized = tool_name.strip()
+        if not normalized:
+            raise ValueError("Tool name cannot be empty.")
+        if normalized not in self.owned_tools:
+            self.owned_tools.append(normalized)
+        if normalized not in self.reward_inventory["tool"]:
+            self.reward_inventory["tool"].append(normalized)
+        return normalized
 
     def claim_red_bar_power(self, villain_name: str, move: Move) -> None:
         if villain_name in self.red_bar_power_claims:
@@ -1392,6 +1563,15 @@ class PlayerProfile:
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
             "locked_on_target": self.locked_on_target,
+            "owned_tools": list(self.owned_tools),
+            "mobile_fast_travel_node": self.mobile_fast_travel_node,
+            "action_attributes": {
+                key: int(value) for key, value in self.action_attributes.items()
+            },
+            "attribute_points": self.attribute_points,
+            "pickpocket_history": {
+                key: int(value) for key, value in self.pickpocket_history.items()
+            },
             "active_status_effects": {
                 effect_name: {
                     "duration": int(payload.get("duration", 0)),
@@ -1417,6 +1597,8 @@ class NinjaWorld:
     era_timeline: List[Dict[str, Any]] = field(default_factory=list)
     technique_library: List[Move] = field(default_factory=list)
     shop_inventory: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    city_shops: List[CityShop] = field(default_factory=list)
+    city_npcs: List[CityNPC] = field(default_factory=list)
     vault_historic_ninjas: List[dict] = field(default_factory=list)
     vault_meta_tapestry: List[Dict[str, Any]] = field(default_factory=list)
     active_run_tapestry: List[Dict[str, Any]] = field(default_factory=list)
@@ -1437,6 +1619,9 @@ class NinjaWorld:
     latent_decision_seeds: Dict[str, int] = field(default_factory=dict)
     latent_echo_history: List[Dict[str, Any]] = field(default_factory=list)
     npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    city_immersion_state: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    npc_consequence_state: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    npc_consequence_log: List[Dict[str, Any]] = field(default_factory=list)
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
     arc_transition_history: List[Dict[str, Any]] = field(default_factory=list)
@@ -1450,6 +1635,10 @@ class NinjaWorld:
             self.era_timeline = _seed_era_timeline()
         if not self.arcs:
             self.arcs = _seed_arcs()
+        if not self.city_shops:
+            self.city_shops = _seed_city_shops()
+        if not self.city_npcs:
+            self.city_npcs = _seed_city_npcs()
         if not self.region_state:
             self.region_state = {
                 region.name: {
@@ -1476,6 +1665,17 @@ class NinjaWorld:
             self.dynamic_region_chain = [region.name for region in self.regions]
         if not self.npc_evil_profiles:
             self.npc_evil_profiles = self._seed_npc_evil_profiles()
+        if not self.city_immersion_state:
+            city_names = sorted({npc.city_name for npc in self.city_npcs})
+            self.city_immersion_state = {
+                city_name: {"alert_level": 0, "intel_noise": 0, "quest_pressure": 0}
+                for city_name in city_names
+            }
+        if not self.npc_consequence_state:
+            self.npc_consequence_state = {
+                npc.name: {"suspicion": 0, "trust": 0, "intel_shared": 0}
+                for npc in self.city_npcs
+            }
         self.time_cycle_index = self.time_cycle_index % len(DAY_NIGHT_CYCLE)
         self.weather_cycle_index = self.weather_cycle_index % len(WEATHER_CYCLE)
 
@@ -2163,6 +2363,7 @@ class NinjaWorld:
             boss_move = _boss_exclusive_move_for(region.boss)
             player.add_move(boss_move, allow_cross_affinity=True)
         player.unlock_fast_travel(region.name)
+        player.unlock_fast_travel(region.village_hub)
         self.defeat_red_bar_ninja(player, region.boss)
         for ally in region.allies:
             player.adjust_ally_loyalty(ally, 1)
@@ -2520,6 +2721,123 @@ class NinjaWorld:
             raise ValueError(f'Region "{region_name}" not found.')
         return region
 
+    def _find_city_shop(self, shop_key: str) -> CityShop:
+        shop = next((item for item in self.city_shops if item.key == shop_key), None)
+        if not shop:
+            raise ValueError(f'City shop "{shop_key}" not found.')
+        return shop
+
+    def _find_city_npc(self, npc_name: str) -> CityNPC:
+        normalized = npc_name.strip().lower()
+        npc = next((item for item in self.city_npcs if item.name.strip().lower() == normalized), None)
+        if not npc:
+            raise ValueError(f'City NPC "{npc_name}" not found.')
+        return npc
+
+    def _ensure_city_state(self, city_name: str) -> Dict[str, int]:
+        state = self.city_immersion_state.setdefault(
+            city_name,
+            {"alert_level": 0, "intel_noise": 0, "quest_pressure": 0},
+        )
+        state["alert_level"] = max(0, int(state.get("alert_level", 0)))
+        state["intel_noise"] = max(0, int(state.get("intel_noise", 0)))
+        state["quest_pressure"] = max(0, int(state.get("quest_pressure", 0)))
+        return state
+
+    def _ensure_npc_consequence_state(self, npc_name: str) -> Dict[str, int]:
+        state = self.npc_consequence_state.setdefault(
+            npc_name,
+            {"suspicion": 0, "trust": 0, "intel_shared": 0},
+        )
+        state["suspicion"] = max(0, int(state.get("suspicion", 0)))
+        state["trust"] = max(0, int(state.get("trust", 0)))
+        state["intel_shared"] = max(0, int(state.get("intel_shared", 0)))
+        return state
+
+    def _record_npc_consequence(
+        self,
+        *,
+        npc: CityNPC,
+        action: str,
+        outcome: str,
+        detail: str,
+    ) -> Dict[str, Any]:
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
+        record = {
+            "npc": npc.name,
+            "city_name": npc.city_name,
+            "region_name": npc.region_name,
+            "action": action,
+            "outcome": outcome,
+            "detail": detail,
+            "city_alert_level": city_state["alert_level"],
+            "city_intel_noise": city_state["intel_noise"],
+            "city_quest_pressure": city_state["quest_pressure"],
+            "npc_suspicion": npc_state["suspicion"],
+            "npc_trust": npc_state["trust"],
+            "npc_intel_shared": npc_state["intel_shared"],
+        }
+        self.npc_consequence_log.append(record)
+        self.npc_consequence_log = self.npc_consequence_log[-200:]
+        return record
+
+    def get_quest_distribution(self) -> Dict[str, List[Dict[str, str]]]:
+        distribution: Dict[str, List[Dict[str, str]]] = {}
+        for quest in self.quests:
+            region_name = quest.region_name or "Unassigned"
+            city_hub = ""
+            if region_name != "Unassigned":
+                city_hub = quest.city_hub or self._find_region(region_name).village_hub
+            distribution.setdefault(region_name, []).append(
+                {
+                    "quest_id": quest.quest_id,
+                    "title": quest.title,
+                    "city_hub": city_hub,
+                    "quest_giver": quest.quest_giver,
+                }
+            )
+        return distribution
+
+    def generate_mock_world_map(self) -> Dict[str, Any]:
+        markers: List[Dict[str, Any]] = []
+        legend: List[Dict[str, Any]] = []
+        routes: List[Dict[str, Any]] = []
+        for index, region in enumerate(self.regions, start=1):
+            x, y = WORLD_MAP_REGION_COORDINATES.get(region.name, (2 + index * 5, 2 + (index % 4) * 3))
+            boss_arena = next((poi.name for poi in region.points_of_interest if poi.poi_type == "boss_arena"), region.boss)
+            marker = {
+                "marker": str(index),
+                "region": region.name,
+                "city_hub": region.village_hub,
+                "boss": region.boss,
+                "boss_location": boss_arena,
+                "coordinates": {"x": x, "y": y},
+                "climate": region.climate,
+                "terrain_profile": list(region.terrain_profile),
+                "interactive": True,
+            }
+            markers.append(marker)
+            legend.append(dict(marker))
+            if index < len(self.regions):
+                routes.append(
+                    {
+                        "from_marker": str(index),
+                        "to_marker": str(index + 1),
+                        "from_region": region.name,
+                        "to_region": self.regions[index].name,
+                        "route_type": "recommended_story_path",
+                    }
+                )
+        return {
+            "title": "Interactive World Map: Quiet Steel Confederacy",
+            "markers": markers,
+            "legend": legend,
+            "routes": routes,
+            "recommended_route": [region.name for region in self.regions],
+            "active_dynamic_route": list(self.dynamic_region_chain),
+        }
+
     def get_technique_catalog(
         self, *, affinity: Affinity | None = None, technique_type: TechniqueType | None = None
     ) -> List[Dict[str, Any]]:
@@ -2544,11 +2862,13 @@ class NinjaWorld:
         move = next((item for item in self.technique_library if item.name == move_name), None)
         if not move:
             raise ValueError(f'Move "{move_name}" not found in technique catalog.')
+        action_timeline = self._build_action_timeline(move)
         return {
             "move": move.name,
             "affinities": [affinity.value for affinity in move.affinities],
             "animation_profile": dict(move.animation_profile),
             "skill_physics": self._build_skill_physics(move),
+            "action_timeline": action_timeline,
         }
 
     def preview_affinity_combo_animation(
@@ -2559,6 +2879,7 @@ class NinjaWorld:
             move = next((item for item in self.technique_library if item.name == move_name), None)
             if not move:
                 raise ValueError(f'Move "{move_name}" not found in technique catalog.')
+            timeline = self._build_action_timeline(move, actor=f"combo_actor_{beat}", beat=beat)
             staged.append(
                 {
                     "beat": beat,
@@ -2570,9 +2891,34 @@ class NinjaWorld:
                     "hit": move.animation_profile.get("hit", ""),
                     "recovery": move.animation_profile.get("recovery", ""),
                     "physics": self._build_skill_physics(move),
+                    "action_timeline": timeline,
                 }
             )
         return {"combo_path": staged}
+
+    def _build_action_timeline(
+        self,
+        move: Move,
+        *,
+        actor: str = "player",
+        beat: int | None = None,
+    ) -> List[Dict[str, Any]]:
+        phase_duration_ms = {"startup": 320, "travel": 260, "hit": 180, "recovery": 300}
+        phases = ("startup", "travel", "hit", "recovery")
+        timeline: List[Dict[str, Any]] = []
+        for phase in phases:
+            cue = move.animation_profile.get(phase, "")
+            timeline.append(
+                {
+                    "phase": phase,
+                    "actor": actor,
+                    "beat": beat,
+                    "cue": cue,
+                    "duration_ms": phase_duration_ms[phase],
+                    "camera": "impact_push" if phase == "hit" else "tracking_follow",
+                }
+            )
+        return timeline
 
     def _build_skill_physics(self, move: Move) -> Dict[str, Any]:
         blood_scale = 0
@@ -2601,6 +2947,50 @@ class NinjaWorld:
             "already_defeated": already_defeated,
         }
 
+    def _build_city_quest_layer(self, quest: Quest, branch_key: str) -> Dict[str, Any]:
+        city_name = quest.city_hub or (
+            self._find_region(quest.region_name).village_hub if quest.region_name else "Unassigned"
+        )
+        city_state = self._ensure_city_state(city_name)
+        pressure_delta = int(CITY_QUEST_PRESSURE_BY_BRANCH.get(branch_key, CITY_QUEST_PRESSURE_BY_BRANCH["default"]))
+        prior_pressure = city_state["quest_pressure"]
+        city_state["quest_pressure"] = max(0, min(12, prior_pressure + pressure_delta))
+        city_state["intel_noise"] = max(
+            0,
+            min(8, city_state["intel_noise"] + (1 if pressure_delta > 1 else 0) - (1 if pressure_delta < 0 else 0)),
+        )
+        if pressure_delta > 1:
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 1)
+        elif pressure_delta < 0:
+            city_state["alert_level"] = max(0, city_state["alert_level"] - 1)
+        region_pressure = 0
+        if quest.region_name:
+            region_pressure = int(self.region_state.get(quest.region_name, {}).get("pressure", 0))
+        total_pressure = city_state["quest_pressure"] + region_pressure
+        if total_pressure >= 8:
+            city_mood = "lockdown"
+        elif total_pressure >= 4:
+            city_mood = "uneasy watch"
+        else:
+            city_mood = "measured calm"
+        narrative = (
+            f"{city_name} reacts with {city_mood}: {quest.quest_giver} tracks the fallout while wardens adjust "
+            f"patrol routes around this quest line."
+        )
+        return {
+            "city_name": city_name,
+            "region_name": quest.region_name,
+            "quest_giver": quest.quest_giver,
+            "branch_pressure_delta": pressure_delta,
+            "quest_pressure_before": prior_pressure,
+            "quest_pressure_after": city_state["quest_pressure"],
+            "alert_level": city_state["alert_level"],
+            "intel_noise": city_state["intel_noise"],
+            "region_pressure": region_pressure,
+            "mood": city_mood,
+            "narrative": narrative,
+        }
+
     def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
         if not quest:
@@ -2608,11 +2998,12 @@ class NinjaWorld:
         state = self._ensure_quest_resolution_state(player, quest)
 
         if not quest.branch_outcomes:
+            city_layer = self._build_city_quest_layer(quest, "default")
             return {
                 "quest_id": quest.quest_id,
                 "title": quest.title,
                 "branch_key": "default",
-                "outcome": quest.objective,
+                "outcome": f"{quest.objective} {city_layer['narrative']}",
                 "premise": quest.premise or quest.objective,
                 "objective": quest.objective,
                 "choices": list(quest.choices),
@@ -2622,6 +3013,7 @@ class NinjaWorld:
                 "reputation_impacts": dict(quest.reputation_impacts),
                 "trophy_hooks": list(quest.trophy_hooks),
                 "quest_resolution": dict(state),
+                "city_layer": city_layer,
                 "reformed_villain_hook": None,
             }
 
@@ -2633,6 +3025,8 @@ class NinjaWorld:
         reformed_hook = self._get_reformed_villain_hook(quest.quest_id)
         if reformed_hook:
             outcome = f"{outcome} {reformed_hook}"
+        city_layer = self._build_city_quest_layer(quest, branch_key)
+        outcome = f"{outcome} {city_layer['narrative']}"
         state = player.set_quest_resolution_context(
             quest.quest_id,
             stealth_required=quest.stealth_required,
@@ -2652,6 +3046,7 @@ class NinjaWorld:
             "reputation_impacts": dict(quest.reputation_impacts),
             "trophy_hooks": list(quest.trophy_hooks),
             "quest_resolution": dict(state),
+            "city_layer": city_layer,
             "reformed_villain_hook": reformed_hook,
         }
 
@@ -2696,6 +3091,7 @@ class NinjaWorld:
             completed=True,
         )
         levels_gained = player.stats.gain_xp(quest.reward_xp)
+        player.gain_attribute_points(levels_gained)
         credit_reward = QUEST_CREDIT_REWARD_BASE + (max(player.stats.level - 1, 0) * QUEST_CREDIT_REWARD_STEP)
         player.earn_credits(credit_reward)
 
@@ -2869,6 +3265,7 @@ class NinjaWorld:
         encounter_count = player.record_region_encounter(region_name)
         reward_xp = _region_encounter_xp_reward(encounter)
         levels_gained = player.stats.gain_xp(reward_xp)
+        player.gain_attribute_points(levels_gained)
         enemy_exclusive_move = enemy_exclusive_move_for(encounter)
         enemy_exclusive_move_name = enemy_exclusive_move.name if enemy_exclusive_move else None
         enemy_exclusive_move_unlocked = None
@@ -2912,6 +3309,8 @@ class NinjaWorld:
                 and item.get("requires_black_market")
             ):
                 price = max(1, int(round(price * (100 - ROGUE_SHOP_DISCOUNT_PERCENT) / 100)))
+            commerce_discount = min(max(player.action_attributes.get("commerce", 1) - 1, 0), 4)
+            price = max(1, price - commerce_discount)
             if item.get("requires_nonlethal") and not player.is_nonlethal_path_active():
                 continue
             if player.nonlethal_action_count() < int(item.get("min_nonlethal_actions", 0)):
@@ -2934,22 +3333,280 @@ class NinjaWorld:
                     "reward_type": item.get("reward_type"),
                     "reward_name": item.get("reward_name"),
                     "price": price,
+                    "shop_tags": list(item.get("shop_tags", ())),
                 }
             )
         return visible_items
 
-    def purchase_shop_item(self, player: PlayerProfile, item_key: str) -> Dict[str, Any]:
+    def get_city_shops(
+        self,
+        player: PlayerProfile,
+        *,
+        region_name: str | None = None,
+        city_name: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        visible_items = {item["key"]: item for item in self.get_shop_inventory(player)}
+        shops: List[Dict[str, Any]] = []
+        for shop in self.city_shops:
+            if region_name and shop.region_name != region_name:
+                continue
+            if city_name and shop.city_name != city_name:
+                continue
+            inventory = [
+                dict(visible_items[item_key])
+                for item_key in shop.inventory_item_keys
+                if item_key in visible_items
+            ]
+            shops.append(
+                {
+                    "key": shop.key,
+                    "name": shop.name,
+                    "region_name": shop.region_name,
+                    "city_name": shop.city_name,
+                    "specialty": shop.specialty,
+                    "description": shop.description,
+                    "inventory": inventory,
+                }
+            )
+        return shops
+
+    def purchase_shop_item(
+        self,
+        player: PlayerProfile,
+        item_key: str,
+        *,
+        city_shop_key: str | None = None,
+    ) -> Dict[str, Any]:
         inventory = {item["key"]: item for item in self.get_shop_inventory(player)}
         if item_key not in inventory:
             raise ValueError(f'Item "{item_key}" is not available for this player.')
+        if city_shop_key is not None:
+            shop = self._find_city_shop(city_shop_key)
+            if item_key not in shop.inventory_item_keys:
+                raise ValueError(f'Item "{item_key}" is not sold at shop "{city_shop_key}".')
         item = inventory[item_key]
         player.spend_credits(item["price"])
-        player.grant_boss_reward(item["reward_type"], item["reward_name"])
+        if item["reward_type"] == "tool":
+            player.unlock_tool(item["reward_name"])
+        else:
+            player.grant_boss_reward(item["reward_type"], item["reward_name"])
+            if item["reward_type"] == "move":
+                shop_move = next((move for move in self.technique_library if move.name == item["reward_name"]), None)
+                if shop_move and shop_move.name not in player.unlocked_move_names:
+                    player.add_move(shop_move, allow_cross_affinity=True)
         return {
             "item_key": item_key,
             "price": item["price"],
             "remaining_credits": player.credits,
         }
+
+    def get_city_npcs(
+        self,
+        *,
+        region_name: str | None = None,
+        city_name: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "name": npc.name,
+                "region_name": npc.region_name,
+                "city_name": npc.city_name,
+                "role": npc.role,
+                "disposition": npc.disposition,
+                "dialogue": npc.dialogue,
+                "services": list(npc.services),
+                "pickpocket_difficulty": npc.pickpocket_difficulty,
+            }
+            for npc in self.city_npcs
+            if (region_name is None or npc.region_name == region_name)
+            and (city_name is None or npc.city_name == city_name)
+        ]
+
+    def interact_city_npc(
+        self,
+        player: PlayerProfile,
+        npc_name: str,
+        *,
+        interaction: str = "talk",
+    ) -> Dict[str, Any]:
+        npc = self._find_city_npc(npc_name)
+        normalized = interaction.strip().lower()
+        result = {
+            "npc": npc.name,
+            "city_name": npc.city_name,
+            "region_name": npc.region_name,
+            "role": npc.role,
+            "interaction": normalized,
+            "dialogue": npc.dialogue,
+            "services": list(npc.services),
+        }
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
+        if normalized == "trade":
+            result["shops"] = self.get_city_shops(player, region_name=npc.region_name, city_name=npc.city_name)
+        elif normalized == "gather_intel":
+            suspicion_gap = max(0, npc_state["suspicion"] - npc_state["trust"])
+            intel_difficulty = max(3, 6 + city_state["intel_noise"] + suspicion_gap)
+            intel_bonus = max(0, npc_state["trust"] - npc_state["suspicion"])
+            intel_check = player.resolve_action_check(
+                "scouting",
+                difficulty=intel_difficulty,
+                situational_bonus=intel_bonus,
+            )
+            result["intel_check"] = intel_check
+            if intel_check["success"]:
+                npc_state["trust"] = min(6, npc_state["trust"] + 1)
+                npc_state["intel_shared"] = min(99, npc_state["intel_shared"] + 1)
+                city_state["quest_pressure"] = max(0, city_state["quest_pressure"] - 1)
+                result["intel"] = (
+                    f"{npc.name} shares verified route windows, checkpoint routines, and faction mood shifts around "
+                    f"{npc.city_name}."
+                )
+                consequence = self._record_npc_consequence(
+                    npc=npc,
+                    action="gather_intel",
+                    outcome="success",
+                    detail="Detailed intel shared after trust gains.",
+                )
+            else:
+                npc_state["suspicion"] = min(8, npc_state["suspicion"] + 1)
+                city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+                result["intel"] = (
+                    f"{npc.name} shares only rumor fragments while patrol chatter in {npc.city_name} grows louder."
+                )
+                consequence = self._record_npc_consequence(
+                    npc=npc,
+                    action="gather_intel",
+                    outcome="failure",
+                    detail="Intel access narrowed by rising suspicion.",
+                )
+            result["intel_difficulty"] = intel_difficulty
+            result["npc_consequence"] = consequence
+        result["city_state"] = dict(city_state)
+        result["npc_state"] = dict(npc_state)
+        return result
+
+    def set_mobile_fast_travel(self, player: PlayerProfile, node_name: str) -> Dict[str, Any]:
+        node = node_name.strip()
+        if not node:
+            raise ValueError("Mobile fast travel node cannot be empty.")
+        if MOBILE_FAST_TRAVEL_TOOL_NAME not in player.owned_tools:
+            raise ValueError(f'Player must own "{MOBILE_FAST_TRAVEL_TOOL_NAME}" to set a mobile fast travel point.')
+        known_nodes = {
+            poi.name
+            for region in self.regions
+            for poi in region.points_of_interest
+        } | {region.name for region in self.regions} | {region.village_hub for region in self.regions}
+        if node not in known_nodes:
+            raise ValueError(f'Fast travel node "{node}" is not recognized.')
+        travel_check = player.resolve_action_check("mobility", difficulty=4)
+        player.mobile_fast_travel_node = node
+        return {
+            "node": node,
+            "tool": MOBILE_FAST_TRAVEL_TOOL_NAME,
+            "mobility_check": travel_check,
+        }
+
+    def get_available_fast_travel_points(self, player: PlayerProfile) -> List[str]:
+        points = list(player.unlocked_fast_travel_nodes)
+        if player.mobile_fast_travel_node and player.mobile_fast_travel_node not in points:
+            points.append(player.mobile_fast_travel_node)
+        return points
+
+    def fast_travel(self, player: PlayerProfile, destination: str) -> Dict[str, Any]:
+        target = destination.strip()
+        if not target:
+            raise ValueError("Fast travel destination cannot be empty.")
+        if target not in self.get_available_fast_travel_points(player):
+            raise ValueError(f'Fast travel destination "{destination}" is not unlocked.')
+        environment_state = self.advance_environment_cycle()
+        return {
+            "destination": target,
+            "available_points": self.get_available_fast_travel_points(player),
+            "environment": environment_state,
+            "used_mobile_anchor": target == player.mobile_fast_travel_node,
+        }
+
+    def attempt_pickpocket(self, player: PlayerProfile, npc_name: str) -> Dict[str, Any]:
+        npc = self._find_city_npc(npc_name)
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
+        suspicion_gap = max(0, npc_state["suspicion"] - npc_state["trust"])
+        effective_difficulty = max(
+            3,
+            npc.pickpocket_difficulty + city_state["alert_level"] + suspicion_gap,
+        )
+        check = player.resolve_action_check("pickpocket", difficulty=effective_difficulty)
+        if check["success"]:
+            reward_base = npc.pickpocket_difficulty * 4 + player.action_attributes.get("pickpocket", 1)
+            reward = max(6, reward_base - (city_state["alert_level"] * 2))
+            player.earn_credits(reward)
+            player.pickpocket_history["success"] = int(player.pickpocket_history.get("success", 0)) + 1
+            player.update_reputation(PICKPOCKET_REPUTATION_PENALTY_ON_SUCCESS)
+            npc_state["suspicion"] = min(8, npc_state["suspicion"] + 1)
+            npc_state["trust"] = max(0, npc_state["trust"] - 1)
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 1)
+            city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+            city_state["quest_pressure"] = min(12, city_state["quest_pressure"] + 1)
+            self.store_memory(
+                player.name,
+                f"Picked {npc.name}'s pocket in {npc.city_name} and escaped with {reward} credits.",
+            )
+            consequence = self._record_npc_consequence(
+                npc=npc,
+                action="pickpocket",
+                outcome="success",
+                detail="NPC notices inventory tampering and hardens local routines.",
+            )
+            result = {
+                "npc": npc.name,
+                "city_name": npc.city_name,
+                "success": True,
+                "credits_stolen": reward,
+                "stolen_item_hint": npc.pickpocket_rewards[0] if npc.pickpocket_rewards else "loose coin purse",
+                "check": check,
+                "remaining_credits": player.credits,
+                "npc_consequence": consequence,
+            }
+        else:
+            player.pickpocket_history["caught"] = int(player.pickpocket_history.get("caught", 0)) + 1
+            player.update_reputation(PICKPOCKET_REPUTATION_PENALTY_ON_CAUGHT)
+            npc_state["suspicion"] = min(8, npc_state["suspicion"] + 2)
+            npc_state["trust"] = max(0, npc_state["trust"] - 2)
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 2)
+            city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+            city_state["quest_pressure"] = min(12, city_state["quest_pressure"] + 2)
+            self._update_antagonist_scores(
+                signal="pickpocket_caught",
+                intensity=1,
+                focal_points=self.allies[:1],
+                causes=[npc.name, npc.city_name],
+            )
+            consequence = self._record_npc_consequence(
+                npc=npc,
+                action="pickpocket",
+                outcome="caught",
+                detail="Local patrols escalate sweeps and informants become hostile.",
+            )
+            result = {
+                "npc": npc.name,
+                "city_name": npc.city_name,
+                "success": False,
+                "credits_stolen": 0,
+                "check": check,
+                "remaining_credits": player.credits,
+                "npc_consequence": consequence,
+            }
+        self._log_tapestry(
+            event_type="city_action",
+            label=f"Pickpocket attempt against {npc.name} in {npc.city_name}.",
+            causes=[f"success:{result['success']}"],
+            effects={"credits_delta": result["credits_stolen"], "region": npc.region_name},
+        )
+        result["effective_difficulty"] = effective_difficulty
+        result["city_state"] = dict(city_state)
+        result["npc_state"] = dict(npc_state)
+        return result
 
     def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
         newly_awarded: Set[str] = set()
@@ -3225,6 +3882,7 @@ class NinjaWorld:
         return {
             "region_count": len(self.regions),
             "environment": self.get_environment_state(),
+            "quest_distribution": self.get_quest_distribution(),
             "regions": [
                 {
                     "name": region.name,
@@ -3236,6 +3894,33 @@ class NinjaWorld:
                     "minimum_level": region.minimum_level,
                     "assassin_hunter_name": region.assassin_hunter_name,
                     "travel_nodes": list(region.travel_nodes),
+                    "city_shops": [
+                        {
+                            "key": shop.key,
+                            "name": shop.name,
+                            "specialty": shop.specialty,
+                        }
+                        for shop in self.city_shops
+                        if shop.region_name == region.name
+                    ],
+                    "city_npcs": [
+                        {
+                            "name": npc.name,
+                            "role": npc.role,
+                            "services": list(npc.services),
+                        }
+                        for npc in self.city_npcs
+                        if npc.region_name == region.name
+                    ],
+                    "quests": [
+                        {
+                            "quest_id": quest.quest_id,
+                            "title": quest.title,
+                            "quest_giver": quest.quest_giver,
+                        }
+                        for quest in self.quests
+                        if quest.region_name == region.name
+                    ],
                     "points_of_interest": [
                         {
                             "name": poi.name,
@@ -3316,6 +4001,27 @@ class NinjaWorld:
             ],
             "villains": villain_records,
             "points_of_interest": points_of_interest,
+            "city_shops": [
+                {
+                    "key": shop.key,
+                    "name": shop.name,
+                    "region_name": shop.region_name,
+                    "city_name": shop.city_name,
+                    "specialty": shop.specialty,
+                }
+                for shop in self.city_shops
+            ],
+            "city_npcs": [
+                {
+                    "name": npc.name,
+                    "region_name": npc.region_name,
+                    "city_name": npc.city_name,
+                    "role": npc.role,
+                    "services": list(npc.services),
+                }
+                for npc in self.city_npcs
+            ],
+            "quest_distribution": self.get_quest_distribution(),
             "legendary_weapons": [
                 {
                     "name": weapon.name,
@@ -3383,8 +4089,17 @@ class NinjaWorld:
             "reputation_tier": player.current_reputation_tier().value,
             "nonlethal_path": player.is_nonlethal_path_active(),
             "encounter_outcomes": dict(player.encounter_outcomes),
+            "action_attributes": dict(player.action_attributes),
+            "attribute_points": player.attribute_points,
+            "owned_tools": list(player.owned_tools),
+            "mobile_fast_travel_node": player.mobile_fast_travel_node,
+            "available_fast_travel_points": self.get_available_fast_travel_points(player),
+            "pickpocket_history": dict(player.pickpocket_history),
             "playstyle_summary": self._build_playstyle_summary(player),
             "cleared_regions": [region.name for region in self.regions if region.cleared],
+            "quest_distribution": self.get_quest_distribution(),
+            "city_shops": self.get_city_shops(player),
+            "city_npcs": self.get_city_npcs(),
             "villain_stances": villain_states,
             "villain_decision_memory": villain_memories,
             "villain_relationship_arcs": {
@@ -3610,6 +4325,9 @@ class NinjaWorld:
                         "villain_stance_impacts": dict(quest.villain_stance_impacts),
                         "reputation_impacts": dict(quest.reputation_impacts),
                         "trophy_hooks": list(quest.trophy_hooks),
+                        "region_name": quest.region_name,
+                        "city_hub": quest.city_hub,
+                        "quest_giver": quest.quest_giver,
                     }
                     for quest in self.quests
                 ],
@@ -3691,6 +4409,32 @@ class NinjaWorld:
                     for move in self.technique_library
                 ],
                 "shop_inventory": {key: dict(value) for key, value in self.shop_inventory.items()},
+                "city_shops": [
+                    {
+                        "key": shop.key,
+                        "name": shop.name,
+                        "region_name": shop.region_name,
+                        "city_name": shop.city_name,
+                        "specialty": shop.specialty,
+                        "description": shop.description,
+                        "inventory_item_keys": list(shop.inventory_item_keys),
+                    }
+                    for shop in self.city_shops
+                ],
+                "city_npcs": [
+                    {
+                        "name": npc.name,
+                        "region_name": npc.region_name,
+                        "city_name": npc.city_name,
+                        "role": npc.role,
+                        "disposition": npc.disposition,
+                        "dialogue": npc.dialogue,
+                        "services": list(npc.services),
+                        "pickpocket_difficulty": npc.pickpocket_difficulty,
+                        "pickpocket_rewards": list(npc.pickpocket_rewards),
+                    }
+                    for npc in self.city_npcs
+                ],
                 "vault_historic_ninjas": list(self.vault_historic_ninjas),
                 "vault_meta_tapestry": list(self.vault_meta_tapestry),
                 "active_run_tapestry": list(self.active_run_tapestry),
@@ -3742,6 +4486,23 @@ class NinjaWorld:
                     }
                     for name, payload in self.npc_evil_profiles.items()
                 },
+                "city_immersion_state": {
+                    city_name: {
+                        "alert_level": int(state.get("alert_level", 0)),
+                        "intel_noise": int(state.get("intel_noise", 0)),
+                        "quest_pressure": int(state.get("quest_pressure", 0)),
+                    }
+                    for city_name, state in self.city_immersion_state.items()
+                },
+                "npc_consequence_state": {
+                    npc_name: {
+                        "suspicion": int(state.get("suspicion", 0)),
+                        "trust": int(state.get("trust", 0)),
+                        "intel_shared": int(state.get("intel_shared", 0)),
+                    }
+                    for npc_name, state in self.npc_consequence_state.items()
+                },
+                "npc_consequence_log": [dict(entry) for entry in self.npc_consequence_log],
                 "external_pressure_history": [dict(entry) for entry in self.external_pressure_history],
                 "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log],
                 "memory_store": {
@@ -3809,6 +4570,9 @@ class NinjaWorld:
                 villain_stance_impacts=dict(item.get("villain_stance_impacts", {})),
                 reputation_impacts=dict(item.get("reputation_impacts", {})),
                 trophy_hooks=tuple(item.get("trophy_hooks", ())),
+                region_name=item.get("region_name", ""),
+                city_hub=item.get("city_hub", ""),
+                quest_giver=item.get("quest_giver", ""),
             )
             for item in world_snapshot["quests"]
         ]
@@ -3904,6 +4668,32 @@ class NinjaWorld:
             )
             for move in world_snapshot.get("technique_library", [])
         ]
+        city_shops = [
+            CityShop(
+                key=item["key"],
+                name=item["name"],
+                region_name=item.get("region_name", ""),
+                city_name=item.get("city_name", ""),
+                specialty=item.get("specialty", ""),
+                description=item.get("description", ""),
+                inventory_item_keys=tuple(item.get("inventory_item_keys", [])),
+            )
+            for item in world_snapshot.get("city_shops", [])
+        ]
+        city_npcs = [
+            CityNPC(
+                name=item["name"],
+                region_name=item.get("region_name", ""),
+                city_name=item.get("city_name", ""),
+                role=item.get("role", ""),
+                disposition=item.get("disposition", ""),
+                dialogue=item.get("dialogue", ""),
+                services=tuple(item.get("services", [])),
+                pickpocket_difficulty=int(item.get("pickpocket_difficulty", 6)),
+                pickpocket_rewards=tuple(item.get("pickpocket_rewards", [])),
+            )
+            for item in world_snapshot.get("city_npcs", [])
+        ]
         arcs = [
             ArcDefinition(
                 key=item["key"],
@@ -3930,6 +4720,8 @@ class NinjaWorld:
             era_timeline=[dict(item) for item in world_snapshot.get("era_timeline", [])],
             technique_library=technique_library,
             shop_inventory={key: dict(value) for key, value in world_snapshot.get("shop_inventory", {}).items()},
+            city_shops=city_shops,
+            city_npcs=city_npcs,
             vault_historic_ninjas=list(world_snapshot.get("vault_historic_ninjas", [])),
             vault_meta_tapestry=list(world_snapshot.get("vault_meta_tapestry", [])),
             active_run_tapestry=list(world_snapshot.get("active_run_tapestry", [])),
@@ -3971,6 +4763,23 @@ class NinjaWorld:
                 }
                 for name, payload in world_snapshot.get("npc_evil_profiles", {}).items()
             },
+            city_immersion_state={
+                city_name: {
+                    "alert_level": int(payload.get("alert_level", 0)),
+                    "intel_noise": int(payload.get("intel_noise", 0)),
+                    "quest_pressure": int(payload.get("quest_pressure", 0)),
+                }
+                for city_name, payload in world_snapshot.get("city_immersion_state", {}).items()
+            },
+            npc_consequence_state={
+                npc_name: {
+                    "suspicion": int(payload.get("suspicion", 0)),
+                    "trust": int(payload.get("trust", 0)),
+                    "intel_shared": int(payload.get("intel_shared", 0)),
+                }
+                for npc_name, payload in world_snapshot.get("npc_consequence_state", {}).items()
+            },
+            npc_consequence_log=list(world_snapshot.get("npc_consequence_log", [])),
             external_pressure_history=list(world_snapshot.get("external_pressure_history", [])),
             intel_discovery_log=list(world_snapshot.get("intel_discovery_log", [])),
             memory_store={
@@ -4007,7 +4816,7 @@ class NinjaWorld:
             reward_inventory={
                 key: list(values)
                 for key, values in player_snapshot.get(
-                    "reward_inventory", {"weapon": [], "clothing": [], "move": []}
+                    "reward_inventory", {"weapon": [], "clothing": [], "move": [], "tool": []}
                 ).items()
             },
             red_bar_power_claims={
@@ -4045,6 +4854,23 @@ class NinjaWorld:
             },
             credits=int(player_snapshot.get("credits", 100)),
             locked_on_target=player_snapshot.get("locked_on_target"),
+            owned_tools=list(player_snapshot.get("owned_tools", [])),
+            mobile_fast_travel_node=player_snapshot.get("mobile_fast_travel_node"),
+            action_attributes={
+                key: int(value)
+                for key, value in player_snapshot.get(
+                    "action_attributes",
+                    {name: spec["default"] for name, spec in ACTION_ATTRIBUTE_SPECS.items()},
+                ).items()
+            },
+            attribute_points=int(player_snapshot.get("attribute_points", 0)),
+            pickpocket_history={
+                key: int(value)
+                for key, value in player_snapshot.get(
+                    "pickpocket_history",
+                    {"success": 0, "caught": 0},
+                ).items()
+            },
             unlocked_move_names=set(player_snapshot.get("unlocked_move_names", [])),
             active_status_effects={
                 effect_name: {
@@ -4074,6 +4900,9 @@ class NinjaWorld:
             player.unlocked_move_names = {
                 move.name for move_set in player.moves_by_set.values() for move in move_set
             }
+        player.reward_inventory.setdefault("tool", [])
+        for attribute_name, spec in ACTION_ATTRIBUTE_SPECS.items():
+            player.action_attributes.setdefault(attribute_name, int(spec["default"]))
         if not player.enemy_move_claims:
             move_to_enemy = {spec["name"]: enemy for enemy, spec in ENEMY_EXCLUSIVE_MOVE_SPECS.items()}
             player.enemy_move_claims = {
@@ -7148,10 +7977,17 @@ def _build_generic_tactical_branch_outcomes(quest: Quest) -> Dict[str, str]:
 def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
     required_branch_keys = ("exiled_heir", "street_ghost", "wandering_monk", "default")
     for idx, quest in enumerate(quests):
+        region_name, city_hub, quest_giver = QUEST_LOCATION_ROTATION[idx % len(QUEST_LOCATION_ROTATION)]
         if quest.quest_id in STEALTH_GATED_QUEST_IDS:
             quest.stealth_required = True
         if not quest.premise:
             quest.premise = quest.objective
+        if not quest.region_name:
+            quest.region_name = region_name
+        if not quest.city_hub:
+            quest.city_hub = city_hub
+        if not quest.quest_giver:
+            quest.quest_giver = quest_giver
         if not quest.choices:
             quest.choices = (
                 "stealth-forward approach",
@@ -7182,6 +8018,116 @@ def _normalize_seeded_quest_metadata(quests: List[Quest]) -> None:
         for branch_key, outcome in _build_generic_tactical_branch_outcomes(quest).items():
             if branch_key not in quest.branch_outcomes:
                 quest.branch_outcomes[branch_key] = outcome
+
+
+def _seed_city_shops() -> List[CityShop]:
+    return [
+        CityShop(
+            key="leafrise_threads",
+            name="Leafrise Threads",
+            region_name="Verdant Gate",
+            city_name="Leafrise Village",
+            specialty="cosmetics",
+            description="A clothier focused on low-profile shinobi cosmetics and courier garb.",
+            inventory_item_keys=("market_smoke_bomb", "pacifist_thread_charm"),
+        ),
+        CityShop(
+            key="cinder_forge_exchange",
+            name="Cinder Forge Exchange",
+            region_name="Ashen Cradle",
+            city_name="Cinder Port",
+            specialty="ninja_tools",
+            description="A heated port forge that stocks field tools and aggressive loadout pieces.",
+            inventory_item_keys=("black_market_kunai", "gatebreaker_smoke_map"),
+        ),
+        CityShop(
+            key="azure_current_boutique",
+            name="Azure Current Boutique",
+            region_name="Tideglass Basin",
+            city_name="Azure Rest",
+            specialty="cosmetics",
+            description="A harbor boutique carrying peacekeeper cosmetics and water-route gear.",
+            inventory_item_keys=("tideglass_truce_wire", "moonwell_ledger_cloak"),
+        ),
+        CityShop(
+            key="crestfall_wind_market",
+            name="Crestfall Wind Market",
+            region_name="Stormwall Ridge",
+            city_name="Crestfall Outpost",
+            specialty="move_sets",
+            description="An altitude market that trades traversal tools and advanced technique manuals.",
+            inventory_item_keys=("wayfarer_anchor", "eternal_watch_decoy"),
+        ),
+        CityShop(
+            key="dusk_refuge_supplies",
+            name="Dusk Refuge Supplies",
+            region_name="Sunken Hollow",
+            city_name="Dusk Refuge",
+            specialty="ninja_tools",
+            description="A cave refuge cache supplying antidotes, stealth wraps, and survival kits.",
+            inventory_item_keys=("smuggler_regent_wraps", "pacifist_thread_charm"),
+        ),
+    ]
+
+
+def _seed_city_npcs() -> List[CityNPC]:
+    return [
+        CityNPC(
+            name="Quartermaster Iori",
+            region_name="Verdant Gate",
+            city_name="Leafrise Village",
+            role="quartermaster",
+            disposition="alert",
+            dialogue="Keep your profile low and your routes clean; Leafrise notices every loose thread.",
+            services=("trade", "gather_intel"),
+            pickpocket_difficulty=5,
+            pickpocket_rewards=("supply chit",),
+        ),
+        CityNPC(
+            name="Broker Sumi",
+            region_name="Ashen Cradle",
+            city_name="Cinder Port",
+            role="contract broker",
+            disposition="calculating",
+            dialogue="In Cinder Port, everyone buys time first and loyalty second.",
+            services=("trade", "gather_intel"),
+            pickpocket_difficulty=7,
+            pickpocket_rewards=("forged furnace stamp",),
+        ),
+        CityNPC(
+            name="Archivist Nami",
+            region_name="Tideglass Basin",
+            city_name="Azure Rest",
+            role="archive keeper",
+            disposition="measured",
+            dialogue="The basin remembers who rebuilt and who merely took cover behind the tides.",
+            services=("gather_intel",),
+            pickpocket_difficulty=6,
+            pickpocket_rewards=("sealed tide ledger",),
+        ),
+        CityNPC(
+            name="Scout Captain Rei",
+            region_name="Stormwall Ridge",
+            city_name="Crestfall Outpost",
+            role="watch captain",
+            disposition="disciplined",
+            dialogue="Stormwall routes stay alive because someone reads the wind before the enemy does.",
+            services=("trade", "gather_intel"),
+            pickpocket_difficulty=8,
+            pickpocket_rewards=("wind chart",),
+        ),
+        CityNPC(
+            name="Tunnel Guide Mako",
+            region_name="Sunken Hollow",
+            city_name="Dusk Refuge",
+            role="route guide",
+            disposition="wary",
+            dialogue="Down here, the wrong footstep costs more than coin, so make your moves count.",
+            services=("trade", "gather_intel"),
+            pickpocket_difficulty=7,
+            pickpocket_rewards=("glowstone locator",),
+        ),
+    ]
 
 
 def _seed_allies(min_count: int = DEFAULT_ALLY_MIN_COUNT) -> List[str]:
@@ -8886,6 +9832,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "min_reputation": -49,
             "max_reputation": 1000,
             "requires_black_market": False,
+            "shop_tags": ("cosmetics", "ninja_tools"),
         },
         "rogue_shadow_wrap": {
             "name": "Rogue Shadow Wrap",
@@ -8895,6 +9842,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "min_reputation": -1000,
             "max_reputation": -20,
             "requires_black_market": True,
+            "shop_tags": ("cosmetics",),
         },
         "black_market_kunai": {
             "name": "Black Market Kunai",
@@ -8904,6 +9852,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "min_reputation": -1000,
             "max_reputation": 1000,
             "requires_black_market": True,
+            "shop_tags": ("ninja_tools",),
         },
         "pacifist_thread_charm": {
             "name": "Pacifist Thread Charm",
@@ -8914,6 +9863,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": 1000,
             "requires_black_market": False,
             "requires_nonlethal": True,
+            "shop_tags": ("move_sets", "cosmetics"),
         },
         "silent_legend_insignia": {
             "name": "Silent Legend Insignia",
@@ -8926,6 +9876,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "requires_nonlethal": True,
             "min_nonlethal_actions": 8,
             "requires_world_clear_nonlethal": True,
+            "shop_tags": ("cosmetics",),
         },
         "gatebreaker_smoke_map": {
             "name": "Gatebreaker Smoke Map",
@@ -8936,6 +9887,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": -20,
             "requires_black_market": True,
             "required_quests": ("Q3",),
+            "shop_tags": ("move_sets",),
         },
         "tideglass_truce_wire": {
             "name": "Tideglass Truce Wire",
@@ -8946,6 +9898,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": -10,
             "requires_black_market": True,
             "required_quests": ("Q5",),
+            "shop_tags": ("ninja_tools",),
         },
         "moonwell_ledger_cloak": {
             "name": "Moonwell Ledger Cloak",
@@ -8956,6 +9909,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": 1000,
             "requires_black_market": True,
             "required_quests": ("Q7",),
+            "shop_tags": ("cosmetics",),
         },
         "eternal_watch_decoy": {
             "name": "Eternal Watch Decoy",
@@ -8967,6 +9921,7 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "requires_black_market": True,
             "required_quests": ("Q10",),
             "requires_nonlethal": True,
+            "shop_tags": ("move_sets",),
         },
         "smuggler_regent_wraps": {
             "name": "Smuggler Regent Wraps",
@@ -8977,6 +9932,18 @@ def _seed_shop_inventory() -> Dict[str, Dict[str, Any]]:
             "max_reputation": -40,
             "requires_black_market": True,
             "required_quests": ("Q12",),
+            "shop_tags": ("cosmetics", "ninja_tools"),
+        },
+        "wayfarer_anchor": {
+            "name": "Wayfarer Anchor",
+            "reward_type": "tool",
+            "reward_name": MOBILE_FAST_TRAVEL_TOOL_NAME,
+            "price": 140,
+            "min_reputation": -1000,
+            "max_reputation": 1000,
+            "requires_black_market": False,
+            "required_quests": ("Q4",),
+            "shop_tags": ("ninja_tools", "mobility"),
         },
     }
 
@@ -9014,6 +9981,8 @@ def build_mvp_world(player_name: str, affinity_decisions: Sequence[int]) -> Tupl
         era_timeline=_seed_era_timeline(),
         technique_library=_seed_technique_library(),
         shop_inventory=_seed_shop_inventory(),
+        city_shops=_seed_city_shops(),
+        city_npcs=_seed_city_npcs(),
     )
     player.weapons.extend(world.weapons)
     player.unlocked_skins.append(world.skins[0])

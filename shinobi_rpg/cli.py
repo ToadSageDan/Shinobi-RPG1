@@ -22,6 +22,12 @@ from .core import (
     load_world_snapshot,
     save_world_snapshot,
 )
+from .cutscenes import (
+    list_cutscene_bosses,
+    play_boss_cutscene,
+    play_boss_defeat_scene,
+    get_boss_taunt,
+)
 
 # ── cosmetic helpers ──────────────────────────────────────────────────────────
 
@@ -107,6 +113,26 @@ def _confirm(question: str) -> bool:
     return answer.startswith("y")
 
 
+# ── HUD helpers ───────────────────────────────────────────────────────────────
+
+def _bar(current: int, maximum: int, width: int = 16, fill: str = "█", empty: str = "░") -> str:
+    filled = int((current / max(maximum, 1)) * width)
+    return fill * filled + empty * (width - filled)
+
+
+def _derive_vitals(player: PlayerProfile) -> dict:
+    """Derive HP / Chakra / Stamina from stats (no persistent HP tracking needed)."""
+    hp_max     = player.stats.defense * 10 + 50
+    chakra_max = player.stats.focus   * 10 + 20
+    stamina_max = player.stats.agility * 8 + 20
+    # Treat values as full unless status effects reduce them (future hook)
+    return {
+        "hp":          hp_max, "hp_max":      hp_max,
+        "chakra":      chakra_max, "chakra_max":  chakra_max,
+        "stamina":     stamina_max, "stamina_max": stamina_max,
+    }
+
+
 # ── HUD ──────────────────────────────────────────────────────────────────────
 
 def _show_hud(world: NinjaWorld, player: PlayerProfile) -> None:
@@ -126,26 +152,57 @@ def _show_hud(world: NinjaWorld, player: PlayerProfile) -> None:
         if quest_obj:
             quest_title = quest_obj.title
 
+    v = _derive_vitals(player)
+
+    # Status effects summary (abbreviated)
+    fx_icons = {
+        "burn": "🔥", "bleed": "🩸", "chill": "❄️", "drench": "💧",
+        "crack_armor": "🛡", "stagger": "💥", "blind": "👁", "silence": "🔇",
+        "root": "🌿", "fear": "💀",
+    }
+    active_fx = player.active_status_effects
+    fx_parts = []
+    for fx_name, fx_data in active_fx.items():
+        stacks = fx_data.get("stacks", 1)
+        icon = fx_icons.get(fx_name, "•")
+        fx_parts.append(f"{icon}{fx_name[:3]}×{stacks}")
+    fx_str = "  ".join(fx_parts) if fx_parts else "—"
+
     _print()
-    _print(_DIVIDER)
+    _print(_THICK)
+    # Row 1: name, affinity, level
     _print(
-        f"  {player.name}  {aff_icon} {player.affinity.value.capitalize()}  "
-        f"│  Lv.{player.stats.level}  [{xp_bar}] {player.stats.xp}/{xp_needed} XP"
-    )
-    _print(
-        f"  PWR {player.stats.power}  DEF {player.stats.defense}  "
-        f"AGI {player.stats.agility}  FOC {player.stats.focus}  "
-        f"│  Credits: {player.credits}"
-    )
-    _print(
-        f"  Reputation: {player.reputation:+d}  ({tier_icon} {tier})  "
-        f"│  Regions cleared: {cleared}/{len(world.regions)}"
-    )
-    _print(f"  Active quest: {quest_title}")
-    _print(
-        f"  World: {env['time_of_day'].capitalize()} · {env['weather'].capitalize()}"
+        f"  {player.name:<18}  {aff_icon} {player.affinity.value.capitalize():<7}"
+        f"  Lv.{player.stats.level:<4}  XP [{xp_bar}] {player.stats.xp}/{xp_needed}"
     )
     _print(_DIVIDER)
+    # Row 2: Vital bars (HP / Chakra / Stamina)
+    hp_bar  = _bar(v["hp"],      v["hp_max"],      14)
+    ck_bar  = _bar(v["chakra"],  v["chakra_max"],  14)
+    st_bar  = _bar(v["stamina"], v["stamina_max"], 14)
+    _print(
+        f"  ❤  HP  [{hp_bar}] {v['hp']}/{v['hp_max']}"
+        f"   ⚡ CK [{ck_bar}] {v['chakra']}/{v['chakra_max']}"
+        f"   🌀 ST [{st_bar}] {v['stamina']}/{v['stamina_max']}"
+    )
+    # Row 3: Combat stats
+    _print(
+        f"  PWR {player.stats.power:<4}  DEF {player.stats.defense:<4}"
+        f"  AGI {player.stats.agility:<4}  FOC {player.stats.focus:<4}"
+        f"  │  Credits: {player.credits}"
+    )
+    _print(_DIVIDER)
+    # Row 4: Reputation + regions
+    _print(
+        f"  Reputation: {player.reputation:+d}  ({tier_icon} {tier})"
+        f"  │  Regions cleared: {cleared}/{len(world.regions)}"
+        f"  │  World: {env['time_of_day'].capitalize()} · {env['weather'].capitalize()}"
+    )
+    # Row 5: Active quest + status effects
+    _print(f"  Quest: {quest_title}")
+    _print(f"  Status FX: {fx_str}")
+    _print(_THICK)
+
 
 
 # ── Character creation ────────────────────────────────────────────────────────
@@ -433,16 +490,75 @@ def _fight_boss(world: NinjaWorld, player: PlayerProfile, region_name: str) -> N
     if not region:
         return
 
-    _section(f"💥  BOSS FIGHT  —  {region.boss}")
+    if not world.boss_availability.get(region.boss, True):
+        _section(f"💥  BOSS ENCOUNTER  —  {region.boss}")
+        _print("\n  ✗ This boss is currently unavailable due to world events.")
+        return
+
+    # ── Cinematic intro ───────────────────────────────────────────────────────
+    # Collect the villain's backstory hook for this player's path
+    backstory_hook = None
+    if player.selected_backstory:
+        profile = world.get_villain_backstory_profile(region.boss)
+        tag = player.selected_backstory.title.lower().replace(" ", "_")
+        backstory_hook = profile.get("player_backstory_hooks", {}).get(tag)
+        # Fallback: check reputation-path hooks
+        if not backstory_hook:
+            tier = player.current_reputation_tier().value
+            path_tag = f"{tier}_path"
+            backstory_hook = profile.get("player_backstory_hooks", {}).get(path_tag)
+        if not backstory_hook and player.is_nonlethal_path_active():
+            backstory_hook = profile.get("player_backstory_hooks", {}).get("nonlethal_path")
+
+    # Determine relationship arc with this villain
+    arc_checkpoints = world.get_villain_evolution_checkpoints()
+    relationship_arc = next(
+        (cp.get("relationship_arc", "dormant")
+         for cp in arc_checkpoints if cp.get("villain") == region.boss),
+        "dormant",
+    )
+
+    cutscene_result = play_boss_cutscene(
+        boss_name=region.boss,
+        player_name=player.name,
+        player_backstory_hook=backstory_hook,
+        villain_relationship_arc=relationship_arc,
+    )
+
+    # Apply the stance delta from the player's dialogue choice
+    delta = cutscene_result.get("stance_delta", 0)
+    if delta:
+        try:
+            villain = next(v for v in world.villains if v.name == region.boss)
+            villain.aggression_score += delta
+        except StopIteration:
+            pass
+
+    # ── Show current boss stance/behavior after dialogue ─────────────────────
+    _section(f"⚔️   BATTLE  —  {region.boss}")
     behavior = world.get_region_boss_behavior(region_name, player)
     _print(_wrap(f"Stance: {behavior['stance'].upper()}"))
     _print(_wrap(f"Behavior: {behavior['behavior']}"))
 
-    if not world.boss_availability.get(region.boss, True):
-        _print("\n  ✗ This boss is currently unavailable due to world events.")
-        return
+    # Optional taunt line
+    taunt = get_boss_taunt(region.boss)
+    if taunt:
+        _print()
+        _print(f'  💬  "{region.boss}":  {taunt}')
 
-    _print("\n  Defeat the boss and claim your reward.")
+    # ── Approach and reward ───────────────────────────────────────────────────
+    _print()
+    approach_opts   = ["kill", "charm", "stealth", "evasion"]
+    approach_labels = [
+        f"{APPROACH_EMOJI['kill']}  Strike to defeat",
+        f"{APPROACH_EMOJI['charm']}  Diplomatic resolution (charm)",
+        f"{APPROACH_EMOJI['stealth']}  Vanish and outmanoeuvre (stealth)",
+        f"{APPROACH_EMOJI['evasion']}  Deny the fight entirely (evasion)",
+    ]
+    approach_idx = _pick("How do you end this?", approach_labels)
+    approach = approach_opts[approach_idx]
+    world.record_quest_resolution(player, region_name, approach=approach)
+
     reward_names = list(region.boss_rewards.keys())
     reward_labels = [
         f"{r.capitalize()}: {region.boss_rewards[r]}"
@@ -457,11 +573,14 @@ def _fight_boss(world: NinjaWorld, player: PlayerProfile, region_name: str) -> N
         _print(f"\n  ✗ {exc}")
         return
 
-    _print(f"\n  ✦ {region.boss} defeated!")
+    # ── Defeat cutscene ───────────────────────────────────────────────────────
+    play_boss_defeat_scene(region.boss, approach)
+
+    _section(f"🏆  VICTORY  —  {region.boss}")
+    _print(f"  ✦ {region.boss} defeated via {approach.upper()}")
     _print(f"  🎁 Reward: {reward_name}")
     if reward_choice == "move":
-        _print(f"  📖 New move added to your loadout.")
-    newly_awarded = list(player.trophies)
+        _print("  📖 New move added to your loadout.")
     _print(f"  Trophies earned: {len(player.trophies)}")
 
 
@@ -544,6 +663,165 @@ def _show_trophies(world: NinjaWorld, player: PlayerProfile) -> None:
             _print(f"    → {item['name']}  — {item['remaining']} more {item['hint']}")
 
 
+# ── Villain intel ─────────────────────────────────────────────────────────────
+
+def _show_villain_intel(world: NinjaWorld, player: PlayerProfile) -> None:
+    _section("🕵️   VILLAIN INTEL")
+    checkpoints = world.get_villain_evolution_checkpoints()
+    if not checkpoints:
+        _print("  No villain data yet — encounter more of the world.")
+        return
+
+    arc_icons = {
+        "dormant":  "⬜",
+        "active":   "🔴",
+        "rival":    "⚔️ ",
+        "nemesis":  "💀",
+        "reformed": "🕊️ ",
+    }
+    _print()
+    for cp in checkpoints:
+        arc = cp.get("relationship_arc", "dormant")
+        icon = arc_icons.get(arc, "❓")
+        name = cp.get("villain", "Unknown")
+        stance = cp.get("current_stance", "balanced").upper()
+        pressure = cp.get("pressure", 0)
+        triggers = ", ".join(cp.get("active_triggers", [])) or "—"
+        _print(f"  {icon}  {name:<22}  Arc: {arc:<10}  Stance: {stance:<12}  Pressure: {pressure}")
+        _print(f"       Active triggers: {triggers}")
+        _print()
+
+
+# ── Playthrough summary ───────────────────────────────────────────────────────
+
+def _show_playthrough_summary(world: NinjaWorld, player: PlayerProfile) -> None:
+    _section("📊  PLAYTHROUGH SUMMARY")
+    summary = world.generate_playthrough_summary(player)
+
+    # Backstory
+    bs = summary.get("backstory")
+    if bs:
+        _print(f"  Origin: {bs.get('title', '—')}")
+        _print(f"  Tags: {', '.join(bs.get('narrative_tags', []))}")
+        _print()
+
+    # Playstyle
+    ps = summary.get("playstyle_summary", {})
+    _print(f"  Playstyle: {ps.get('style_label', '—')}")
+    _print(f"  Lethal: {ps.get('lethal_total', 0)}  |  Nonlethal: {ps.get('nonlethal_total', 0)}")
+    shift = ps.get("playstyle_shift")
+    if shift:
+        _print(f"  ⚡  Shift detected: {shift}")
+    _print()
+
+    # Reputation
+    rep = summary.get("reputation", {})
+    _print(f"  Reputation: {rep.get('score', 0):+d}  ({rep.get('tier', '—').upper()})")
+    _print()
+
+    # Villain relationship arcs
+    arcs = summary.get("villain_relationship_arcs", [])
+    if arcs:
+        _print("  Villain Arcs:")
+        for arc in arcs:
+            _print(f"    {arc.get('villain', '?'):<22}  {arc.get('relationship_arc', '?'):<12}  stance: {arc.get('current_stance', '?')}")
+        _print()
+
+    # Trophies
+    trophies = summary.get("trophies", [])
+    _print(f"  Trophies earned: {len(trophies)}")
+    near = world._build_trophy_near_miss(player)
+    if near:
+        _print("  Near misses:")
+        for item in near[:3]:
+            _print(f"    → {item['name']}  — {item['remaining']} more {item['hint']}")
+
+
+# ── Fast travel ───────────────────────────────────────────────────────────────
+
+def _do_fast_travel(world: NinjaWorld, player: PlayerProfile) -> None:
+    nodes = player.unlocked_fast_travel_nodes
+    if not nodes:
+        _section("⚡  FAST TRAVEL")
+        _print("  No fast travel nodes unlocked yet.")
+        return
+
+    _section("⚡  FAST TRAVEL")
+    _print("  Unlocked nodes:")
+    for node in nodes:
+        _print(f"    • {node}")
+    _print()
+
+    # Build a list of regions matching a travel node
+    region_map = {r.name: r for r in world.regions}
+    reachable = []
+    for node in nodes:
+        for region in world.regions:
+            if node in (region.travel_nodes or []) or node.lower() == region.village_hub.lower():
+                if region.name not in [r.name for r in reachable]:
+                    reachable.append(region)
+
+    if not reachable:
+        _print("  No regions currently reachable via fast travel.")
+        return
+
+    labels = [f"{r.name}  ({'cleared' if r.cleared else f'Lv.{r.minimum_level}+'})" for r in reachable]
+    labels.append("Cancel")
+    idx = _pick("Travel to which region?", labels)
+    if idx == len(reachable):
+        return
+
+    region = reachable[idx]
+    _print(f"\n  ⚡  Fast-travelling to {region.name}...")
+    _section(f"🌍  {region.name}  —  {region.village_hub}")
+    _print(_wrap(f"Climate: {region.climate}"))
+    _print(_wrap(f"Terrain: {', '.join(region.terrain_profile)}"))
+    _print()
+
+    if region.cleared:
+        _print("  This region is already cleared.")
+        return
+
+    actions = ["Enter an encounter", "Fight the boss (clear region)", "Back"]
+    choice = _pick("What do you do?", actions)
+    if choice == 0:
+        _do_encounter(world, player, region.name)
+    elif choice == 1:
+        _fight_boss(world, player, region.name)
+
+
+# ── Vault history ─────────────────────────────────────────────────────────────
+
+def _show_vault_history(world: NinjaWorld, player: PlayerProfile) -> None:
+    _section("🗄️   VAULT HISTORY")
+    hub = world.generate_replay_hub_report(player)
+
+    active = hub.get("active_run_summary", {})
+    _print("  ▶  Active Run:")
+    _print(f"    Name: {active.get('player_name', '—')}")
+    _print(f"    Level: {active.get('level', '—')}  |  Reputation: {active.get('reputation', 0):+d}")
+    _print(f"    Trophies: {len(active.get('trophies', []))}")
+    regions_cleared = active.get('regions_cleared', [])
+    _print(f"    Regions cleared: {len(regions_cleared)}  — {', '.join(regions_cleared) or 'none'}")
+    _print()
+
+    analytics = hub.get("vault_analytics", {})
+    runs = analytics.get("total_runs", 0)
+    if runs:
+        _print(f"  📦  Archive: {runs} historic run(s)")
+        top = analytics.get("top_run_summary")
+        if top:
+            _print(f"    Top run: {top.get('player_name', '—')}  "
+                   f"Lv.{top.get('level', '?')}  "
+                   f"Rep {top.get('reputation', 0):+d}")
+        freq = analytics.get("trophy_frequency", {})
+        if freq:
+            top_trophies = sorted(freq.items(), key=lambda x: -x[1])[:3]
+            _print(f"    Most earned trophies: {', '.join(k for k, _ in top_trophies)}")
+    else:
+        _print("  📦  Archive: no previous runs recorded.")
+
+
 # ── Main menu loop ────────────────────────────────────────────────────────────
 
 _MAIN_MENU = [
@@ -556,6 +834,10 @@ _MAIN_MENU = [
     "View quest log",
     "View trophies",
     "Visit shop",
+    "Villain intel",
+    "Playthrough summary",
+    "Fast travel",
+    "Vault history",
     "Save game",
     "Quit",
 ]
@@ -591,8 +873,16 @@ def _main_loop(world: NinjaWorld, player: PlayerProfile) -> None:
         elif choice == 8:
             _show_shop(world, player)
         elif choice == 9:
-            _do_save(world, player)
+            _show_villain_intel(world, player)
         elif choice == 10:
+            _show_playthrough_summary(world, player)
+        elif choice == 11:
+            _do_fast_travel(world, player)
+        elif choice == 12:
+            _show_vault_history(world, player)
+        elif choice == 13:
+            _do_save(world, player)
+        elif choice == 14:
             if _confirm("Quit Shinobi RPG?"):
                 if _confirm("Save before quitting?"):
                     _do_save(world, player)

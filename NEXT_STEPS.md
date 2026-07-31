@@ -19,7 +19,24 @@ Items marked `[x]` are complete and correspond to closed GitHub Issues.
 - [x] 9) Add villain "reformed" dialogue hooks — when a villain reaches `relationship_arc == "reformed"`, surface a unique narrative line in quest branch outcomes. *(quest outcome hooks added for key villain-facing quests — done)*
 - [x] 10) Expand villain backstories, power origins, and arc tie-ins — each villain now carries a full narrative backstory, a `power_origin` explaining how their signature technique emerged from their history, `arc_ties` linking them to story arcs, and `player_backstory_hooks` for all three player backstory paths plus nonlethal/rogue/heroic paths. Exposed via `get_villain_backstory_profile()` and `generate_playthrough_summary`. *(26 new tests, 203 total — done)*
 
-## Scope guard for animation realism
+## v0.4.0 — UI Pass + Boss Cinematic Layer *(current)*
+
+- [x] 11) Add boss cinematic intro and dialogue engine (`cutscenes.py`) — each of the 5 main bosses
+  has a multi-beat environmental intro, a personality-driven opening monologue, 3 player dialogue
+  choices that shift villain stance, and approach-specific defeat scenes (kill/charm/stealth/evasion).
+  Player inputs drive the "create your own story" arc. *(28 new tests, 253 total — done)*
+- [x] 12) Upgrade CLI HUD — added HP/Chakra/Stamina visual bars derived from stats, active
+  status-effects row with icons and stack counts, and a denser layout matching the Mock A/B designs
+  from the README. *(done)*
+- [x] 13) Wire cutscene engine into `_fight_boss()` — boss fight now runs the full cinematic intro
+  before combat, applies stance delta from player dialogue, injects backstory hook and reformed-arc
+  lines, shows a taunt mid-fight, asks for approach choice (kill/charm/stealth/evasion), and plays
+  the approach-specific defeat scene. *(done)*
+- [x] 14) Add four new main-menu screens — **Villain Intel** (arc checkpoints + stance status),
+  **Playthrough Summary** (playstyle, arcs, trophies), **Fast Travel** (unlocked node navigation),
+  **Vault History** (active run + archive analytics). *(done)*
+
+
 
 - Current power scope to animate is managed by reusable shared move pools plus selective signature powers.
 - Keep adding powers in a measured way only when they support gameplay depth, not just raw move count.

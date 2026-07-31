@@ -5,6 +5,7 @@ shinobi_rpg/__init__.py
 shinobi_rpg/__main__.py
 shinobi_rpg/cli.py
 shinobi_rpg/core.py
+shinobi_rpg/cutscenes.py
 shinobi_rpg/framework.py
 shinobi_rpg.egg-info/PKG-INFO
 shinobi_rpg.egg-info/SOURCES.txt
@@ -12,3 +13,4 @@ shinobi_rpg.egg-info/dependency_links.txt
 shinobi_rpg.egg-info/entry_points.txt
 shinobi_rpg.egg-info/top_level.txt
 tests/test_core.py
+tests/test_cutscenes.py

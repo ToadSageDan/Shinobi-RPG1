@@ -1,0 +1,44 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/SunkenHollow.gd" id="1_arena"]
+[ext_resource type="PackedScene" path="res://scenes/characters/Player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="3_hud"]
+[ext_resource type="PackedScene" path="res://scenes/ui/GameOver.tscn" id="4_go"]
+
+[node name="SunkenHollow" type="Node3D"]
+script = ExtResource("1_arena")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = preload("res://resources/environments/cave_env.tres")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="GroundMesh" type="MeshInstance3D" parent="Ground"]
+
+[node name="GroundCollision" type="CollisionShape3D" parent="Ground"]
+
+[node name="SpawnPoints" type="Node3D" parent="."]
+
+[node name="SpawnA" type="Node3D" parent="SpawnPoints"]
+position = Vector3(6, 0, 0)
+add_to_group = ["enemy_spawn"]
+
+[node name="SpawnB" type="Node3D" parent="SpawnPoints"]
+position = Vector3(-6, 0, 3)
+add_to_group = ["enemy_spawn"]
+
+[node name="SpawnC" type="Node3D" parent="SpawnPoints"]
+position = Vector3(0, 0, -7)
+add_to_group = ["enemy_spawn"]
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector3(0, 0.1, 4)
+
+[node name="JutsuSpawner" type="Node3D" parent="."]
+
+[node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="GameOver" parent="." instance=ExtResource("4_go")]

@@ -1,0 +1,11 @@
+# Godot Cache — do not commit
+.godot/
+
+# Export presets (contain platform-specific paths)
+export_presets.cfg
+
+# macOS metadata
+.DS_Store
+
+# Windows metadata
+Thumbs.db

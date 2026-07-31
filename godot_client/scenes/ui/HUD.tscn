@@ -1,0 +1,174 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/HUD.gd" id="1_hud"]
+
+[node name="HUD" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_hud")
+
+; ── Player panel (bottom-left) ────────────────────────────────────────────────
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.72
+anchor_right = 0.38
+anchor_bottom = 1.0
+
+[node name="PlayerPanel" type="Panel" parent="VBox"]
+custom_minimum_size = Vector2(0, 160)
+
+[node name="HPRow" type="HBoxContainer" parent="VBox/PlayerPanel"]
+layout_mode = 1
+anchor_right = 1.0
+offset_left = 8
+offset_top = 8
+offset_right = -8
+
+[node name="HPIcon" type="Label" parent="VBox/PlayerPanel/HPRow"]
+text = "❤ "
+theme_override_font_sizes/font_size = 14
+
+[node name="HPBar" type="ProgressBar" parent="VBox/PlayerPanel/HPRow"]
+custom_minimum_size = Vector2(180, 18)
+max_value = 150
+value = 150
+show_percentage = false
+
+[node name="HPLabel" type="Label" parent="VBox/PlayerPanel/HPRow"]
+text = "150/150"
+theme_override_font_sizes/font_size = 13
+
+[node name="ChakraRow" type="HBoxContainer" parent="VBox/PlayerPanel"]
+layout_mode = 1
+offset_left = 8
+offset_top = 34
+
+[node name="CKIcon" type="Label" parent="VBox/PlayerPanel/ChakraRow"]
+text = "⚡ "
+theme_override_font_sizes/font_size = 14
+
+[node name="ChakraBar" type="ProgressBar" parent="VBox/PlayerPanel/ChakraRow"]
+custom_minimum_size = Vector2(180, 18)
+max_value = 120
+value = 120
+show_percentage = false
+
+[node name="ChakraLabel" type="Label" parent="VBox/PlayerPanel/ChakraRow"]
+text = "120/120"
+theme_override_font_sizes/font_size = 13
+
+[node name="StaminaRow" type="HBoxContainer" parent="VBox/PlayerPanel"]
+layout_mode = 1
+offset_left = 8
+offset_top = 60
+
+[node name="STIcon" type="Label" parent="VBox/PlayerPanel/StaminaRow"]
+text = "🌀 "
+theme_override_font_sizes/font_size = 14
+
+[node name="StaminaBar" type="ProgressBar" parent="VBox/PlayerPanel/StaminaRow"]
+custom_minimum_size = Vector2(180, 18)
+max_value = 100
+value = 100
+show_percentage = false
+
+[node name="StaminaLabel" type="Label" parent="VBox/PlayerPanel/StaminaRow"]
+text = "100/100"
+theme_override_font_sizes/font_size = 13
+
+[node name="InfoRow" type="HBoxContainer" parent="VBox/PlayerPanel"]
+layout_mode = 1
+offset_left = 8
+offset_top = 90
+
+[node name="LevelLabel" type="Label" parent="VBox/PlayerPanel/InfoRow"]
+text = "Lv.1"
+theme_override_font_sizes/font_size = 14
+
+[node name="RepLabel" type="Label" parent="VBox/PlayerPanel/InfoRow"]
+text = "Rep: 0  [NEUTRAL]"
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.7, 0.75, 0.7, 1)
+
+[node name="QuestLabel" type="Label" parent="VBox/PlayerPanel"]
+layout_mode = 1
+offset_left = 8
+offset_top = 115
+text = ""
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.9, 0.85, 0.5, 1)
+
+; ── Status effects row ────────────────────────────────────────────────────────
+[node name="StatusRow" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.68
+anchor_right = 0.5
+anchor_bottom = 0.72
+theme_override_constants/separation = 8
+
+; ── Enemy HP bars (top-right) ─────────────────────────────────────────────────
+[node name="EnemyHPContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.62
+anchor_top = 0.02
+anchor_right = 1.0
+anchor_bottom = 0.35
+theme_override_constants/separation = 6
+
+; ── Combo popup (center) ──────────────────────────────────────────────────────
+[node name="ComboPopup" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 0.35
+anchor_top = 0.42
+anchor_right = 0.65
+anchor_bottom = 0.5
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(1.0, 0.9, 0.2, 1)
+visible = false
+
+; ── Boss banner (center) ─────────────────────────────────────────────────────
+[node name="BossBanner" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 0.2
+anchor_top = 0.35
+anchor_right = 0.8
+anchor_bottom = 0.44
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 34
+theme_override_colors/font_color = Color(0.95, 0.85, 0.3, 1)
+visible = false
+
+; ── Taunt label (above enemy) ────────────────────────────────────────────────
+[node name="TauntLabel" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 0.1
+anchor_top = 0.08
+anchor_right = 0.9
+anchor_bottom = 0.16
+horizontal_alignment = 1
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.85, 0.6, 0.6, 1)
+visible = false
+
+; ── Damage vignette (full-screen) ────────────────────────────────────────────
+[node name="DamageVignette" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.8, 0, 0, 0)
+mouse_filter = 2
+
+; ── Hit flash (full-screen white) ────────────────────────────────────────────
+[node name="HitFlash" type="ColorRect" parent="."]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(1, 1, 1, 0)
+mouse_filter = 2

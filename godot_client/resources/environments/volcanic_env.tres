@@ -1,0 +1,45 @@
+; Ashen Cradle arena — volcanic dry heat.
+; Slag fields, ember haze, molten glow. Boss: General Voln (fire).
+[gd_resource type="Environment" load_steps=1 format=3]
+
+[resource]
+background_mode = 1
+background_color = Color(0.12, 0.06, 0.03, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.55, 0.25, 0.08, 1)
+ambient_light_energy = 0.7
+reflected_light_source = 2
+tonemap_mode = 2
+tonemap_white = 6.0
+glow_enabled = true
+glow_bloom = 0.28
+glow_blend_mode = 1
+glow_hdr_threshold = 0.45
+glow_levels/1 = true
+glow_levels/2 = true
+glow_levels/3 = true
+fog_enabled = true
+fog_light_color = Color(0.8, 0.3, 0.05, 1)
+fog_light_energy = 0.8
+fog_sun_scatter = 0.3
+fog_density = 0.012
+fog_height = 0.0
+fog_height_density = 0.05
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.035
+volumetric_fog_albedo = Color(0.7, 0.3, 0.1, 1)
+volumetric_fog_emission = Color(0.4, 0.12, 0.02, 1)
+volumetric_fog_emission_energy = 0.8
+volumetric_fog_anisotropy = 0.4
+volumetric_fog_length = 55.0
+sdfgi_enabled = true
+sdfgi_bounces = 2
+sdfgi_energy = 1.2
+ssao_enabled = true
+ssao_radius = 1.0
+ssao_intensity = 1.8
+ssr_enabled = false
+adjustment_enabled = true
+adjustment_brightness = 1.0
+adjustment_contrast = 1.15
+adjustment_saturation = 0.95

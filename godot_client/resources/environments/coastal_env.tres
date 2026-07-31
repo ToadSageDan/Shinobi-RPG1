@@ -1,0 +1,44 @@
+; Tideglass arena — coastal reef network.
+; Blue-green tidal light, sea spray, distant fog. Boss: Admiral Neris (water).
+[gd_resource type="Environment" load_steps=1 format=3]
+
+[resource]
+background_mode = 1
+background_color = Color(0.06, 0.2, 0.38, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.18, 0.45, 0.62, 1)
+ambient_light_energy = 0.6
+reflected_light_source = 2
+tonemap_mode = 2
+tonemap_white = 7.5
+glow_enabled = true
+glow_bloom = 0.22
+glow_blend_mode = 1
+glow_hdr_threshold = 0.55
+glow_levels/1 = true
+glow_levels/2 = true
+fog_enabled = true
+fog_light_color = Color(0.3, 0.55, 0.75, 1)
+fog_light_energy = 0.5
+fog_density = 0.01
+fog_height = 0.5
+fog_height_density = 0.12
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.028
+volumetric_fog_albedo = Color(0.2, 0.5, 0.7, 1)
+volumetric_fog_emission = Color(0.05, 0.18, 0.28, 1)
+volumetric_fog_emission_energy = 0.4
+volumetric_fog_length = 68.0
+sdfgi_enabled = true
+sdfgi_bounces = 3
+sdfgi_energy = 0.9
+ssao_enabled = true
+ssr_enabled = true
+ssr_max_steps = 64
+ssr_fade_in = 0.15
+ssr_fade_out = 5.0
+ssr_depth_tolerance = 0.2
+adjustment_enabled = true
+adjustment_brightness = 1.02
+adjustment_contrast = 1.06
+adjustment_saturation = 1.18

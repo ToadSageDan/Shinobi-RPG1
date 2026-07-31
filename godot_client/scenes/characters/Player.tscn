@@ -1,0 +1,54 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/Player.gd" id="1_player"]
+[ext_resource type="Script" path="res://scripts/PlayerCamera.gd" id="2_cam"]
+[ext_resource type="Script" path="res://scripts/Hitbox.gd" id="3_hb"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+radius = 0.4
+height = 1.8
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_player")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_1")
+position = Vector3(0, 0.9, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.9, 0)
+; Placeholder capsule mesh — replace with imported character model
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+; Animations: idle, run, jump, fall, land, dash, dodge, wall_run_left, wall_run_right,
+;             wall_jump, double_jump, attack_1, attack_2, attack_3, attack_heavy,
+;             attack_air, hurt, death, jutsu_charge, jutsu_fire, jutsu_fail,
+;             chakra_charge, boss_signature
+
+[node name="CameraArm" type="SpringArm3D" parent="."]
+position = Vector3(0, 1.4, 0)
+spring_length = 5.5
+script = ExtResource("2_cam")
+
+[node name="Camera3D" type="Camera3D" parent="CameraArm"]
+position = Vector3(0, 0, 0)
+fov = 70.0
+
+[node name="Hitbox" type="Area3D" parent="."]
+position = Vector3(0, 0.9, -0.6)
+script = ExtResource("3_hb")
+
+[node name="HitboxShape" type="CollisionShape3D" parent="Hitbox"]
+; Shape is a small box covering the forward attack arc
+
+[node name="WallRayLeft" type="RayCast3D" parent="."]
+target_position = Vector3(-0.75, 0, 0)
+enabled = true
+
+[node name="WallRayRight" type="RayCast3D" parent="."]
+target_position = Vector3(0.75, 0, 0)
+enabled = true
+
+[node name="WallRayFront" type="RayCast3D" parent="."]
+target_position = Vector3(0, 0, -0.75)
+enabled = true

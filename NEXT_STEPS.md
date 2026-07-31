@@ -41,6 +41,50 @@ Items marked `[x]` are complete and correspond to closed GitHub Issues.
 - Current power scope to animate is managed by reusable shared move pools plus selective signature powers.
 - Keep adding powers in a measured way only when they support gameplay depth, not just raw move count.
 
+## v0.5.0 — Godot 4 Real-Time Client *(current)*
+
+- [x] 15) Initialize Godot 4 project under `godot_client/` with Forward Plus renderer,
+  SDFGI global illumination, volumetric fog, bloom, and SSAO enabled per biome.
+- [x] 16) Implement `PlayerCharacter` (`CharacterBody3D`) with wall-run (raycast detection),
+  double-jump, dash (i-frames), dodge (i-frames), combo input buffer, and
+  third-person lock-on camera (`SpringArm3D` with orbit-toward-target). *(Player.gd, PlayerCamera.gd)*
+- [x] 17) Implement `CombatManager` singleton — real-time HP tracking for player and all
+  active enemies, affinity damage matrix (16-entry fire/water/earth/wind cross-table),
+  combo bonus detection, status-effect tick damage (burn 8 DPS, bleed 6 DPS, fear 4 DPS),
+  enemy stagger system, and all signals consumed by the HUD. *(CombatManager.gd)*
+- [x] 18) Implement enemy AI state machine (IDLE → PATROL → DETECT → CHASE → ATTACK →
+  STAGGERED → RECOVER → DEAD) and boss AI with phase-2 transition, signature-move
+  cooldown (8 s), per-phase power bonus, and cinematic taunt. *(Enemy.gd, Boss.gd)*
+- [x] 19) Implement `Hitbox` / `JutsuProjectile` — area-based melee collision and
+  charge-scaled jutsu projectiles with AoE / straight-line routing, affinity hit SFX,
+  and learnable enemy move unlock on defeat. *(Hitbox.gd, JutsuProjectile.gd)*
+- [x] 20) Create all five arena scenes with per-biome `WorldEnvironment` (forest, volcanic,
+  coastal, alpine, cave), enemy spawn points, player spawn, HUD, and GameOver overlay.
+  *(VerdantGate / AshenCradle / Tideglass / StormwallRidge / SunkenHollow .tscn)*
+- [x] 21) Implement `InputBuffer` singleton — 0.45 s window combo detection for
+  triple-slash, launcher, evade-counter, dash-slam, and charged jutsu sequences.
+- [x] 22) Implement full UI layer — `HUD.gd` (HP/Chakra/Stamina bars with status icons,
+  enemy HP bars, combo popups, boss phase banner, hit flash vignette), `GameOver.gd`
+  (run stats + retry/load/menu), `MainMenu`, `CharacterCreation`, `WorldMap`. *(scenes/ui/)*
+- [x] 23) Write three shaders — `cel_shading.gdshader` (anime diffuse_toon + rim light +
+  affinity tint), `chakra_glow.gdshader` (pulsing fill bar), `damage_vignette.gdshader`
+  (screen-edge red flash + chromatic aberration on hit). *(resources/shaders/)*
+- [x] 24) Write `export_world.py` Python bridge — exports all 5 regions, 50 quests,
+  17 villains, 68 moves, 10 allies to `godot_client/data/world_data.json`.
+  `WorldData.gd` autoload reads and serves data; full hardcoded fallback included.
+- [x] 25) Add `ASSETS_GUIDE.md` covering Mixamo characters, Kenney.nl environments,
+  freesound audio, cel-shader application, and minimum-viable art-pass instructions.
+
+## v0.6.0 — Art Pass + Polish *(next)*
+
+- [ ] 26) Import Mixamo character rig + animations for player and at least one enemy type.
+- [ ] 27) Replace placeholder terrain meshes with biome-specific environment assets.
+- [ ] 28) Add `GPUParticles3D` VFX for each affinity jutsu (fire trail, water splash, etc.).
+- [ ] 29) Wire AudioManager with real music tracks and SFX clips.
+- [ ] 30) Add quest waypoints in-world (world-space markers showing active quest region).
+- [ ] 31) Implement Shop and Playthrough Summary UI scenes.
+- [ ] 32) Add controller/gamepad remapping screen under Options.
+
 ## Project board
 
 Create issues for items 6–10 by running:

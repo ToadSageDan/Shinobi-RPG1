@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/Boss.gd" id="1_boss"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+radius = 0.52
+height = 2.1
+
+[node name="Boss" type="CharacterBody3D"]
+script = ExtResource("1_boss")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_1")
+position = Vector3(0, 1.05, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 1.05, 0)
+scale = Vector3(1.15, 1.15, 1.15)
+; Placeholder mesh — replace with boss model
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+; Animations: idle, walk, run, alert, attack, recover, death, hurt,
+;             boss_signature, boss_defeat_kill, boss_defeat_charm,
+;             boss_defeat_stealth, boss_defeat_evasion
+
+[node name="HPBar3D" type="Node3D" parent="."]
+position = Vector3(0, 3.0, 0)
+; Boss HP bar (larger than enemy bar)
+
+[node name="PhaseVFX" type="GPUParticles3D" parent="."]
+; Particle burst on phase 2 transition
+emitting = false

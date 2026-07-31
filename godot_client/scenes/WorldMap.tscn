@@ -1,0 +1,119 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/WorldMap.gd" id="1_wm"]
+
+[node name="WorldMap" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_wm")
+
+[node name="PlayerInfoBar" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.06
+
+[node name="PlayerLabel" type="Label" parent="PlayerInfoBar"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16
+text = "Shinobi  ·  Lv.1  ·  Rep: 0"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.06
+anchor_right = 0.42
+anchor_bottom = 0.94
+
+[node name="RegionList" type="VBoxContainer" parent="ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="DetailPanel" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.44
+anchor_top = 0.06
+anchor_right = 0.96
+anchor_bottom = 0.94
+visible = false
+
+[node name="VBox" type="VBoxContainer" parent="DetailPanel"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20
+offset_top = 16
+offset_right = -20
+offset_bottom = -16
+theme_override_constants/separation = 12
+
+[node name="NameLabel" type="Label" parent="DetailPanel/VBox"]
+text = "Region Name"
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_color = Color(0.95, 0.85, 0.55, 1)
+
+[node name="ClimateLabel" type="Label" parent="DetailPanel/VBox"]
+text = "Climate"
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.7, 0.75, 0.7, 1)
+
+[node name="BossLabel" type="Label" parent="DetailPanel/VBox"]
+text = "Boss: —"
+theme_override_font_sizes/font_size = 18
+
+[node name="LevelLabel" type="Label" parent="DetailPanel/VBox"]
+text = "Required level: 1"
+theme_override_font_sizes/font_size = 16
+
+[node name="StatusLabel" type="Label" parent="DetailPanel/VBox"]
+text = "AVAILABLE"
+theme_override_font_sizes/font_size = 18
+theme_override_colors/font_color = Color(0.4, 1.0, 0.5, 1)
+
+[node name="Spacer" type="Control" parent="DetailPanel/VBox"]
+custom_minimum_size = Vector2(0, 20)
+
+[node name="EnterButton" type="Button" parent="DetailPanel/VBox"]
+text = "▶  Enter Encounter"
+custom_minimum_size = Vector2(0, 52)
+theme_override_font_sizes/font_size = 18
+
+[node name="BossButton" type="Button" parent="DetailPanel/VBox"]
+text = "💀  Challenge Boss"
+custom_minimum_size = Vector2(0, 52)
+theme_override_font_sizes/font_size = 18
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.94
+anchor_right = 0.15
+anchor_bottom = 1.0
+text = "← Menu"
+theme_override_font_sizes/font_size = 16
+
+[node name="ShopButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 0.82
+anchor_top = 0.94
+anchor_right = 0.91
+anchor_bottom = 1.0
+text = "🛒 Shop"
+theme_override_font_sizes/font_size = 16
+
+[node name="SummaryButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 0.91
+anchor_top = 0.94
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "📊"
+theme_override_font_sizes/font_size = 16

@@ -121,7 +121,13 @@ class ShinobiRuntimeClient:
                     ][:4],
                 },
                 "combat_encounter": {
-                    "enemy": region.field_enemies[0] if region.field_enemies else "Bandit Scouts",
+                    "enemy": (
+                        region.encounter_table[0]
+                        if region.encounter_table
+                        else region.enemies[0]
+                        if region.enemies
+                        else "Bandit Scouts"
+                    ),
                     "playable_move_categories": [category.value for category in MoveCategory],
                     "timeline_quality_gate": "startup_travel_hit_recovery_required",
                 },

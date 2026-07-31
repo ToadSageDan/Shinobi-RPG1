@@ -167,6 +167,23 @@ OUTCOME_BRANCH_PATH_KEYS = {
     "stealth": "stealth_path",
     "evasion": "evasion_path",
 }
+CITY_QUEST_PRESSURE_BY_BRANCH = {
+    "kill_path": 2,
+    "rogue_path": 2,
+    "default": 1,
+    "stealth_path": 1,
+    "evasion_path": 1,
+    "charm_path": -1,
+    "heroic_path": -1,
+    "nonlethal_path": -1,
+}
+WORLD_MAP_REGION_COORDINATES = {
+    "Verdant Gate": (4, 6),
+    "Ashen Cradle": (16, 3),
+    "Tideglass Basin": (28, 5),
+    "Stormwall Ridge": (24, 11),
+    "Sunken Hollow": (12, 12),
+}
 STEALTH_GATED_QUEST_IDS = {"Q3", "Q5", "Q10"}
 REFORMED_VILLAIN_DIALOGUE_HOOKS: Dict[str, Dict[str, str]] = {
     "Q3": {
@@ -1602,6 +1619,9 @@ class NinjaWorld:
     latent_decision_seeds: Dict[str, int] = field(default_factory=dict)
     latent_echo_history: List[Dict[str, Any]] = field(default_factory=list)
     npc_evil_profiles: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    city_immersion_state: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    npc_consequence_state: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    npc_consequence_log: List[Dict[str, Any]] = field(default_factory=list)
     external_pressure_history: List[Dict[str, Any]] = field(default_factory=list)
     intel_discovery_log: List[Dict[str, Any]] = field(default_factory=list)
     arc_transition_history: List[Dict[str, Any]] = field(default_factory=list)
@@ -1645,6 +1665,17 @@ class NinjaWorld:
             self.dynamic_region_chain = [region.name for region in self.regions]
         if not self.npc_evil_profiles:
             self.npc_evil_profiles = self._seed_npc_evil_profiles()
+        if not self.city_immersion_state:
+            city_names = sorted({npc.city_name for npc in self.city_npcs})
+            self.city_immersion_state = {
+                city_name: {"alert_level": 0, "intel_noise": 0, "quest_pressure": 0}
+                for city_name in city_names
+            }
+        if not self.npc_consequence_state:
+            self.npc_consequence_state = {
+                npc.name: {"suspicion": 0, "trust": 0, "intel_shared": 0}
+                for npc in self.city_npcs
+            }
         self.time_cycle_index = self.time_cycle_index % len(DAY_NIGHT_CYCLE)
         self.weather_cycle_index = self.weather_cycle_index % len(WEATHER_CYCLE)
 
@@ -2703,6 +2734,54 @@ class NinjaWorld:
             raise ValueError(f'City NPC "{npc_name}" not found.')
         return npc
 
+    def _ensure_city_state(self, city_name: str) -> Dict[str, int]:
+        state = self.city_immersion_state.setdefault(
+            city_name,
+            {"alert_level": 0, "intel_noise": 0, "quest_pressure": 0},
+        )
+        state["alert_level"] = max(0, int(state.get("alert_level", 0)))
+        state["intel_noise"] = max(0, int(state.get("intel_noise", 0)))
+        state["quest_pressure"] = max(0, int(state.get("quest_pressure", 0)))
+        return state
+
+    def _ensure_npc_consequence_state(self, npc_name: str) -> Dict[str, int]:
+        state = self.npc_consequence_state.setdefault(
+            npc_name,
+            {"suspicion": 0, "trust": 0, "intel_shared": 0},
+        )
+        state["suspicion"] = max(0, int(state.get("suspicion", 0)))
+        state["trust"] = max(0, int(state.get("trust", 0)))
+        state["intel_shared"] = max(0, int(state.get("intel_shared", 0)))
+        return state
+
+    def _record_npc_consequence(
+        self,
+        *,
+        npc: CityNPC,
+        action: str,
+        outcome: str,
+        detail: str,
+    ) -> Dict[str, Any]:
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
+        record = {
+            "npc": npc.name,
+            "city_name": npc.city_name,
+            "region_name": npc.region_name,
+            "action": action,
+            "outcome": outcome,
+            "detail": detail,
+            "city_alert_level": city_state["alert_level"],
+            "city_intel_noise": city_state["intel_noise"],
+            "city_quest_pressure": city_state["quest_pressure"],
+            "npc_suspicion": npc_state["suspicion"],
+            "npc_trust": npc_state["trust"],
+            "npc_intel_shared": npc_state["intel_shared"],
+        }
+        self.npc_consequence_log.append(record)
+        self.npc_consequence_log = self.npc_consequence_log[-200:]
+        return record
+
     def get_quest_distribution(self) -> Dict[str, List[Dict[str, str]]]:
         distribution: Dict[str, List[Dict[str, str]]] = {}
         for quest in self.quests:
@@ -2719,6 +2798,36 @@ class NinjaWorld:
                 }
             )
         return distribution
+
+    def generate_mock_world_map(self) -> Dict[str, Any]:
+        width = 34
+        height = 16
+        grid = [["·" for _ in range(width)] for _ in range(height)]
+        legend: List[Dict[str, Any]] = []
+        for index, region in enumerate(self.regions, start=1):
+            x, y = WORLD_MAP_REGION_COORDINATES.get(region.name, (2 + index * 5, 2 + (index % 4) * 3))
+            if 0 <= y < height and 0 <= x < width:
+                grid[y][x] = str(index)
+            boss_arena = next((poi.name for poi in region.points_of_interest if poi.poi_type == "boss_arena"), region.boss)
+            legend.append(
+                {
+                    "marker": str(index),
+                    "region": region.name,
+                    "city_hub": region.village_hub,
+                    "boss": region.boss,
+                    "boss_location": boss_arena,
+                    "climate": region.climate,
+                    "terrain_profile": list(region.terrain_profile),
+                }
+            )
+        ascii_map = "\n".join("".join(row) for row in grid)
+        return {
+            "title": "Mock World Map: Quiet Steel Confederacy",
+            "ascii_map": ascii_map,
+            "legend": legend,
+            "recommended_route": [region.name for region in self.regions],
+            "active_dynamic_route": list(self.dynamic_region_chain),
+        }
 
     def get_technique_catalog(
         self, *, affinity: Affinity | None = None, technique_type: TechniqueType | None = None
@@ -2801,6 +2910,50 @@ class NinjaWorld:
             "already_defeated": already_defeated,
         }
 
+    def _build_city_quest_layer(self, quest: Quest, branch_key: str) -> Dict[str, Any]:
+        city_name = quest.city_hub or (
+            self._find_region(quest.region_name).village_hub if quest.region_name else "Unassigned"
+        )
+        city_state = self._ensure_city_state(city_name)
+        pressure_delta = int(CITY_QUEST_PRESSURE_BY_BRANCH.get(branch_key, CITY_QUEST_PRESSURE_BY_BRANCH["default"]))
+        prior_pressure = city_state["quest_pressure"]
+        city_state["quest_pressure"] = max(0, min(12, prior_pressure + pressure_delta))
+        city_state["intel_noise"] = max(
+            0,
+            min(8, city_state["intel_noise"] + (1 if pressure_delta > 1 else 0) - (1 if pressure_delta < 0 else 0)),
+        )
+        if pressure_delta > 1:
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 1)
+        elif pressure_delta < 0:
+            city_state["alert_level"] = max(0, city_state["alert_level"] - 1)
+        region_pressure = 0
+        if quest.region_name:
+            region_pressure = int(self.region_state.get(quest.region_name, {}).get("pressure", 0))
+        total_pressure = city_state["quest_pressure"] + region_pressure
+        if total_pressure >= 8:
+            city_mood = "lockdown"
+        elif total_pressure >= 4:
+            city_mood = "uneasy watch"
+        else:
+            city_mood = "measured calm"
+        narrative = (
+            f"{city_name} reacts with {city_mood}: {quest.quest_giver} tracks the fallout while wardens adjust "
+            f"patrol routes around this quest line."
+        )
+        return {
+            "city_name": city_name,
+            "region_name": quest.region_name,
+            "quest_giver": quest.quest_giver,
+            "branch_pressure_delta": pressure_delta,
+            "quest_pressure_before": prior_pressure,
+            "quest_pressure_after": city_state["quest_pressure"],
+            "alert_level": city_state["alert_level"],
+            "intel_noise": city_state["intel_noise"],
+            "region_pressure": region_pressure,
+            "mood": city_mood,
+            "narrative": narrative,
+        }
+
     def resolve_quest_branch(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
         quest = next((q for q in self.quests if q.quest_id == quest_id), None)
         if not quest:
@@ -2808,11 +2961,12 @@ class NinjaWorld:
         state = self._ensure_quest_resolution_state(player, quest)
 
         if not quest.branch_outcomes:
+            city_layer = self._build_city_quest_layer(quest, "default")
             return {
                 "quest_id": quest.quest_id,
                 "title": quest.title,
                 "branch_key": "default",
-                "outcome": quest.objective,
+                "outcome": f"{quest.objective} {city_layer['narrative']}",
                 "premise": quest.premise or quest.objective,
                 "objective": quest.objective,
                 "choices": list(quest.choices),
@@ -2822,6 +2976,7 @@ class NinjaWorld:
                 "reputation_impacts": dict(quest.reputation_impacts),
                 "trophy_hooks": list(quest.trophy_hooks),
                 "quest_resolution": dict(state),
+                "city_layer": city_layer,
                 "reformed_villain_hook": None,
             }
 
@@ -2833,6 +2988,8 @@ class NinjaWorld:
         reformed_hook = self._get_reformed_villain_hook(quest.quest_id)
         if reformed_hook:
             outcome = f"{outcome} {reformed_hook}"
+        city_layer = self._build_city_quest_layer(quest, branch_key)
+        outcome = f"{outcome} {city_layer['narrative']}"
         state = player.set_quest_resolution_context(
             quest.quest_id,
             stealth_required=quest.stealth_required,
@@ -2852,6 +3009,7 @@ class NinjaWorld:
             "reputation_impacts": dict(quest.reputation_impacts),
             "trophy_hooks": list(quest.trophy_hooks),
             "quest_resolution": dict(state),
+            "city_layer": city_layer,
             "reformed_villain_hook": reformed_hook,
         }
 
@@ -3245,16 +3403,50 @@ class NinjaWorld:
             "dialogue": npc.dialogue,
             "services": list(npc.services),
         }
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
         if normalized == "trade":
             result["shops"] = self.get_city_shops(player, region_name=npc.region_name, city_name=npc.city_name)
         elif normalized == "gather_intel":
-            intel_check = player.resolve_action_check("scouting", difficulty=6)
-            result["intel_check"] = intel_check
-            result["intel"] = (
-                f"{npc.name} outlines route pressure around {npc.city_name}."
-                if intel_check["success"]
-                else f"{npc.name} shares only surface rumors about {npc.city_name}."
+            suspicion_gap = max(0, npc_state["suspicion"] - npc_state["trust"])
+            intel_difficulty = max(3, 6 + city_state["intel_noise"] + suspicion_gap)
+            intel_bonus = max(0, npc_state["trust"] - npc_state["suspicion"])
+            intel_check = player.resolve_action_check(
+                "scouting",
+                difficulty=intel_difficulty,
+                situational_bonus=intel_bonus,
             )
+            result["intel_check"] = intel_check
+            if intel_check["success"]:
+                npc_state["trust"] = min(6, npc_state["trust"] + 1)
+                npc_state["intel_shared"] = min(99, npc_state["intel_shared"] + 1)
+                city_state["quest_pressure"] = max(0, city_state["quest_pressure"] - 1)
+                result["intel"] = (
+                    f"{npc.name} shares verified route windows, checkpoint routines, and faction mood shifts around "
+                    f"{npc.city_name}."
+                )
+                consequence = self._record_npc_consequence(
+                    npc=npc,
+                    action="gather_intel",
+                    outcome="success",
+                    detail="Detailed intel shared after trust gains.",
+                )
+            else:
+                npc_state["suspicion"] = min(8, npc_state["suspicion"] + 1)
+                city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+                result["intel"] = (
+                    f"{npc.name} shares only rumor fragments while patrol chatter in {npc.city_name} grows louder."
+                )
+                consequence = self._record_npc_consequence(
+                    npc=npc,
+                    action="gather_intel",
+                    outcome="failure",
+                    detail="Intel access narrowed by rising suspicion.",
+                )
+            result["intel_difficulty"] = intel_difficulty
+            result["npc_consequence"] = consequence
+        result["city_state"] = dict(city_state)
+        result["npc_state"] = dict(npc_state)
         return result
 
     def set_mobile_fast_travel(self, player: PlayerProfile, node_name: str) -> Dict[str, Any]:
@@ -3300,15 +3492,34 @@ class NinjaWorld:
 
     def attempt_pickpocket(self, player: PlayerProfile, npc_name: str) -> Dict[str, Any]:
         npc = self._find_city_npc(npc_name)
-        check = player.resolve_action_check("pickpocket", difficulty=npc.pickpocket_difficulty)
+        city_state = self._ensure_city_state(npc.city_name)
+        npc_state = self._ensure_npc_consequence_state(npc.name)
+        suspicion_gap = max(0, npc_state["suspicion"] - npc_state["trust"])
+        effective_difficulty = max(
+            3,
+            npc.pickpocket_difficulty + city_state["alert_level"] + suspicion_gap,
+        )
+        check = player.resolve_action_check("pickpocket", difficulty=effective_difficulty)
         if check["success"]:
-            reward = max(8, npc.pickpocket_difficulty * 4 + player.action_attributes.get("pickpocket", 1))
+            reward_base = npc.pickpocket_difficulty * 4 + player.action_attributes.get("pickpocket", 1)
+            reward = max(6, reward_base - (city_state["alert_level"] * 2))
             player.earn_credits(reward)
             player.pickpocket_history["success"] = int(player.pickpocket_history.get("success", 0)) + 1
             player.update_reputation(PICKPOCKET_REPUTATION_PENALTY_ON_SUCCESS)
+            npc_state["suspicion"] = min(8, npc_state["suspicion"] + 1)
+            npc_state["trust"] = max(0, npc_state["trust"] - 1)
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 1)
+            city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+            city_state["quest_pressure"] = min(12, city_state["quest_pressure"] + 1)
             self.store_memory(
                 player.name,
                 f"Picked {npc.name}'s pocket in {npc.city_name} and escaped with {reward} credits.",
+            )
+            consequence = self._record_npc_consequence(
+                npc=npc,
+                action="pickpocket",
+                outcome="success",
+                detail="NPC notices inventory tampering and hardens local routines.",
             )
             result = {
                 "npc": npc.name,
@@ -3318,15 +3529,27 @@ class NinjaWorld:
                 "stolen_item_hint": npc.pickpocket_rewards[0] if npc.pickpocket_rewards else "loose coin purse",
                 "check": check,
                 "remaining_credits": player.credits,
+                "npc_consequence": consequence,
             }
         else:
             player.pickpocket_history["caught"] = int(player.pickpocket_history.get("caught", 0)) + 1
             player.update_reputation(PICKPOCKET_REPUTATION_PENALTY_ON_CAUGHT)
+            npc_state["suspicion"] = min(8, npc_state["suspicion"] + 2)
+            npc_state["trust"] = max(0, npc_state["trust"] - 2)
+            city_state["alert_level"] = min(8, city_state["alert_level"] + 2)
+            city_state["intel_noise"] = min(8, city_state["intel_noise"] + 1)
+            city_state["quest_pressure"] = min(12, city_state["quest_pressure"] + 2)
             self._update_antagonist_scores(
                 signal="pickpocket_caught",
                 intensity=1,
                 focal_points=self.allies[:1],
                 causes=[npc.name, npc.city_name],
+            )
+            consequence = self._record_npc_consequence(
+                npc=npc,
+                action="pickpocket",
+                outcome="caught",
+                detail="Local patrols escalate sweeps and informants become hostile.",
             )
             result = {
                 "npc": npc.name,
@@ -3335,6 +3558,7 @@ class NinjaWorld:
                 "credits_stolen": 0,
                 "check": check,
                 "remaining_credits": player.credits,
+                "npc_consequence": consequence,
             }
         self._log_tapestry(
             event_type="city_action",
@@ -3342,6 +3566,9 @@ class NinjaWorld:
             causes=[f"success:{result['success']}"],
             effects={"credits_delta": result["credits_stolen"], "region": npc.region_name},
         )
+        result["effective_difficulty"] = effective_difficulty
+        result["city_state"] = dict(city_state)
+        result["npc_state"] = dict(npc_state)
         return result
 
     def evaluate_trophies(self, player: PlayerProfile) -> Set[str]:
@@ -4222,6 +4449,23 @@ class NinjaWorld:
                     }
                     for name, payload in self.npc_evil_profiles.items()
                 },
+                "city_immersion_state": {
+                    city_name: {
+                        "alert_level": int(state.get("alert_level", 0)),
+                        "intel_noise": int(state.get("intel_noise", 0)),
+                        "quest_pressure": int(state.get("quest_pressure", 0)),
+                    }
+                    for city_name, state in self.city_immersion_state.items()
+                },
+                "npc_consequence_state": {
+                    npc_name: {
+                        "suspicion": int(state.get("suspicion", 0)),
+                        "trust": int(state.get("trust", 0)),
+                        "intel_shared": int(state.get("intel_shared", 0)),
+                    }
+                    for npc_name, state in self.npc_consequence_state.items()
+                },
+                "npc_consequence_log": [dict(entry) for entry in self.npc_consequence_log],
                 "external_pressure_history": [dict(entry) for entry in self.external_pressure_history],
                 "intel_discovery_log": [dict(entry) for entry in self.intel_discovery_log],
                 "memory_store": {
@@ -4482,6 +4726,23 @@ class NinjaWorld:
                 }
                 for name, payload in world_snapshot.get("npc_evil_profiles", {}).items()
             },
+            city_immersion_state={
+                city_name: {
+                    "alert_level": int(payload.get("alert_level", 0)),
+                    "intel_noise": int(payload.get("intel_noise", 0)),
+                    "quest_pressure": int(payload.get("quest_pressure", 0)),
+                }
+                for city_name, payload in world_snapshot.get("city_immersion_state", {}).items()
+            },
+            npc_consequence_state={
+                npc_name: {
+                    "suspicion": int(payload.get("suspicion", 0)),
+                    "trust": int(payload.get("trust", 0)),
+                    "intel_shared": int(payload.get("intel_shared", 0)),
+                }
+                for npc_name, payload in world_snapshot.get("npc_consequence_state", {}).items()
+            },
+            npc_consequence_log=list(world_snapshot.get("npc_consequence_log", [])),
             external_pressure_history=list(world_snapshot.get("external_pressure_history", [])),
             intel_discovery_log=list(world_snapshot.get("intel_discovery_log", [])),
             memory_store={

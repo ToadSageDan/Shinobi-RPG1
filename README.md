@@ -60,6 +60,7 @@ The bootstrap command outputs a JSON summary of the seeded player setup, support
 - Reformed villain dialogue hooks for key quest outcomes
 - Playthrough summary report including backstory, trophies, reputation, and villain stances
 - NPC evil-threshold evolution and intel event systems
+- City-specific quest pressure layering, NPC-specific steal/intel consequences, and mock world map output
 - Canon world codex in [`LORE_DUMP.md`](LORE_DUMP.md) plus programmatic `generate_lore_dump()` output
 
 ## Run tests

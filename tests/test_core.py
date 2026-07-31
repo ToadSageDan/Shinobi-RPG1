@@ -890,6 +890,52 @@ class CoreSystemTests(unittest.TestCase):
         self.assertIn("shops", trade)
         self.assertTrue(trade["shops"])
 
+    def test_city_specific_quest_layer_tracks_pressure_and_mood(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        result = world.resolve_quest_branch(player, "Q4")
+        self.assertIn("city_layer", result)
+        self.assertIn("mood", result["city_layer"])
+        self.assertIn("city_name", result["city_layer"])
+        self.assertIn(result["city_layer"]["city_name"], result["outcome"])
+        self.assertGreaterEqual(result["city_layer"]["quest_pressure_after"], 0)
+
+    def test_pickpocket_consequence_updates_npc_and_city_state(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.stats.agility = 18
+        player.attribute_points = 5
+        player.raise_action_attribute("pickpocket", 4)
+        result = world.attempt_pickpocket(player, "Quartermaster Iori")
+        self.assertTrue(result["success"])
+        self.assertIn("npc_consequence", result)
+        self.assertEqual(result["npc_consequence"]["action"], "pickpocket")
+        self.assertGreaterEqual(result["city_state"]["alert_level"], 1)
+        self.assertGreaterEqual(result["npc_state"]["suspicion"], 1)
+
+    def test_npc_specific_intel_consequence_changes_with_trust(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.stats.focus = 4
+        first = world.interact_city_npc(player, "Quartermaster Iori", interaction="gather_intel")
+        self.assertFalse(first["intel_check"]["success"])
+        self.assertEqual(first["npc_consequence"]["outcome"], "failure")
+        player.stats.focus = 20
+        player.attribute_points = 4
+        player.raise_action_attribute("scouting", 3)
+        second = world.interact_city_npc(player, "Quartermaster Iori", interaction="gather_intel")
+        self.assertTrue(second["intel_check"]["success"])
+        self.assertEqual(second["npc_consequence"]["outcome"], "success")
+        self.assertGreaterEqual(second["npc_state"]["trust"], 1)
+
+    def test_mock_world_map_contains_regions_and_boss_locations(self):
+        world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        world_map = world.generate_mock_world_map()
+        self.assertIn("ascii_map", world_map)
+        self.assertIn("legend", world_map)
+        self.assertEqual(len(world_map["legend"]), len(world.regions))
+        first = world_map["legend"][0]
+        self.assertIn("region", first)
+        self.assertIn("boss", first)
+        self.assertIn("boss_location", first)
+
     def test_trophy_progress_contains_near_miss(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         for _ in range(2):

@@ -106,6 +106,15 @@ DAY_NIGHT_CYCLE = ("dawn", "day", "dusk", "night")
 WEATHER_CYCLE = ("clear", "breezy", "rain", "storm", "fog")
 AOE_TARGETING_TERMS = ("nova", "storm", "maelstrom", "cyclone", "burst", "eruption", "field", "convergence")
 STRAIGHT_LINE_TARGETING_TERMS = ("line", "lance", "spear", "arc", "bolt", "shot", "slice", "current")
+THROWABLE_WEAPON_TYPES = {WeaponType.KUNAI, WeaponType.NINJA_STARS}
+THROWABLE_BASE_HIT_CHANCE = {
+    WeaponType.KUNAI: 0.72,
+    WeaponType.NINJA_STARS: 0.68,
+}
+MAX_THROWABLE_HIT_CHANCE = 0.92
+ULTIMATE_CHAKRA_COST_RATIO = 0.45
+SUMMON_CHAKRA_COST_RATIO = 0.28
+CHAKRA_CHARGE_RATIO = 0.22
 OUTCOME_BRANCH_PATH_KEYS = {
     "kill": "kill_path",
     "charm": "charm_path",
@@ -717,6 +726,23 @@ def _reputation_tier_for(reputation: int) -> ReputationTier:
     return ReputationTier.NEUTRAL
 
 
+def _build_encounter_group(encounter_name: str, times_seen: int) -> List[str]:
+    normalized = encounter_name.strip().lower()
+    if not normalized:
+        return [encounter_name]
+    if any(marker in normalized for marker in ("wolves", "hounds", "scouts", "raiders", "corsairs")):
+        group_size = 3
+    elif any(marker in normalized for marker in ("sentry", "assassin", "syndicate", "circle", "executioners")):
+        group_size = 2
+    elif any(marker in normalized for marker in ("ronin", "monks", "hunters", "adepts", "wraiths", "stalkers")):
+        group_size = 2 if times_seen % 2 == 0 else 1
+    else:
+        group_size = 1
+    if group_size <= 1:
+        return [encounter_name]
+    return [f"{encounter_name} #{index}" for index in range(1, group_size + 1)]
+
+
 @dataclass(frozen=True)
 class Move:
     name: str
@@ -937,12 +963,34 @@ class PlayerProfile:
     credits: int = 100
     active_status_effects: Dict[str, Dict[str, int]] = field(default_factory=dict)
     locked_on_target: str | None = None
+    chakra_reserve: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.chakra_reserve is None:
+            self.chakra_reserve = self.chakra_max()
+        else:
+            self.chakra_reserve = max(0, min(int(self.chakra_reserve), self.chakra_max()))
 
     def choose_backstory(self, backstory: Backstory) -> None:
         self.selected_backstory = backstory
         self.narrative_tags.update(backstory.narrative_tags)
         if backstory.reputation_bias:
             self.update_reputation(backstory.reputation_bias)
+
+    def chakra_max(self) -> int:
+        return self.stats.focus * 10 + 20
+
+    def charge_chakra(self) -> Dict[str, int]:
+        current = self.chakra_reserve if self.chakra_reserve is not None else self.chakra_max()
+        maximum = self.chakra_max()
+        gain = max(10, int(maximum * CHAKRA_CHARGE_RATIO) + self.stats.focus // 2)
+        updated = min(maximum, current + gain)
+        self.chakra_reserve = updated
+        return {
+            "gained": updated - current,
+            "chakra": updated,
+            "chakra_max": maximum,
+        }
 
     def record_encounter_outcome(
         self, outcome: Literal["kill", "charm", "stealth", "evasion"]
@@ -1055,12 +1103,31 @@ class PlayerProfile:
     def clear_lock_on_target(self) -> None:
         self.locked_on_target = None
 
+    def _chakra_cost_for_move(self, move: Move) -> int:
+        if move.category == MoveCategory.ULTIMATE:
+            return max(20, int(round(self.chakra_max() * ULTIMATE_CHAKRA_COST_RATIO)))
+        if move.category == MoveCategory.SUMMON:
+            return max(12, int(round(self.chakra_max() * SUMMON_CHAKRA_COST_RATIO)))
+        return 0
+
+    def _consume_chakra_for_move(self, move: Move) -> int:
+        cost = self._chakra_cost_for_move(move)
+        current = self.chakra_reserve if self.chakra_reserve is not None else self.chakra_max()
+        if cost > current:
+            raise ValueError(
+                f'Move "{move.name}" requires {cost} chakra charge, but only {current} is available.'
+            )
+        self.chakra_reserve = current - cost
+        return cost
+
     def _resolve_targeting_profile(
         self,
         move: Move,
         *,
         target_name: str | None,
         lock_on: bool,
+        target_names: Sequence[str] | None = None,
+        enemy_count: int = 1,
     ) -> Dict[str, Any]:
         if move.category in {MoveCategory.DEFENSE, MoveCategory.ESCAPE}:
             mode = "self"
@@ -1075,6 +1142,13 @@ class PlayerProfile:
 
         tracking_required = move.category in {MoveCategory.ATTACK, MoveCategory.ULTIMATE} and mode == "tracking"
         selected_target = target_name.strip() if target_name is not None and target_name.strip() else None
+        selected_targets = [
+            candidate.strip()
+            for candidate in (target_names or ())
+            if candidate is not None and candidate.strip()
+        ]
+        if selected_target is not None and selected_target not in selected_targets:
+            selected_targets.insert(0, selected_target)
 
         if lock_on:
             if selected_target is not None:
@@ -1082,11 +1156,23 @@ class PlayerProfile:
             elif self.locked_on_target is None:
                 raise ValueError("Lock-on requires a target name when no lock target is currently set.")
         current_target = self.locked_on_target if lock_on else selected_target
+        if mode != "aoe" and len(selected_targets) > 1:
+            raise ValueError(f'Move "{move.name}" cannot target multiple enemies at once.')
+        if mode == "aoe":
+            resolved_targets = selected_targets or ([current_target] if current_target else [])
+            target_count = len(resolved_targets) if resolved_targets else max(1, enemy_count)
+        else:
+            resolved_targets = [current_target] if current_target else selected_targets[:1]
+            target_count = len(resolved_targets)
 
         return {
             "mode": mode,
             "tracking_required": tracking_required,
             "target": current_target,
+            "targets": resolved_targets,
+            "target_count": target_count,
+            "enemy_count": max(1, enemy_count),
+            "multi_target_capable": mode == "aoe",
             "lock_on_active": lock_on and self.locked_on_target is not None,
             "tracking_applied": tracking_required and current_target is not None,
         }
@@ -1098,6 +1184,8 @@ class PlayerProfile:
         escape_difficulty: int = 6,
         target_name: str | None = None,
         lock_on: bool = False,
+        target_names: Sequence[str] | None = None,
+        enemy_count: int = 1,
     ) -> Dict[str, Any]:
         """Execute an unlocked move and return deterministic MVP combat output.
 
@@ -1105,16 +1193,29 @@ class PlayerProfile:
         Attack, Defense, and Ultimate categories.
         """
         move = self.get_move(move_name)
+        chakra_cost = self._consume_chakra_for_move(move)
         if move.status_effects:
             self.apply_status_effects(move.status_effects)
         combat_physics = self._build_combat_physics(move)
-        combat_targeting = self._resolve_targeting_profile(move, target_name=target_name, lock_on=lock_on)
+        combat_targeting = self._resolve_targeting_profile(
+            move,
+            target_name=target_name,
+            lock_on=lock_on,
+            target_names=target_names,
+            enemy_count=enemy_count,
+        )
         if move.category == MoveCategory.ATTACK:
             damage = int(self.stats.power * move.power_scale)
             return {
                 "move": move.name,
                 "category": move.category.value,
                 "damage": damage,
+                "chakra_cost": chakra_cost,
+                "chakra_remaining": self.chakra_reserve,
+                "damage_profile": {
+                    "per_target": damage,
+                    "potential_total": damage * max(combat_targeting["target_count"], 1),
+                },
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
@@ -1125,6 +1226,8 @@ class PlayerProfile:
                 "move": move.name,
                 "category": move.category.value,
                 "guard": guard,
+                "chakra_cost": chakra_cost,
+                "chakra_remaining": self.chakra_reserve,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
@@ -1137,6 +1240,8 @@ class PlayerProfile:
                 "category": move.category.value,
                 "escape_score": escape_score,
                 "escaped": escaped,
+                "chakra_cost": chakra_cost,
+                "chakra_remaining": self.chakra_reserve,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
@@ -1147,6 +1252,12 @@ class PlayerProfile:
                 "move": move.name,
                 "category": move.category.value,
                 "damage": damage,
+                "chakra_cost": chakra_cost,
+                "chakra_remaining": self.chakra_reserve,
+                "damage_profile": {
+                    "per_target": damage,
+                    "potential_total": damage * max(combat_targeting["target_count"], 1),
+                },
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
@@ -1158,11 +1269,60 @@ class PlayerProfile:
                 "category": move.category.value,
                 "summon_power": summon_power,
                 "summon_type": move.technique_type.value,
+                "chakra_cost": chakra_cost,
+                "chakra_remaining": self.chakra_reserve,
                 "applied_statuses": [effect.value for effect in move.status_effects],
                 "combat_physics": combat_physics,
                 "combat_targeting": combat_targeting,
             }
         raise ValueError(f'Unsupported move category "{move.category.value}".')
+
+    def get_throwable_weapons(self) -> List[Weapon]:
+        return [weapon for weapon in self.weapons if weapon.weapon_type in THROWABLE_WEAPON_TYPES]
+
+    def execute_throwable_attack(
+        self,
+        weapon_name: str,
+        *,
+        target_name: str,
+        enemy_count: int = 1,
+        lock_on: bool = False,
+        roll: float | None = None,
+    ) -> Dict[str, Any]:
+        weapon = next((item for item in self.weapons if item.name == weapon_name), None)
+        if weapon is None:
+            raise ValueError(f'Weapon "{weapon_name}" is not equipped.')
+        if weapon.weapon_type not in THROWABLE_WEAPON_TYPES:
+            raise ValueError(f'Weapon "{weapon.name}" cannot be thrown accurately in this combat model.')
+        target = target_name.strip()
+        if not target:
+            raise ValueError("Throwable attacks require a target.")
+        if lock_on:
+            self.set_lock_on_target(target)
+        current_target = self.locked_on_target if lock_on else target
+        base_hit_chance = THROWABLE_BASE_HIT_CHANCE[weapon.weapon_type]
+        skill_bonus = min(self.stats.agility / 100, 0.16) + min(self.stats.focus / 200, 0.08)
+        lock_bonus = 0.08 if lock_on and self.locked_on_target is not None else 0.0
+        crowd_penalty = max(0, enemy_count - 1) * 0.04
+        hit_chance = min(MAX_THROWABLE_HIT_CHANCE, max(0.45, base_hit_chance + skill_bonus + lock_bonus - crowd_penalty))
+        damage = weapon.base_power + self.stats.agility // 2 + (2 if lock_bonus else 0)
+        hit = None if roll is None else roll < hit_chance
+        multi_target_ready = weapon.weapon_type == WeaponType.NINJA_STARS and enemy_count > 1
+        return {
+            "weapon": weapon.name,
+            "weapon_type": weapon.weapon_type.value,
+            "target": current_target,
+            "enemy_count": max(1, enemy_count),
+            "lock_on_active": lock_on and self.locked_on_target is not None,
+            "tracking_applied": current_target is not None,
+            "multi_target_ready": multi_target_ready,
+            "projectile_count": 3 if weapon.weapon_type == WeaponType.NINJA_STARS else 1,
+            "hit_chance": round(hit_chance, 2),
+            "guaranteed_hit": False,
+            "hit": hit,
+            "damage": damage,
+            "applied_statuses": [effect.value for effect in weapon.status_effects],
+        }
 
     def _build_combat_physics(self, move: Move) -> Dict[str, Any]:
         impact_force = int((self.stats.power + self.stats.agility) * move.power_scale)
@@ -1392,6 +1552,7 @@ class PlayerProfile:
             "encounter_history": dict(self.encounter_history),
             "credits": self.credits,
             "locked_on_target": self.locked_on_target,
+            "chakra_reserve": self.chakra_reserve,
             "active_status_effects": {
                 effect_name: {
                     "duration": int(payload.get("duration", 0)),
@@ -2852,6 +3013,7 @@ class NinjaWorld:
                 return {
                     "region": region_name,
                     "encounter": region.assassin_hunter_name,
+                    "encounter_group": _build_encounter_group(region.assassin_hunter_name, encounter_count),
                     "encounter_index": None,
                     "times_seen": encounter_count,
                     "unauthorized_region": True,
@@ -2877,6 +3039,7 @@ class NinjaWorld:
         return {
             "region": region_name,
             "encounter": encounter,
+            "encounter_group": _build_encounter_group(encounter, encounter_count),
             "encounter_index": encounter_index,
             "times_seen": encounter_count,
             "reward_xp": reward_xp,
@@ -4045,6 +4208,7 @@ class NinjaWorld:
             },
             credits=int(player_snapshot.get("credits", 100)),
             locked_on_target=player_snapshot.get("locked_on_target"),
+            chakra_reserve=player_snapshot.get("chakra_reserve"),
             unlocked_move_names=set(player_snapshot.get("unlocked_move_names", [])),
             active_status_effects={
                 effect_name: {

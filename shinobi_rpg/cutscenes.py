@@ -588,6 +588,32 @@ BOSS_CUTSCENE_DATA: Dict[str, Dict[str, Any]] = {
     },
 }
 
+MINOR_ENCOUNTER_CUTSCENES: Dict[str, Dict[str, str]] = {
+    "Mist Ronin": {
+        "title": "A ronin tests the border silence",
+        "beat": (
+            "A lone ronin steps from the fog with one hand near the hilt and the other "
+            "resting on a stolen Leafrise courier sash. This is less an ambush than a warning "
+            "that the border still belongs to whoever can hold it."
+        ),
+    },
+    "Ash Mercenaries": {
+        "title": "Cinder Port's hired blades arrive first",
+        "beat": (
+            "Mercenaries in heat-scored armor drift out from the forge haze, checking your "
+            "stance before they check their orders. Somebody in the Cradle is paying close "
+            "attention to who crosses these streets."
+        ),
+    },
+    "Stormcaller Scouts": {
+        "title": "The ridge spots you before you spot it",
+        "beat": (
+            "Static cracks between iron prayer tags as the scouts take the high ground. "
+            "They are not here to stop the story — only to make sure the storm hears your name."
+        ),
+    },
+}
+
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -725,3 +751,38 @@ def get_boss_taunt(boss_name: str) -> str | None:
 def list_cutscene_bosses() -> List[str]:
     """Return the list of bosses that have full cutscene data."""
     return list(BOSS_CUTSCENE_DATA.keys())
+
+
+def play_minor_encounter_cutscene(
+    encounter_name: str,
+    region_name: str,
+    *,
+    player_name: str,
+    threat_count: int = 1,
+) -> Dict[str, Any]:
+    """Render a short story beat for notable field enemies or assassin squads."""
+    data = MINOR_ENCOUNTER_CUTSCENES.get(encounter_name)
+    if data is None:
+        title = f"Movement in {region_name}"
+        beat = (
+            f"{player_name} catches the shift in tempo before the strike comes. "
+            f"{encounter_name} move through {region_name} like they were sent to test "
+            "how quickly the region can turn violent again."
+        )
+    else:
+        title = data["title"]
+        beat = data["beat"]
+    if threat_count > 1:
+        beat = (
+            f"{beat} More shadows fold in behind the first contact — {threat_count} threats "
+            "moving at once instead of waiting their turn."
+        )
+    _scene_header(f"🎬  FIELD STORY — {encounter_name.upper()}")
+    _panel([f"{title}.", beat])
+    _pause()
+    return {
+        "encounter_name": encounter_name,
+        "region_name": region_name,
+        "threat_count": threat_count,
+        "title": title,
+    }

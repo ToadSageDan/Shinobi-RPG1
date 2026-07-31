@@ -10,6 +10,7 @@ from shinobi_rpg.cutscenes import (
     list_cutscene_bosses,
     play_boss_cutscene,
     play_boss_defeat_scene,
+    play_minor_encounter_cutscene,
 )
 from shinobi_rpg.core import build_mvp_world
 
@@ -194,6 +195,21 @@ class DefeatSceneTests(unittest.TestCase):
     def test_defeat_scene_unknown_approach_falls_back(self):
         # Should not raise even for an approach not in the data
         self._run_defeat("Kage Renda", "unknown_approach")
+
+
+class MinorEncounterCutsceneTests(unittest.TestCase):
+    def test_minor_cutscene_returns_story_metadata(self):
+        with patch("builtins.input", return_value=""), \
+             patch("sys.stdout", new_callable=StringIO):
+            result = play_minor_encounter_cutscene(
+                "Mist Ronin",
+                "Verdant Gate",
+                player_name="Dan",
+                threat_count=2,
+            )
+        self.assertEqual(result["encounter_name"], "Mist Ronin")
+        self.assertEqual(result["region_name"], "Verdant Gate")
+        self.assertEqual(result["threat_count"], 2)
 
 
 class TauntLineTests(unittest.TestCase):

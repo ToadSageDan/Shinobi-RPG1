@@ -128,9 +128,11 @@ class CoreSystemTests(unittest.TestCase):
 
     def test_execute_ultimate_move_uses_power_plus_focus(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        starting_chakra = player.chakra_reserve
         result = player.execute_move("Twin Dragon Convergence")
         self.assertEqual(result["category"], "ultimate")
         self.assertEqual(result["damage"], 50)
+        self.assertLess(result["chakra_remaining"], starting_chakra)
 
     def test_move_power_scales_stay_within_balance_bands(self):
         world, _ = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -166,6 +168,28 @@ class CoreSystemTests(unittest.TestCase):
         self.assertEqual(result["summon_type"], TechniqueType.SUMMONING.value)
         self.assertEqual(result["summon_power"], 20)
 
+    def test_charge_chakra_restores_meter_but_caps_at_max(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        player.chakra_reserve = 10
+        result = player.charge_chakra()
+        self.assertGreater(result["gained"], 0)
+        self.assertLessEqual(result["chakra"], result["chakra_max"])
+        player.chakra_reserve = player.chakra_max() - 1
+        capped = player.charge_chakra()
+        self.assertEqual(capped["chakra"], player.chakra_max())
+
+    def test_aoe_move_profiles_multiple_targets(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.execute_move(
+            "Concord Nova",
+            target_names=["Bandit Scout #1", "Bandit Scout #2", "Bandit Scout #3"],
+            enemy_count=3,
+        )
+        self.assertEqual(result["combat_targeting"]["mode"], "aoe")
+        self.assertTrue(result["combat_targeting"]["multi_target_capable"])
+        self.assertEqual(result["combat_targeting"]["target_count"], 3)
+        self.assertEqual(result["damage_profile"]["potential_total"], result["damage"] * 3)
+
     def test_lock_on_enables_tracking_for_targeted_attacks(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         result = player.execute_move("Ash Fang Drive", target_name="Kage Renda", lock_on=True)
@@ -179,6 +203,29 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
         with self.assertRaisesRegex(ValueError, "Lock-on requires a target name"):
             player.execute_move("Ash Fang Drive", lock_on=True)
+
+    def test_throwable_attack_applies_tracking_without_perfect_accuracy(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = player.execute_throwable_attack(
+            "Silent Fang",
+            target_name="Stormcaller Scout #1",
+            enemy_count=3,
+            lock_on=True,
+            roll=0.2,
+        )
+        self.assertEqual(result["weapon_type"], "kunai")
+        self.assertTrue(result["lock_on_active"])
+        self.assertTrue(result["tracking_applied"])
+        self.assertLess(result["hit_chance"], 1.0)
+        self.assertFalse(result["guaranteed_hit"])
+        self.assertTrue(result["hit"])
+
+    def test_region_encounter_returns_multi_enemy_group_metadata(self):
+        world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
+        result = world.resolve_region_encounter(player, "Verdant Gate")
+        self.assertIn("encounter_group", result)
+        self.assertGreaterEqual(len(result["encounter_group"]), 1)
+        self.assertTrue(all(name.startswith(result["encounter"]) for name in result["encounter_group"]))
 
     def test_execute_move_rejects_unknown_move(self):
         world, player = build_mvp_world("TestPlayer", [5, 1, 1, 1])
@@ -1014,6 +1061,13 @@ class CoreSystemTests(unittest.TestCase):
                 [poi["name"] for poi in original_region["points_of_interest"]],
                 [poi["name"] for poi in restored_region["points_of_interest"]],
             )
+
+    def test_snapshot_roundtrip_preserves_chakra_reserve(self):
+        world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
+        player.execute_move("Twin Dragon Convergence")
+        snapshot = world.to_snapshot(player)
+        restored_world, restored_player = world.from_snapshot(snapshot)
+        self.assertEqual(restored_player.chakra_reserve, player.chakra_reserve)
 
     def test_memory_store_tracks_subject_entries(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])

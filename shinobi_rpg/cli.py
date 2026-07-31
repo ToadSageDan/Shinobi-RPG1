@@ -23,10 +23,11 @@ from .core import (
     save_world_snapshot,
 )
 from .cutscenes import (
-    list_cutscene_bosses,
-    play_boss_cutscene,
-    play_boss_defeat_scene,
     get_boss_taunt,
+    list_cutscene_bosses,
+    play_boss_defeat_scene,
+    play_boss_cutscene,
+    play_minor_encounter_cutscene,
 )
 
 # ── cosmetic helpers ──────────────────────────────────────────────────────────
@@ -125,10 +126,10 @@ def _derive_vitals(player: PlayerProfile) -> dict:
     hp_max     = player.stats.defense * 10 + 50
     chakra_max = player.stats.focus   * 10 + 20
     stamina_max = player.stats.agility * 8 + 20
-    # Treat values as full unless status effects reduce them (future hook)
+    chakra_current = player.chakra_reserve if player.chakra_reserve is not None else chakra_max
     return {
         "hp":          hp_max, "hp_max":      hp_max,
-        "chakra":      chakra_max, "chakra_max":  chakra_max,
+        "chakra":      chakra_current, "chakra_max":  chakra_max,
         "stamina":     stamina_max, "stamina_max": stamina_max,
     }
 
@@ -200,7 +201,9 @@ def _show_hud(world: NinjaWorld, player: PlayerProfile) -> None:
     )
     # Row 5: Active quest + status effects
     _print(f"  Quest: {quest_title}")
+    lock_text = player.locked_on_target or "—"
     _print(f"  Status FX: {fx_str}")
+    _print(f"  Lock-on: {lock_text}")
     _print(_THICK)
 
 
@@ -325,6 +328,59 @@ def _do_load() -> tuple[NinjaWorld, PlayerProfile] | None:
 
 # ── Encounter ─────────────────────────────────────────────────────────────────
 
+def _choose_target(targets: List[str], *, prompt_text: str = "Choose target") -> str | None:
+    if not targets:
+        return None
+    if len(targets) == 1:
+        return targets[0]
+    idx = _pick(prompt_text, targets)
+    return targets[idx]
+
+
+def _run_combat_prep(player: PlayerProfile, enemies: List[str], *, context_label: str) -> None:
+    while True:
+        _print()
+        _print(f"  Combat space: {context_label}")
+        _print(f"  Enemy pressure: {len(enemies)} active threat(s)")
+        _print(f"  Current lock-on: {player.locked_on_target or 'none'}")
+        _print(f"  Chakra charge: {player.chakra_reserve}/{player.chakra_max()}")
+        actions = ["Charge chakra", "Lock on target", "Throw weapon", "Continue"]
+        choice = _pick("Set your combat approach", actions)
+        if choice == 0:
+            result = player.charge_chakra()
+            _print(f"  ⚡ Chakra charged +{result['gained']}  ({result['chakra']}/{result['chakra_max']})")
+        elif choice == 1:
+            target = _choose_target(enemies, prompt_text="Lock on to which target?")
+            if target:
+                player.set_lock_on_target(target)
+                _print(f"  🎯 Locked on to {target}")
+        elif choice == 2:
+            throwables = player.get_throwable_weapons()
+            if not throwables:
+                _print("  ✗ No throwable weapons equipped.")
+                continue
+            weapon_labels = [f"{weapon.name}  [{weapon.weapon_type.value}]" for weapon in throwables]
+            weapon_idx = _pick("Choose throwable weapon", weapon_labels)
+            target = _choose_target(enemies, prompt_text="Throw at which target?")
+            if not target:
+                continue
+            use_lock = _confirm("Use lock-on tracking?")
+            result = player.execute_throwable_attack(
+                throwables[weapon_idx].name,
+                target_name=target,
+                enemy_count=len(enemies),
+                lock_on=use_lock,
+            )
+            _print(
+                f"  🗡️  {result['weapon']} tracking {result['target']}  |  hit chance: "
+                f"{int(result['hit_chance'] * 100)}%  |  guaranteed: no"
+            )
+            if result["multi_target_ready"]:
+                _print("  ↔ Multi-target spread ready for crowd pressure.")
+        else:
+            return
+
+
 def _do_encounter(world: NinjaWorld, player: PlayerProfile, region_name: str) -> None:
     result = world.resolve_region_encounter(player, region_name)
 
@@ -335,8 +391,18 @@ def _do_encounter(world: NinjaWorld, player: PlayerProfile, region_name: str) ->
         return
 
     _print(f"  You face: {result['encounter']}")
+    enemy_group = result.get("encounter_group") or [result["encounter"]]
+    _print(f"  Active threats: {', '.join(enemy_group)}")
     env = result["environment"]
     _print(f"  Conditions: {env['time_of_day'].capitalize()} · {env['weather'].capitalize()}")
+    if result.get("enemy_exclusive_move") or result.get("assassin_hunt_triggered"):
+        play_minor_encounter_cutscene(
+            result["encounter"],
+            region_name,
+            player_name=player.name,
+            threat_count=len(enemy_group),
+        )
+    _run_combat_prep(player, enemy_group, context_label=region_name)
 
     approach_choices = [
         f"{APPROACH_EMOJI['kill']}  Attack (kill)",
@@ -539,12 +605,15 @@ def _fight_boss(world: NinjaWorld, player: PlayerProfile, region_name: str) -> N
     behavior = world.get_region_boss_behavior(region_name, player)
     _print(_wrap(f"Stance: {behavior['stance'].upper()}"))
     _print(_wrap(f"Behavior: {behavior['behavior']}"))
+    _print(f"  Active threats: {region.boss}")
 
     # Optional taunt line
     taunt = get_boss_taunt(region.boss)
     if taunt:
         _print()
         _print(f'  💬  "{region.boss}":  {taunt}')
+
+    _run_combat_prep(player, [region.boss], context_label=f"{region.name} boss arena")
 
     # ── Approach and reward ───────────────────────────────────────────────────
     _print()

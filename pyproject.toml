@@ -31,3 +31,10 @@ shinobi-play = "shinobi_rpg.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["shinobi_rpg*"]
+
+[tool.coverage.run]
+source = ["shinobi_rpg"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

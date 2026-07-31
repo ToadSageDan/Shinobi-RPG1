@@ -10,6 +10,7 @@ from shinobi_rpg.core import (
     load_world_snapshot,
     save_world_snapshot,
 )
+from shinobi_rpg._world import NinjaWorld
 from tempfile import TemporaryDirectory
 
 
@@ -392,4 +393,83 @@ class SnapshotGameplayImprovementsTests(unittest.TestCase):
             self.assertEqual(restored.nonlethal_flow_streak, 0)
             self.assertEqual(restored.weapon_durability, {})
             self.assertEqual(restored.reputation_inactivity_ticks, 0)
+
+        # ------------------------------------------------------------------
+        # Rival profile and boss echo registry snapshot persistence
+        # ------------------------------------------------------------------
+
+        def test_rival_profile_survives_snapshot_round_trip(self):
+            world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+            rival = world.initialize_rival(player)
+            rival.encounter_count = 2
+            rival.cleared_regions.append("Verdant Gate")
+            rival.loot_claims.append("Renda Fang Blade")
+            rival.relationship = "rival"
+
+            with TemporaryDirectory() as tmpdir:
+                path = f"{tmpdir}/snap.json"
+                save_world_snapshot(world, player, path)
+                restored_world, _ = load_world_snapshot(path)
+
+            self.assertIsNotNone(restored_world.rival_profile)
+            rp = restored_world.rival_profile
+            self.assertEqual(rp.name, rival.name)
+            self.assertEqual(rp.affinity, rival.affinity)
+            self.assertEqual(rp.alignment, rival.alignment)
+            self.assertEqual(rp.cleared_regions, ["Verdant Gate"])
+            self.assertEqual(rp.encounter_count, 2)
+            self.assertEqual(rp.relationship, "rival")
+            self.assertEqual(rp.loot_claims, ["Renda Fang Blade"])
+
+        def test_absent_rival_profile_restores_as_none(self):
+            world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+            self.assertIsNone(world.rival_profile)
+
+            with TemporaryDirectory() as tmpdir:
+                path = f"{tmpdir}/snap.json"
+                save_world_snapshot(world, player, path)
+                restored_world, _ = load_world_snapshot(path)
+
+            self.assertIsNone(restored_world.rival_profile)
+
+        def test_boss_echo_registry_survives_snapshot_round_trip(self):
+            world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+            world.clear_region(player, "Verdant Gate", "weapon")
+            world.initiate_boss_echo(player, "Verdant Gate")
+            world.resolve_boss_echo_defeat(player, "Verdant Gate")
+
+            echo_before = world.boss_echo_registry["Verdant Gate"]
+
+            with TemporaryDirectory() as tmpdir:
+                path = f"{tmpdir}/snap.json"
+                save_world_snapshot(world, player, path)
+                restored_world, _ = load_world_snapshot(path)
+
+            self.assertIn("Verdant Gate", restored_world.boss_echo_registry)
+            echo_after = restored_world.boss_echo_registry["Verdant Gate"]
+            self.assertEqual(echo_after.boss_name, echo_before.boss_name)
+            self.assertEqual(echo_after.echo_stance, echo_before.echo_stance)
+            self.assertEqual(echo_after.times_challenged, echo_before.times_challenged)
+            self.assertEqual(echo_after.times_defeated, echo_before.times_defeated)
+            self.assertEqual(echo_after.borrowed_move_names, echo_before.borrowed_move_names)
+
+        def test_empty_boss_echo_registry_restores_as_empty(self):
+            world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+            self.assertEqual(world.boss_echo_registry, {})
+
+            with TemporaryDirectory() as tmpdir:
+                path = f"{tmpdir}/snap.json"
+                save_world_snapshot(world, player, path)
+                restored_world, _ = load_world_snapshot(path)
+
+            self.assertEqual(restored_world.boss_echo_registry, {})
+
+        def test_legacy_snapshot_without_rival_and_echo_loads_with_defaults(self):
+            world, player = build_mvp_world("Dot", [1, 3, 5, 2, 1])
+            snapshot = world.to_snapshot(player)
+            snapshot["world"].pop("rival_profile", None)
+            snapshot["world"].pop("boss_echo_registry", None)
+            restored_world, _ = NinjaWorld.from_snapshot(snapshot)
+            self.assertIsNone(restored_world.rival_profile)
+            self.assertEqual(restored_world.boss_echo_registry, {})
 

@@ -1510,10 +1510,6 @@ class NinjaWorld:
         if player.quest_log.get(quest_id) == QuestStatus.COMPLETED:
             raise ValueError(f'Quest "{quest_id}" has already been completed.')
         player.set_quest_status(quest_id, QuestStatus.ACTIVE)
-        self._ensure_quest_resolution_state(
-            player,
-            next(q for q in self.quests if q.quest_id == quest_id),
-        )
         return self.resolve_quest_branch(player, quest_id)
 
     def complete_quest(self, player: PlayerProfile, quest_id: str) -> Dict[str, Any]:
@@ -2271,7 +2267,7 @@ class NinjaWorld:
             if any(k in str(e.get("causes", [])) for k in ("charm", "stealth", "evasion"))
         )
         if tapestry_kills > 0 and tapestry_nonlethal > 0:
-            shift_detected = tapestry_kills > 0 and tapestry_nonlethal > tapestry_kills
+            shift_detected = tapestry_nonlethal > tapestry_kills
             shift_note = "Shifted toward nonlethal midway" if shift_detected else "Consistent playstyle throughout"
         else:
             shift_note = "Single playstyle throughout"
@@ -3502,6 +3498,29 @@ class NinjaWorld:
                 "time_cycle_index": self.time_cycle_index,
                 "weather_cycle_index": self.weather_cycle_index,
                 "environment_cycle_step": self.environment_cycle_step,
+                "rival_profile": (
+                    {
+                        "name": self.rival_profile.name,
+                        "affinity": self.rival_profile.affinity.value,
+                        "alignment": self.rival_profile.alignment,
+                        "cleared_regions": list(self.rival_profile.cleared_regions),
+                        "encounter_count": self.rival_profile.encounter_count,
+                        "relationship": self.rival_profile.relationship,
+                        "loot_claims": list(self.rival_profile.loot_claims),
+                    }
+                    if self.rival_profile else None
+                ),
+                "boss_echo_registry": {
+                    region_name: {
+                        "region_name": echo.region_name,
+                        "boss_name": echo.boss_name,
+                        "echo_stance": echo.echo_stance.value,
+                        "borrowed_move_names": list(echo.borrowed_move_names),
+                        "times_challenged": echo.times_challenged,
+                        "times_defeated": echo.times_defeated,
+                    }
+                    for region_name, echo in self.boss_echo_registry.items()
+                },
             },
             "player": player.to_snapshot(),
         }
@@ -3696,6 +3715,31 @@ class NinjaWorld:
             for item in world_snapshot.get("arcs", [])
         ]
 
+        rival_data = world_snapshot.get("rival_profile")
+        rival_profile: RivalProfile | None = None
+        if rival_data:
+            rival_profile = RivalProfile(
+                name=rival_data["name"],
+                affinity=Affinity(rival_data["affinity"]),
+                alignment=rival_data.get("alignment", "neutral"),
+                cleared_regions=list(rival_data.get("cleared_regions", [])),
+                encounter_count=int(rival_data.get("encounter_count", 0)),
+                relationship=rival_data.get("relationship", "stranger"),
+                loot_claims=list(rival_data.get("loot_claims", [])),
+            )
+
+        boss_echo_registry: Dict[str, BossEchoForm] = {
+            region_name: BossEchoForm(
+                region_name=echo_data["region_name"],
+                boss_name=echo_data["boss_name"],
+                echo_stance=VillainStance(echo_data["echo_stance"]),
+                borrowed_move_names=list(echo_data.get("borrowed_move_names", [])),
+                times_challenged=int(echo_data.get("times_challenged", 0)),
+                times_defeated=int(echo_data.get("times_defeated", 0)),
+            )
+            for region_name, echo_data in world_snapshot.get("boss_echo_registry", {}).items()
+        }
+
         world = cls(
             regions=regions,
             quests=quests,
@@ -3779,6 +3823,8 @@ class NinjaWorld:
             time_cycle_index=int(world_snapshot.get("time_cycle_index", 0)),
             weather_cycle_index=int(world_snapshot.get("weather_cycle_index", 0)),
             environment_cycle_step=int(world_snapshot.get("environment_cycle_step", 0)),
+            rival_profile=rival_profile,
+            boss_echo_registry=boss_echo_registry,
         )
 
         skin_by_name = {skin.name: skin for skin in world.skins}

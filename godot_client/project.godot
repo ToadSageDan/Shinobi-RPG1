@@ -24,6 +24,7 @@ CombatManager="*res://autoloads/CombatManager.gd"
 InputBuffer="*res://autoloads/InputBuffer.gd"
 AudioManager="*res://autoloads/AudioManager.gd"
 WorldData="*res://autoloads/WorldData.gd"
+AudioManifest="*res://autoloads/AudioManifest.gd"
 
 [display]
 

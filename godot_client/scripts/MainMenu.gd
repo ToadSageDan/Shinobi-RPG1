@@ -35,8 +35,7 @@ func _on_continue() -> void:
 		continue_btn.disabled = true
 
 func _on_options() -> void:
-	# Future: open options overlay
-	pass
+	get_tree().change_scene_to_file("res://scenes/ui/Options.tscn")
 
 func _on_quit() -> void:
 	get_tree().quit()

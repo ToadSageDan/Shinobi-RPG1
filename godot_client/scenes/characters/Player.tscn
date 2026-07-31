@@ -1,8 +1,9 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/Player.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/PlayerCamera.gd" id="2_cam"]
 [ext_resource type="Script" path="res://scripts/Hitbox.gd" id="3_hb"]
+[ext_resource type="Script" path="res://scripts/PlaceholderRig.gd" id="4_rig"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
 radius = 0.4
@@ -15,15 +16,20 @@ script = ExtResource("1_player")
 shape = SubResource("CapsuleShape3D_1")
 position = Vector3(0, 0.9, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.9, 0)
-; Placeholder capsule mesh — replace with imported character model
+[node name="PlaceholderRig" type="Node3D" parent="."]
+script = ExtResource("4_rig")
+affinity_color = Color(0.6, 0.7, 0.8, 1)
+character_height = 1.8
+; Remove this node and add your imported Mixamo mesh + AnimationPlayer instead.
+; See godot_client/ASSETS_GUIDE.md for import instructions.
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
-; Animations: idle, run, jump, fall, land, dash, dodge, wall_run_left, wall_run_right,
-;             wall_jump, double_jump, attack_1, attack_2, attack_3, attack_heavy,
-;             attack_air, hurt, death, jutsu_charge, jutsu_fire, jutsu_fail,
-;             chakra_charge, boss_signature
+; Animations supplied by Mixamo FBX import: idle, run, jump, fall, land, dash,
+; dodge, wall_run_left, wall_run_right, wall_jump, double_jump, attack_1..3,
+; attack_heavy, attack_air, hurt, death, jutsu_charge, jutsu_fire, jutsu_fail,
+; chakra_charge, boss_signature, boss_defeat_kill, boss_defeat_charm,
+; boss_defeat_stealth, boss_defeat_evasion
+; PlaceholderRig.gd handles visual stand-in when AnimationPlayer has no clips.
 
 [node name="CameraArm" type="SpringArm3D" parent="."]
 position = Vector3(0, 1.4, 0)
@@ -52,3 +58,4 @@ enabled = true
 [node name="WallRayFront" type="RayCast3D" parent="."]
 target_position = Vector3(0, 0, -0.75)
 enabled = true
+

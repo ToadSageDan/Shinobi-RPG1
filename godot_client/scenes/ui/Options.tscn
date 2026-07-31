@@ -1,0 +1,155 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/Options.gd" id="1_opt"]
+
+[node name="Options" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_opt")
+
+[node name="HeaderPanel" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.075
+
+[node name="HBox" type="HBoxContainer" parent="HeaderPanel"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12
+
+[node name="TitleLabel" type="Label" parent="HeaderPanel/HBox"]
+text = "⚙  Options"
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.95, 0.85, 0.55, 1)
+
+[node name="TabBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.075
+anchor_right = 1.0
+anchor_bottom = 0.145
+theme_override_constants/separation = 4
+
+[node name="RemapScroll" type="ScrollContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.145
+anchor_right = 1.0
+anchor_bottom = 0.92
+
+[node name="RemapList" type="VBoxContainer" parent="RemapScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="SettingsPanel" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchor_left = 0.05
+anchor_top = 0.15
+anchor_right = 0.95
+anchor_bottom = 0.92
+theme_override_constants/separation = 18
+visible = false
+
+[node name="MusicRow" type="HBoxContainer" parent="SettingsPanel"]
+theme_override_constants/separation = 14
+
+[node name="MusicLbl" type="Label" parent="SettingsPanel/MusicRow"]
+custom_minimum_size = Vector2(200, 0)
+text = "🎵  Music Volume"
+theme_override_font_sizes/font_size = 16
+vertical_alignment = 1
+
+[node name="MusicSlider" type="HSlider" parent="SettingsPanel/MusicRow"]
+size_flags_horizontal = 3
+min_value = 0.0
+max_value = 100.0
+value = 80.0
+custom_minimum_size = Vector2(400, 0)
+
+[node name="MusicValLbl" type="Label" parent="SettingsPanel/MusicRow"]
+custom_minimum_size = Vector2(50, 0)
+text = "80"
+theme_override_font_sizes/font_size = 15
+vertical_alignment = 1
+
+[node name="SFXRow" type="HBoxContainer" parent="SettingsPanel"]
+theme_override_constants/separation = 14
+
+[node name="SFXLbl" type="Label" parent="SettingsPanel/SFXRow"]
+custom_minimum_size = Vector2(200, 0)
+text = "🔊  SFX Volume"
+theme_override_font_sizes/font_size = 16
+vertical_alignment = 1
+
+[node name="SFXSlider" type="HSlider" parent="SettingsPanel/SFXRow"]
+size_flags_horizontal = 3
+min_value = 0.0
+max_value = 100.0
+value = 80.0
+custom_minimum_size = Vector2(400, 0)
+
+[node name="SFXValLbl" type="Label" parent="SettingsPanel/SFXRow"]
+custom_minimum_size = Vector2(50, 0)
+text = "80"
+theme_override_font_sizes/font_size = 15
+vertical_alignment = 1
+
+[node name="DisplayRow" type="HBoxContainer" parent="SettingsPanel"]
+theme_override_constants/separation = 14
+
+[node name="DisplayLbl" type="Label" parent="SettingsPanel/DisplayRow"]
+custom_minimum_size = Vector2(200, 0)
+text = "🖥  Fullscreen"
+theme_override_font_sizes/font_size = 16
+vertical_alignment = 1
+
+[node name="FullscreenCheck" type="CheckButton" parent="SettingsPanel/DisplayRow"]
+text = "Enabled"
+theme_override_font_sizes/font_size = 16
+
+[node name="BackButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 0.0
+anchor_top = 0.92
+anchor_right = 0.16
+anchor_bottom = 1.0
+text = "← Back"
+theme_override_font_sizes/font_size = 16
+
+[node name="ResetButton" type="Button" parent="."]
+layout_mode = 1
+anchor_left = 0.82
+anchor_top = 0.92
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "⟳ Reset Defaults"
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.9, 0.55, 0.3, 1)
+
+[node name="ListeningOverlay" type="Panel" parent="."]
+layout_mode = 1
+anchor_left = 0.25
+anchor_top = 0.28
+anchor_right = 0.75
+anchor_bottom = 0.72
+visible = false
+
+[node name="Label" type="RichTextLabel" parent="ListeningOverlay"]
+layout_mode = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16
+offset_top = 16
+offset_right = -16
+offset_bottom = -16
+bbcode_enabled = true
+horizontal_alignment = 1
+theme_override_font_sizes/normal_font_size = 18
+theme_override_font_sizes/bold_font_size = 22
+text = "Press any key or button..."

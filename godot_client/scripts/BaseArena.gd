@@ -25,6 +25,8 @@ var _combat_started: bool = false
 var _all_enemies_defeated: bool = false
 var _boss_approach: String = ""
 
+const WAYPOINT_SCENE := "res://scenes/ui/QuestWaypoint.tscn"
+
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 func _ready() -> void:
@@ -63,10 +65,41 @@ func _ready() -> void:
 	CombatManager.start_combat()
 	AudioManager.play_music(AudioManager.music_key_for_region(region_key))
 
+	# Build biome-specific placeholder terrain (replaced by real assets when available)
+	BiomeTerrain.build(self, region_key)
+	_spawn_quest_waypoints()
 	_spawn_arena_contents()
 
 func _process(delta: float) -> void:
 	CombatManager.tick(delta)
+
+# ── Quest waypoints ───────────────────────────────────────────────────────────
+
+## Spawns in-world quest markers for any active quests whose target_region
+## matches this arena's region_key.
+func _spawn_quest_waypoints() -> void:
+	if not ResourceLoader.exists(WAYPOINT_SCENE):
+		return
+	var wp_scene: PackedScene = load(WAYPOINT_SCENE)
+	if not wp_scene:
+		return
+	for quest in WorldData.quests:
+		var qid: String   = quest.get("quest_id", "")
+		var status: String = str(GameState.quest_log.get(qid, ""))
+		if status != "active":
+			continue
+		var target_region: String = quest.get("target_region", "")
+		if not target_region.is_empty() and target_region != region_key:
+			continue
+		# Place waypoint near a random spawn point, or at arena centre offset
+		var wp_pos := Vector3(randf_range(-4.0, 4.0), 0.0, randf_range(-4.0, 4.0))
+		if not _enemy_spawn_points.is_empty():
+			var sp := _enemy_spawn_points[randi() % _enemy_spawn_points.size()]
+			wp_pos = sp.global_position
+		var wp: Node3D = wp_scene.instantiate()
+		add_child(wp)
+		wp.global_position = wp_pos
+		wp.call("setup", qid, quest.get("name", qid))
 
 # ── Spawn ─────────────────────────────────────────────────────────────────────
 

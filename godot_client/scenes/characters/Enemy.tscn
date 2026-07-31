@@ -1,6 +1,7 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/Enemy.gd" id="1_enemy"]
+[ext_resource type="Script" path="res://scripts/PlaceholderRig.gd" id="2_rig"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
 radius = 0.38
@@ -13,13 +14,17 @@ script = ExtResource("1_enemy")
 shape = SubResource("CapsuleShape3D_1")
 position = Vector3(0, 0.85, 0)
 
-[node name="Mesh" type="MeshInstance3D" parent="."]
-position = Vector3(0, 0.85, 0)
-; Placeholder mesh — replace with enemy model
+[node name="PlaceholderRig" type="Node3D" parent="."]
+script = ExtResource("2_rig")
+affinity_color = Color(0.7, 0.3, 0.3, 1)
+character_height = 1.7
+; Remove this node and add your imported enemy mesh + AnimationPlayer instead.
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
 ; Animations: idle, walk, run, alert, attack, recover, death, hurt
+; PlaceholderRig handles visual stand-in until Mixamo assets are added.
 
 [node name="HPBar3D" type="Node3D" parent="."]
 position = Vector3(0, 2.2, 0)
 ; HP bar billboard — SubViewport + ProgressBar rendered via SubViewportContainer
+

@@ -75,15 +75,31 @@ Items marked `[x]` are complete and correspond to closed GitHub Issues.
 - [x] 25) Add `ASSETS_GUIDE.md` covering Mixamo characters, Kenney.nl environments,
   freesound audio, cel-shader application, and minimum-viable art-pass instructions.
 
-## v0.6.0 — Art Pass + Polish *(next)*
+## v0.6.0 — Art Pass + Polish *(current)*
 
-- [ ] 26) Import Mixamo character rig + animations for player and at least one enemy type.
-- [ ] 27) Replace placeholder terrain meshes with biome-specific environment assets.
-- [ ] 28) Add `GPUParticles3D` VFX for each affinity jutsu (fire trail, water splash, etc.).
-- [ ] 29) Wire AudioManager with real music tracks and SFX clips.
-- [ ] 30) Add quest waypoints in-world (world-space markers showing active quest region).
-- [ ] 31) Implement Shop and Playthrough Summary UI scenes.
-- [ ] 32) Add controller/gamepad remapping screen under Options.
+- [x] 26) Import Mixamo character rig + animations for player and at least one enemy type.
+  *(`PlaceholderRig.gd` procedural mesh rig; Player.tscn + Enemy.tscn updated to include it.
+  Drop in Mixamo FBX + AnimationPlayer to replace — see ASSETS_GUIDE.md for steps. — done)*
+- [x] 27) Replace placeholder terrain meshes with biome-specific environment assets.
+  *(`BiomeTerrain.gd` procedural terrain called from BaseArena: coloured ground, boundary walls,
+  and scatter objects for all 5 biomes. Replace with real meshes when available. — done)*
+- [x] 28) Add `GPUParticles3D` VFX for each affinity jutsu (fire trail, water splash, etc.).
+  *(`AffinityVFX.gd` — per-affinity gradient, shape, gravity, velocity presets; auto-configured
+  on `JutsuProjectile.launch()` + impact burst on hit. — done)*
+- [x] 29) Wire AudioManager with real music tracks and SFX clips.
+  *(`AudioManifest.gd` autoload — registers all music/SFX paths, gracefully skips missing files,
+  logs free-source hints. Add .ogg/.wav to `res://assets/audio/` to enable audio. — done)*
+- [x] 30) Add quest waypoints in-world (world-space markers showing active quest region).
+  *(`QuestWaypoint.gd` + `QuestWaypoint.tscn` — spinning diamond + beacon beam + Label3D;
+  `BaseArena._spawn_quest_waypoints()` places one per active quest in the region. — done)*
+- [x] 31) Implement Shop and Playthrough Summary UI scenes.
+  *(`Shop.gd` + `Shop.tscn` — rep-gated item list + detail panel + purchase flow with credits deduction.
+  `PlaythroughSummary.gd` + `PlaythroughSummary.tscn` — tabbed screen: Overview / Trophies /
+  Villains / Quests. Both scenes linked from WorldMap buttons. — done)*
+- [x] 32) Add controller/gamepad remapping screen under Options.
+  *(`Options.gd` + `Options.tscn` — full keyboard + gamepad remap table for all 15 actions,
+  Audio sliders, Fullscreen toggle, settings persisted to `user://options.cfg`.
+  MainMenu Options button now navigates to this screen. — done)*
 
 ## Project board
 

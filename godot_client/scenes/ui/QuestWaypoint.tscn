@@ -1,0 +1,20 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/QuestWaypoint.gd" id="1_qw"]
+
+[node name="QuestWaypoint" type="Node3D"]
+script = ExtResource("1_qw")
+
+[node name="Label3D" type="Label3D" parent="."]
+position = Vector3(0, 1.2, 0)
+text = "[ Quest ]\nObjective"
+billboard = 1
+font_size = 18
+modulate = Color(0.95, 0.85, 0.4, 1)
+
+[node name="IconMesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.5, 0)
+; Placeholder diamond icon — replaced by _apply_visuals() at runtime
+
+[node name="BeamMesh" type="MeshInstance3D" parent="."]
+; Vertical beacon beam — configured at runtime in _apply_visuals()

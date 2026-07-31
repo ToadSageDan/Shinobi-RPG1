@@ -28,8 +28,9 @@ func launch(direction: Vector3, p_move: Dictionary, p_charge: float, p_affinity:
 	move_dict     = p_move
 	charge_ratio  = p_charge
 	player_affinity = p_affinity
-	# Scale visual intensity by charge
+	# Apply affinity-specific GPUParticles3D preset
 	if _vfx:
+		AffinityVFX.configure_particles(_vfx, p_affinity)
 		_vfx.amount = int(lerp(8.0, 32.0, charge_ratio))
 	if _mesh:
 		var scale_val := lerpf(0.25, 0.8, charge_ratio)
@@ -64,6 +65,9 @@ func _try_hit_node(node: Node) -> void:
 	boosted_move["power_scale"] = float(move_dict.get("power_scale", 1.0)) * lerpf(0.6, 1.4, charge_ratio)
 	CombatManager.resolve_player_attack(boosted_move, eid, player_affinity)
 	AudioManager.play_sfx(AudioManager.hit_sfx_for_affinity(player_affinity))
+
+	# Spawn impact burst VFX at hit location
+	AffinityVFX.spawn_burst(get_parent(), global_position, player_affinity, 16)
 
 	# AoE moves don't expire on first hit; single-target ones do
 	var name_lower: String = str(move_dict.get("name", "")).to_lower()

@@ -10,7 +10,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
-- Quest Q6 "Legacy of the Fallen Shinobi": final epilogue quest at the Ashen Spire with full backstory, nonlethal, heroic, and rogue branch outcomes
+- **v0.6.0 — Art Pass + Polish**
+- `PlaceholderRig.gd` — procedural primitive-mesh character rig (capsule body + sphere head +
+  limb cylinders) with scripted animation states for idle, run, jump, attack, hurt, death etc.
+  Drives the `Player` and `Enemy` scenes when no Mixamo FBX is imported yet. Drop a real
+  animated mesh under the character root and the rig is bypassed automatically.
+- `Player.tscn` and `Enemy.tscn` updated to include `PlaceholderRig` as a child node with
+  affinity-tinted colors; `AnimationPlayer` comment expanded with full clip name list.
+- `BiomeTerrain.gd` — static helper that procedurally builds biome-appropriate terrain
+  (coloured ground plane, four boundary walls, 12 scatter objects) for all five arenas from
+  code at runtime. Called automatically from `BaseArena._ready()`. Each biome has a distinct
+  color palette, light tint, and scatter shape (trees / rocks / reef pillars / stalagmites).
+- `AffinityVFX.gd` — `RefCounted` class with per-affinity `GPUParticles3D` presets (color
+  gradient, emission shape, gravity, velocity, lifetime, scale). Exposes `configure_particles()`
+  and `spawn_burst()`. Wired into `JutsuProjectile.launch()` so every fired jutsu is visually
+  distinct by element; impact bursts spawn on hit.
+- `AudioManifest.gd` autoload — registers the full music + SFX path table with `AudioManager`.
+  Gracefully skips missing files and prints console hints pointing to free audio sources
+  (opengameart.org / freesound.org / kenney.nl). Registered in `project.godot`.
+- `QuestWaypoint.gd` + `QuestWaypoint.tscn` — animated 3D world-space marker: spinning
+  diamond icon + vertical beacon beam + billboard `Label3D` showing quest ID and name.
+  Bobs and rotates each frame. `BaseArena._spawn_quest_waypoints()` places markers for all
+  active quests whose `target_region` matches the current arena.
+- `Shop.gd` + `Shop.tscn` — full shop UI: scrollable item list with rep-tier and quest-gate
+  locks, detail panel with description / cost / requirements, purchase flow with credits
+  deduction, move unlock, feedback toast, and save on buy. 10-item fallback catalog when
+  `WorldData.shop_inventory` is empty. Navigated to from WorldMap **🛒 Shop** button.
+- `PlaythroughSummary.gd` + `PlaythroughSummary.tscn` — tabbed summary screen with four
+  tabs: **Overview** (character, rep, playstyle label, encounter breakdown, move list),
+  **Trophies** (full 23-trophy catalog with ✅/○ per tier), **Villains** (arc + stance per
+  villain from WorldData), **Quests** (log with ✅/❌ per entry). Navigated to from WorldMap
+  **📊** button.
+- `Options.gd` + `Options.tscn` — three-tab options screen: **Controls** (remappable table
+  for all 15 actions showing keyboard key and gamepad button, click-to-remap with overlay
+  prompt, Reset Defaults button), **Audio** (Music/SFX volume sliders with bus routing),
+  **Display** (fullscreen toggle). Settings persisted to `user://options.cfg` and restored on
+  load. MainMenu **⚙ Options** button now navigates here.
+- `BaseArena.gd` updated: `BiomeTerrain.build()` called in `_ready()` for automatic terrain;
+  `_spawn_quest_waypoints()` added to place active-quest 3D markers each arena entry.
+- `MainMenu.gd` updated: `_on_options()` now navigates to `res://scenes/ui/Options.tscn`.
+
+### Quest Q6 "Legacy of the Fallen Shinobi": final epilogue quest at the Ashen Spire with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q7 "Shattered Moon Accord" and Q8 "Dawn of the Hidden Age" with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q9 "Ashes Beneath the Banner" and Q10 "Veil of the Eternal Watch" to continue seeded quest progression with full backstory, nonlethal, heroic, and rogue branch outcomes
 - Quest Q11 "Ashes of the Courier" through Q15 "Feast of Knives" now include handcrafted backstory, nonlethal, heroic, and rogue branch outcomes

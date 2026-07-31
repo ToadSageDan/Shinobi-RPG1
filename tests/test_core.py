@@ -33,6 +33,7 @@ from shinobi_rpg.core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from shinobi_rpg.client import ShinobiRuntimeClient, runtime_package_json
 from shinobi_rpg.framework import framework_overview_json, get_framework_overview
 from shinobi_rpg.__main__ import main
 
@@ -223,13 +224,13 @@ class CoreSystemTests(unittest.TestCase):
         self.assertGreaterEqual(overview["seeded_content"]["regions"], 1)
         self.assertGreaterEqual(overview["seeded_content"]["points_of_interest"], 20)
 
-    def test_cli_main_prints_framework_overview_json(self):
+    def test_cli_main_prints_runtime_package_json(self):
         buffer = StringIO()
         with redirect_stdout(buffer):
             exit_code = main()
         output = buffer.getvalue()
         self.assertEqual(exit_code, 0)
-        self.assertEqual(output.strip(), framework_overview_json())
+        self.assertEqual(output.strip(), runtime_package_json())
 
     def test_rogue_reputation_unlocks_black_market(self):
         player = PlayerProfile(name="Tester", affinity=Affinity.WIND)
@@ -928,13 +929,15 @@ class CoreSystemTests(unittest.TestCase):
     def test_mock_world_map_contains_regions_and_boss_locations(self):
         world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         world_map = world.generate_mock_world_map()
-        self.assertIn("ascii_map", world_map)
+        self.assertIn("markers", world_map)
+        self.assertIn("routes", world_map)
         self.assertIn("legend", world_map)
         self.assertEqual(len(world_map["legend"]), len(world.regions))
         first = world_map["legend"][0]
         self.assertIn("region", first)
         self.assertIn("boss", first)
         self.assertIn("boss_location", first)
+        self.assertIn("coordinates", first)
 
     def test_trophy_progress_contains_near_miss(self):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
@@ -1069,16 +1072,31 @@ class CoreSystemTests(unittest.TestCase):
         world, player = build_mvp_world("TestPlayer", [3, 1, 2, 4])
         preview = world.get_move_animation_preview("Edge Current")
         self.assertIn("startup", preview["animation_profile"])
+        self.assertEqual(len(preview["action_timeline"]), 4)
         combo_preview = world.preview_affinity_combo_animation(
             "Undertow Slice",
             "Crosswind Fade",
             "Skyline Covenant",
         )
         self.assertEqual(len(combo_preview["combo_path"]), 3)
+        self.assertTrue(all("action_timeline" in beat for beat in combo_preview["combo_path"]))
         summary = world.generate_playthrough_summary(player)
         self.assertIn("villain_kits", summary)
         self.assertGreaterEqual(len(summary["villain_kits"]), 15)
         self.assertIn("skill_physics", preview)
+
+    def test_runtime_client_builds_visual_vertical_slice_package(self):
+        runtime = ShinobiRuntimeClient("TestPlayer")
+        package = runtime.build_runtime_package()
+        self.assertEqual(package["visual_target"]["style"], "2.5D_stylized")
+        self.assertEqual(package["simulation_layer"], "shinobi_rpg.core")
+        self.assertEqual(package["presentation_layer"], "shinobi_rpg.client")
+        self.assertEqual(len(package["scenes"]), 4)
+        scene_keys = {scene["key"] for scene in package["scenes"]}
+        self.assertIn("title_menu", scene_keys)
+        self.assertIn("interactive_world_map", scene_keys)
+        self.assertIn("combat_timeline_preview", scene_keys)
+        self.assertIn("vertical_slice_verdant_gate", scene_keys)
 
     def test_dual_affinity_animation_preview_blends_both_affinity_signatures(self):
         world, _ = build_mvp_world("TestPlayer", [3, 1, 2, 4])

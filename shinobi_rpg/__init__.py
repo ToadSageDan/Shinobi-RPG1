@@ -33,6 +33,7 @@ from .core import (
     resolve_affinity_minigame,
     save_world_snapshot,
 )
+from .client import ShinobiRuntimeClient, runtime_package_json
 from .framework import framework_overview_json, get_framework_overview
 
 __all__ = [
@@ -68,4 +69,6 @@ __all__ = [
     "save_world_snapshot",
     "get_framework_overview",
     "framework_overview_json",
+    "ShinobiRuntimeClient",
+    "runtime_package_json",
 ]

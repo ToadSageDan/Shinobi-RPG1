@@ -6,14 +6,21 @@ Lightweight MVP foundation for a ninja-inspired open-world RPG.
 
 ## Official project bootstrap
 
-Install the package in editable mode and print the current framework snapshot:
+Install the package in editable mode and launch the runtime presentation package:
 
 ```bash
 pip install -e .
 python -m shinobi_rpg
 ```
 
-The bootstrap command outputs a JSON summary of the seeded player setup, supported gameplay systems, packaged content counts, and the core development command for running tests.
+The runtime command outputs a JSON scene package containing the chosen visual target, title/menu runtime scene, interactive world-map view model, combat action timelines, and a Verdant Gate vertical slice.
+
+For CI/tooling that still needs the simulation bootstrap snapshot:
+
+```python
+from shinobi_rpg.framework import framework_overview_json
+print(framework_overview_json())
+```
 
 ## Included MVP systems
 

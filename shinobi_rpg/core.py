@@ -2800,31 +2800,40 @@ class NinjaWorld:
         return distribution
 
     def generate_mock_world_map(self) -> Dict[str, Any]:
-        width = 34
-        height = 16
-        grid = [["·" for _ in range(width)] for _ in range(height)]
+        markers: List[Dict[str, Any]] = []
         legend: List[Dict[str, Any]] = []
+        routes: List[Dict[str, Any]] = []
         for index, region in enumerate(self.regions, start=1):
             x, y = WORLD_MAP_REGION_COORDINATES.get(region.name, (2 + index * 5, 2 + (index % 4) * 3))
-            if 0 <= y < height and 0 <= x < width:
-                grid[y][x] = str(index)
             boss_arena = next((poi.name for poi in region.points_of_interest if poi.poi_type == "boss_arena"), region.boss)
-            legend.append(
-                {
-                    "marker": str(index),
-                    "region": region.name,
-                    "city_hub": region.village_hub,
-                    "boss": region.boss,
-                    "boss_location": boss_arena,
-                    "climate": region.climate,
-                    "terrain_profile": list(region.terrain_profile),
-                }
-            )
-        ascii_map = "\n".join("".join(row) for row in grid)
+            marker = {
+                "marker": str(index),
+                "region": region.name,
+                "city_hub": region.village_hub,
+                "boss": region.boss,
+                "boss_location": boss_arena,
+                "coordinates": {"x": x, "y": y},
+                "climate": region.climate,
+                "terrain_profile": list(region.terrain_profile),
+                "interactive": True,
+            }
+            markers.append(marker)
+            legend.append(dict(marker))
+            if index < len(self.regions):
+                routes.append(
+                    {
+                        "from_marker": str(index),
+                        "to_marker": str(index + 1),
+                        "from_region": region.name,
+                        "to_region": self.regions[index].name,
+                        "route_type": "recommended_story_path",
+                    }
+                )
         return {
-            "title": "Mock World Map: Quiet Steel Confederacy",
-            "ascii_map": ascii_map,
+            "title": "Interactive World Map: Quiet Steel Confederacy",
+            "markers": markers,
             "legend": legend,
+            "routes": routes,
             "recommended_route": [region.name for region in self.regions],
             "active_dynamic_route": list(self.dynamic_region_chain),
         }
@@ -2853,11 +2862,13 @@ class NinjaWorld:
         move = next((item for item in self.technique_library if item.name == move_name), None)
         if not move:
             raise ValueError(f'Move "{move_name}" not found in technique catalog.')
+        action_timeline = self._build_action_timeline(move)
         return {
             "move": move.name,
             "affinities": [affinity.value for affinity in move.affinities],
             "animation_profile": dict(move.animation_profile),
             "skill_physics": self._build_skill_physics(move),
+            "action_timeline": action_timeline,
         }
 
     def preview_affinity_combo_animation(
@@ -2868,6 +2879,7 @@ class NinjaWorld:
             move = next((item for item in self.technique_library if item.name == move_name), None)
             if not move:
                 raise ValueError(f'Move "{move_name}" not found in technique catalog.')
+            timeline = self._build_action_timeline(move, actor=f"combo_actor_{beat}", beat=beat)
             staged.append(
                 {
                     "beat": beat,
@@ -2879,9 +2891,34 @@ class NinjaWorld:
                     "hit": move.animation_profile.get("hit", ""),
                     "recovery": move.animation_profile.get("recovery", ""),
                     "physics": self._build_skill_physics(move),
+                    "action_timeline": timeline,
                 }
             )
         return {"combo_path": staged}
+
+    def _build_action_timeline(
+        self,
+        move: Move,
+        *,
+        actor: str = "player",
+        beat: int | None = None,
+    ) -> List[Dict[str, Any]]:
+        phase_duration_ms = {"startup": 320, "travel": 260, "hit": 180, "recovery": 300}
+        phases = ("startup", "travel", "hit", "recovery")
+        timeline: List[Dict[str, Any]] = []
+        for phase in phases:
+            cue = move.animation_profile.get(phase, "")
+            timeline.append(
+                {
+                    "phase": phase,
+                    "actor": actor,
+                    "beat": beat,
+                    "cue": cue,
+                    "duration_ms": phase_duration_ms[phase],
+                    "camera": "impact_push" if phase == "hit" else "tracking_follow",
+                }
+            )
+        return timeline
 
     def _build_skill_physics(self, move: Move) -> Dict[str, Any]:
         blood_scale = 0

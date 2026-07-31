@@ -1,12 +1,12 @@
-"""Command-line entry point for bootstrapping the Shinobi RPG MVP."""
+"""Command-line entry point for launching the Shinobi RPG runtime client."""
 
 from __future__ import annotations
 
-from .framework import framework_overview_json
+from .client import runtime_package_json
 
 
 def main() -> int:
-    print(framework_overview_json())
+    print(runtime_package_json())
     return 0
 
 

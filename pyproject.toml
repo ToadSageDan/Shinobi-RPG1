@@ -26,6 +26,7 @@ Issues = "https://github.com/ToadSageDan/Shinobi-RPG1/issues"
 
 [project.scripts]
 shinobi-rpg = "shinobi_rpg.__main__:main"
+shinobi-play = "shinobi_rpg.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

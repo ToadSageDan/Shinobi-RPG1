@@ -1,0 +1,3 @@
+[console_scripts]
+shinobi-play = shinobi_rpg.cli:main
+shinobi-rpg = shinobi_rpg.__main__:main

@@ -34,10 +34,11 @@ class RuntimeClientFrameworkTests(unittest.TestCase):
             self.assertEqual(package["visual_target"]["style"], "2.5D_stylized")
             self.assertEqual(package["simulation_layer"], "shinobi_rpg.core")
             self.assertEqual(package["presentation_layer"], "shinobi_rpg.client")
-            self.assertEqual(len(package["scenes"]), 4)
+            self.assertEqual(len(package["scenes"]), 6)
             scene_keys = {scene["key"] for scene in package["scenes"]}
             self.assertIn("title_menu", scene_keys)
+            self.assertIn("graphics_showcase", scene_keys)
             self.assertIn("interactive_world_map", scene_keys)
+            self.assertIn("gameplay_preview_loop", scene_keys)
             self.assertIn("combat_timeline_preview", scene_keys)
             self.assertIn("vertical_slice_verdant_gate", scene_keys)
-

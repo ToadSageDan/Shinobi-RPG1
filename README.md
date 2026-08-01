@@ -13,7 +13,7 @@ pip install -e .
 python -m shinobi_rpg
 ```
 
-The runtime command outputs a JSON scene package containing the chosen visual target, title/menu runtime scene, interactive world-map view model, combat action timelines, and a Verdant Gate vertical slice.
+The runtime command outputs a JSON scene package containing the chosen visual target, title/menu runtime scene, graphics showcase target, gameplay loop preview, interactive world-map view model, combat action timelines, and a Verdant Gate vertical slice.
 
 For CI/tooling that still needs the simulation bootstrap snapshot:
 

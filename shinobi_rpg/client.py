@@ -63,6 +63,44 @@ class ShinobiRuntimeClient:
             },
         )
 
+    def build_graphics_showcase_scene(self) -> RuntimeScene:
+        return RuntimeScene(
+            key="graphics_showcase",
+            title="Graphics Showcase: Stylized Ninja Target",
+            scene_type="visual_showcase",
+            payload={
+                "style_guide": {
+                    "direction": "stylized_2d_pixel",
+                    "palette": ["ink_black", "moonlight_blue", "leaf_green", "ember_orange", "mist_cyan"],
+                    "lighting": "high_contrast_silhouette",
+                    "readability_rules": [
+                        "player_and_enemies_use_distinct_outlines",
+                        "ability_colors_match_affinity",
+                        "hit_vfx_must_be_visible_on_dark_and_light_terrain",
+                    ],
+                },
+                "asset_pack_preview": {
+                    "characters": [
+                        "player_idle_run_attack_hit_recover",
+                        "ally_archer_idle_cast",
+                        "boss_wind_duelist_phase1_phase2",
+                    ],
+                    "environment_tiles": [
+                        "leafrise_path_tileset",
+                        "bamboo_bridge_tileset",
+                        "ruined_gate_tileset",
+                    ],
+                    "ui": ["hud_minimal", "quest_tracker_compact", "status_icons_color_safe"],
+                    "fx": ["slash_arc", "chakra_burst", "smoke_step", "wind_trail"],
+                },
+                "quality_bar": {
+                    "animation_states_required": ["idle", "run", "attack", "hit", "recover"],
+                    "camera_readability_target": "clear_player_focus_during_combat",
+                    "asset_consistency_target": "single_palette_family_and_outline_weight",
+                },
+            },
+        )
+
     def build_world_map_scene(self) -> RuntimeScene:
         world_map = self.world.generate_mock_world_map()
         return RuntimeScene(
@@ -77,6 +115,47 @@ class ShinobiRuntimeClient:
                 "active_dynamic_route": list(world_map["active_dynamic_route"]),
                 "environment": self.world.get_environment_state(),
                 "interaction_hint": "Select a marker to inspect region quests, NPC pressure, and boss pathing.",
+            },
+        )
+
+    def build_gameplay_preview_scene(self) -> RuntimeScene:
+        return RuntimeScene(
+            key="gameplay_preview_loop",
+            title="Gameplay Preview: Playable Vertical Slice Loop",
+            scene_type="gameplay_preview",
+            payload={
+                "loop_steps": [
+                    {
+                        "step": "spawn",
+                        "description": "Spawn in Leafrise Village with movement + dodge available.",
+                        "onscreen": ["hp_chakra_stamina_hud", "objective_reach_gate", "mini_map_ping"],
+                    },
+                    {
+                        "step": "traverse",
+                        "description": "Cross Verdant Gate route while avoiding patrol cones or engaging scouts.",
+                        "onscreen": ["stealth_indicator", "patrol_alert_meter", "affinity_quickbar"],
+                    },
+                    {
+                        "step": "combat",
+                        "description": "Use Attack/Defense/Escape/Summon/Ultimate with hit-stop + impact VFX.",
+                        "onscreen": ["combo_timeline", "status_effect_icons", "enemy_stagger_window"],
+                    },
+                    {
+                        "step": "resolution",
+                        "description": "Clear quest objective with nonlethal or lethal outcome.",
+                        "onscreen": ["quest_result_banner", "reputation_delta", "loot_or_branch_choice"],
+                    },
+                    {
+                        "step": "boss_gate",
+                        "description": "Enter boss arena and complete reward choice to finish the slice.",
+                        "onscreen": ["boss_intro_cinematic", "reward_three_card_ui", "next_route_unlock"],
+                    },
+                ],
+                "playability_requirements": {
+                    "controls": ["move", "dodge", "basic_attack", "ability_hotkeys", "pause_menu"],
+                    "win_condition": "complete_verdant_gate_boss_and_claim_reward",
+                    "fail_condition": "player_hp_zero",
+                },
             },
         )
 
@@ -194,7 +273,9 @@ class ShinobiRuntimeClient:
     def build_runtime_package(self) -> Dict[str, Any]:
         scenes: List[RuntimeScene] = [
             self.build_title_menu_scene(),
+            self.build_graphics_showcase_scene(),
             self.build_world_map_scene(),
+            self.build_gameplay_preview_scene(),
             self.build_move_timeline_scene(),
             self.build_vertical_slice_scene(),
         ]
